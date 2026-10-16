@@ -54,8 +54,14 @@ jobs:
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$RUNNER_TEMP/derived/Build/Products/Debug-iphonesimulator/App.app"
           xcrun simctl launch "$device" com.authorityclosers.salesxray
+          # A fresh simulator's first web page can take a while; look twice and keep the app's log.
           sleep 25
-          xcrun simctl io "$device" screenshot dist/iphone-simulator.png
+          xcrun simctl io "$device" screenshot dist/iphone-simulator-25s.png
+          sleep 50
+          xcrun simctl io "$device" screenshot dist/iphone-simulator-75s.png
+          xcrun simctl spawn "$device" log show --last 3m --style compact \
+            --predicate 'process == "App" OR subsystem CONTAINS "WebKit" OR subsystem CONTAINS "capacitor"' > dist/iphone-simulator.log 2>&1 || true
+          tail -40 dist/iphone-simulator.log
           xcrun simctl spawn "$device" launchctl list | grep -q com.authorityclosers.salesxray
       - name: Keep the simulator app
         if: always()
