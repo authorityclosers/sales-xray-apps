@@ -1,0 +1,88 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace = "com.authorityclosers.salesxray"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.authorityclosers.salesxray"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // CI passes the run number so each build installs over the last. Builds
+        // from this repo are 0.3.x with codes from 1001, above every 0.2.x build
+        // the main repo made before the apps moved here.
+        versionCode(1000 + (System.getenv("SX_BUILD_NUMBER") ?: "1").toInteger())
+        versionName "0.3.${System.getenv("SX_BUILD_NUMBER") ?: "0"}"
+        manifestPlaceholders = [appLabel: "Sales Xray"]
+        // -PsxDev builds "Sales Xray Dev": dev's site, installed beside the real app.
+        if (project.hasProperty("sxDev")) {
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            manifestPlaceholders = [appLabel: "Sales Xray Dev"]
+        }
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        // No key lives in this public repo. Debug builds are signed with the
+        // runner's throwaway debug key: fine for a test install, never
+        // published, and they won't install over another build.
+        // The durable key: CI writes it from GitHub secrets that only the
+        // owner's laptop sets, and only for a publish run. It signs release
+        // builds only, so a published APK is never debuggable.
+        if (System.getenv("SX_SIGNING_STORE")) {
+            durable {
+                storeFile file(System.getenv("SX_SIGNING_STORE"))
+                storePassword System.getenv("SX_SIGNING_PASSWORD")
+                keyAlias System.getenv("SX_SIGNING_ALIAS") ?: "sales-xray"
+                keyPassword System.getenv("SX_SIGNING_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            if (System.getenv("SX_SIGNING_STORE")) {
+                signingConfig signingConfigs.durable
+            }
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "androidx.webkit:webkit:$androidxWebkitVersion"
+    implementation "androidx.work:work-runtime:2.10.0"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

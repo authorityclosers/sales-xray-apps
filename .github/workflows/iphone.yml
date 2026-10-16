@@ -1,0 +1,67 @@
+name: iPhone
+
+# Builds Sales Xray for the iPhone Simulator (apps/phone/ios, Capacitor 8) on a
+# GitHub-hosted Mac. Manual only. No Apple account and no signing: real iPhones
+# (TestFlight, then the App Store) need the Apple Developer Program, the owner's
+# decision D2. Opens the app in a simulator as a smoke check and keeps the
+# simulator app and a screenshot as a 14-day artifact. Nothing is published.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iphone-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/phone
+    env:
+      VERSION: 0.3.${{ github.run_number }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Install Capacitor
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Sync the web shell into iOS (live site)
+        run: npx cap sync ios
+      - name: Build for the simulator
+        run: |
+          xcodebuild -version
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/derived" \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            CODE_SIGNING_ALLOWED=NO build
+          mkdir -p dist
+          ditto -c -k --keepParent "$RUNNER_TEMP/derived/Build/Products/Debug-iphonesimulator/App.app" "dist/sales-xray-iphone-simulator-$VERSION.zip"
+      - name: Open it in a simulator (smoke check)
+        run: |
+          device=$(xcrun simctl list devices available -j | node -e 'const d = JSON.parse(require("fs").readFileSync(0, "utf8")).devices; const phone = Object.entries(d).filter(([runtime]) => runtime.includes("iOS")).flatMap(([, list]) => list).find((x) => x.name.startsWith("iPhone")); if (!phone) process.exit(1); console.log(phone.udid);')
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" "$RUNNER_TEMP/derived/Build/Products/Debug-iphonesimulator/App.app"
+          xcrun simctl launch "$device" com.authorityclosers.salesxray
+          sleep 25
+          xcrun simctl io "$device" screenshot dist/iphone-simulator.png
+          xcrun simctl spawn "$device" launchctl list | grep -q com.authorityclosers.salesxray
+      - name: Keep the simulator app
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sales-xray-iphone-simulator-${{ github.run_number }}
+          path: apps/phone/dist/
+          retention-days: 14
+          if-no-files-found: error

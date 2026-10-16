@@ -1,0 +1,13 @@
+{
+  "name": "sales-xray-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sales Xray for Mac and Windows: the Sales Xray web app in its own window (Tauri 2).",
+  "scripts": {
+    "icons": "tauri icon app-icon.png",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.1"
+  }
+}

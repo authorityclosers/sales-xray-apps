@@ -1,0 +1,19 @@
+{
+  "name": "sales-xray-phone",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Sales Xray for Android and iPhone: the Sales Xray web app in a Capacitor shell. On Android it calls leads from the app and picks up the phone's own call recordings.",
+  "scripts": {
+    "sync": "cap sync",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/ios": "8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2"
+  }
+}

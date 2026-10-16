@@ -1,0 +1,19 @@
+node_modules/
+dist/
+target/
+.DS_Store
+
+# Never in this public repo: keys, keystores, certificates, provisioning profiles, env files
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+*.p8
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
+google-services.json
+GoogleService-Info.plist

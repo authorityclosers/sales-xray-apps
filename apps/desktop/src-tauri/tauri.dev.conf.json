@@ -1,0 +1,18 @@
+{
+  "productName": "Sales Xray Dev",
+  "identifier": "com.authorityclosers.salesxray.desktop.dev",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Sales Xray Dev",
+        "url": "https://salesxray-dev.authorityclosers.com/",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true
+      }
+    ]
+  }
+}
