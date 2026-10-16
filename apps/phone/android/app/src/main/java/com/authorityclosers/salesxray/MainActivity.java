@@ -25,6 +25,7 @@ import com.getcapacitor.BridgeWebViewClient;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /** Sales Xray in a Capacitor shell, plus the phone's own call recordings. */
 public class MainActivity extends BridgeActivity {
@@ -45,6 +46,9 @@ public class MainActivity extends BridgeActivity {
     private static final String THEME_COLOR =
         "(function(){var m=Array.prototype.filter.call(document.querySelectorAll('meta[name=\"theme-color\"]')," +
         "function(x){return !x.media||matchMedia(x.media).matches;})[0];return m?m.content:'';})()";
+
+    /** Only a plain #rrggbb or #aarrggbb paints the bars; anything else (no page yet) is skipped. */
+    private static final Pattern HEX_COLOR = Pattern.compile("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?");
 
     private PhoneBridge phone;
     private GoogleSignIn google;
@@ -201,13 +205,10 @@ public class MainActivity extends BridgeActivity {
     private void paintSystemBars(WebView view) {
         if (view == null) return;
         view.evaluateJavascript(THEME_COLOR, value -> {
-            if (value == null) return;
-            int color;
-            try {
-                color = Color.parseColor(value.replace("\"", "").trim());
-            } catch (IllegalArgumentException error) {
-                return;
-            }
+            // Before the page loads the answer is "" (or null): leave the bars as they are.
+            String hex = value == null ? "" : value.replace("\"", "").trim();
+            if (!HEX_COLOR.matcher(hex).matches()) return;
+            int color = Color.parseColor(hex);
             Window window = getWindow();
             window.setStatusBarColor(color);
             window.setNavigationBarColor(color);
