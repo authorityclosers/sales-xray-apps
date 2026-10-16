@@ -4,6 +4,8 @@
  * phone saved by itself and hands the chosen one to the normal New analysis
  * upload, so consent, plan and approval stay exactly as on the web.
  * Nothing leaves the phone until the person taps Analyse.
+ * There is no floating button: the page's app menu opens the sheet with
+ * window.__sxPhone.openCalls(), which exists only inside the app.
  */
 (function () {
   if (window.__sxPhone || typeof window.SXPhone === "undefined") return;
@@ -50,11 +52,6 @@
   }
 
   var css =
-    ".sxp-fab{position:fixed;right:16px;bottom:calc(88px + env(safe-area-inset-bottom,0px));z-index:2147483000;display:flex;align-items:center;gap:8px;" +
-    "height:48px;padding:0 16px 0 14px;border:0;border-radius:24px;background:var(--lx-teal,#14b8a6);color:var(--lx-on-teal,#04221d);" +
-    "font:600 14px/1 var(--lx-font-ui,system-ui,sans-serif);box-shadow:0 8px 24px rgba(0,0,0,.28)}" +
-    ".sxp-fab[hidden]{display:none}.sxp-fab svg{width:20px;height:20px}" +
-    ".sxp-badge{min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#ef4444;color:#fff;font-size:12px;line-height:20px;text-align:center}" +
     ".sxp-scrim{position:fixed;inset:0;z-index:2147483001;background:rgba(3,8,18,.55);animation:sxpfade .18s ease-out}" +
     ".sxp-sheet{position:fixed;left:0;right:0;bottom:0;z-index:2147483002;max-height:82vh;display:flex;flex-direction:column;" +
     "border-radius:20px 20px 0 0;background:var(--lx-surface,#0f1b2d);color:var(--lx-ink,#e6edf6);font:14px/1.45 var(--lx-font-ui,system-ui,sans-serif);" +
@@ -91,9 +88,6 @@
   style.textContent = css;
   document.head.appendChild(style);
 
-  var PHONE =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-    '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>';
   var WAVE =
     '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
     '<path d="M2 10v4M6 6v12M10 3v18M14 8v8M18 5v14M22 10v4"/></svg>';
@@ -146,38 +140,8 @@
     }, 5200);
   }
 
-  // Leads has its own call and recording flow, so the panel stays out of its way.
-  var hiddenPaths =
-    /^\/(login|register|forgot-password|reset-password|verify|auth|leads)(\/|$)/;
-  var fab;
   var items = [];
   var state = null;
-
-  function newCount() {
-    var seen = load(SEEN_KEY, 0);
-    var sent = load(SENT_KEY, {});
-    return items.filter(function (item) {
-      return item.addedMs > seen && !sent[item.source];
-    }).length;
-  }
-
-  function renderFab() {
-    var show = !hiddenPaths.test(location.pathname);
-    if (!fab) {
-      fab = document.createElement("button");
-      fab.type = "button";
-      fab.className = "sxp-fab";
-      fab.setAttribute("aria-label", "Calls on this phone");
-      fab.addEventListener("click", openSheet);
-      document.body.appendChild(fab);
-    }
-    var count = newCount();
-    fab.innerHTML =
-      PHONE +
-      "<span>Calls</span>" +
-      (count ? '<span class="sxp-badge">' + count + "</span>" : "");
-    fab.hidden = !show || Boolean(document.querySelector(".sxp-sheet"));
-  }
 
   function refresh() {
     return call("status")
@@ -191,8 +155,7 @@
           items = result.items || [];
         });
       })
-      .catch(function () {})
-      .then(renderFab);
+      .catch(function () {});
   }
 
   function closeSheet() {
@@ -200,7 +163,6 @@
     var scrim = document.querySelector(".sxp-scrim");
     if (sheet) sheet.remove();
     if (scrim) scrim.remove();
-    renderFab();
   }
 
   function openSheet() {
@@ -214,7 +176,6 @@
     sheet.setAttribute("aria-label", "Calls on this phone");
     document.body.appendChild(scrim);
     document.body.appendChild(sheet);
-    renderFab();
     drawSheet(sheet);
     refresh().then(function () {
       if (document.body.contains(sheet)) drawSheet(sheet);
@@ -415,7 +376,6 @@
           sent[item.source] = Date.now();
           save(SENT_KEY, sent);
           toast("Recording added. Check the details and start the analysis.");
-          renderFab();
         });
       })
       .catch(function () {
@@ -449,18 +409,9 @@
       if (event === "launch") continuePick();
       else refresh();
     },
+    // "Calls on this phone" in the page's app menu.
+    openCalls: openSheet,
   };
-
-  // The web app routes on the client; keep the button's visibility in step.
-  ["pushState", "replaceState"].forEach(function (name) {
-    var original = history[name];
-    history[name] = function () {
-      var result = original.apply(this, arguments);
-      setTimeout(renderFab, 0);
-      return result;
-    };
-  });
-  window.addEventListener("popstate", renderFab);
 
   refresh().then(continuePick);
 })();

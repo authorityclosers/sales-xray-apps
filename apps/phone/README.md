@@ -5,12 +5,14 @@ The Sales Xray web app (https://salesxray.authorityclosers.com) in a Capacitor 8
 ## What it does
 
 - Opens the live Sales Xray site, so every web release reaches the app with no app update.
+- **Feels like an app, not a website in a box.** Every request carries the user-agent token `SalesXrayApp/0.3`; the site checks `/\bSalesXrayApp\/\d/` to hide website links and sign-in chrome. The status and navigation bars take the page's own theme colour. The "can't be reached" screen shows only when the phone has no connection; a server error page shows as it is.
+- **Google sign-in.** Google refuses sign-in inside apps, so "Continue with Google" opens in a Chrome Custom Tab with a one-time challenge only this app can answer (`GoogleSignIn.java`). The server hands a sealed 60-second code back to `com.authorityclosers.salesxray:/auth/return`, and the app's web view redeems it once at `/v1/auth/google/app-exchange` for its own session.
 - **Call a lead from the app** (owner order, 16 Oct 2026). On a lead, Call asks once for three permissions: Phone, Call history, and Music and audio. Then:
   - the app places the call itself;
   - when the call ends, the app reads the phone's call history (connected or not, talk time) and the lead screen opens "How did it go?" already filled in;
   - the app looks for the recording the phone's own dialer saved for that call, and the lead screen offers it for analysis.
     Nothing is uploaded until the person ticks the consent box and taps Analyse. The web side is `apps/sales-xray-web/app/leads/native-phone.ts` in `authorityclosers/authority-closers-platform`.
-- **Calls on this phone.** A button on other pages lists the call recordings the phone saved by itself, from these folders:
+- **Calls on this phone.** Opened from the site's app menu (`window.__sxPhone.openCalls()`, only inside the app), it lists the call recordings the phone saved by itself, from these folders:
 
   | Phone maker           | Folder                                                           |
   | --------------------- | ---------------------------------------------------------------- |
@@ -28,12 +30,14 @@ The Sales Xray web app (https://salesxray.authorityclosers.com) in a Capacitor 8
 - **Call history:** download builds read it to tell connected from not connected. Google Play allows that only for default phone apps, so a Play build would drop it and the person answers by hand.
 - **iPhone:** gives apps no access to call audio.
 - **Formats:** `.aac` and `.amr` are listed but cannot be analysed until the server accepts them.
-- **Google sign-in:** Google blocks it inside apps. Use the email code or a password, until native Google sign-in is added.
+- **Google sign-in in the Dev build:** the return link uses the package name, so only the live app (`com.authorityclosers.salesxray`) gets Google sign-in back. Use the email code in Dev.
 
 ## How it is built
 
 - **Page-to-phone channel:** the page talks to the phone through an origin-restricted `WebViewCompat` message channel called `SXPhone`. It answers only Sales Xray's own sites and works under the site's content security policy. Methods: `status`, `requestAccess`, `requestCallAccess`, `call`, `lastCall`, `forgetCall`, `list`, `read`, `setWatch`, `openAllFiles`, `consumeLaunch`. When a call ends the app also posts `{event: "call", call}` to the page.
 - **Where the code lives:**
+  - `MainActivity.java`: the shell, the offline rule and the system bar colours.
+  - `GoogleSignIn.java`: Google sign-in through a Custom Tab.
   - `PhoneBridge.java`: the channel.
   - `CallTracker.java`: placing a lead's call, following it, the call history and matching the recording.
   - `RecordingScanner.java`: finding and reading recordings.

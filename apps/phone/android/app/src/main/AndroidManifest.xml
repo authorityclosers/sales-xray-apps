@@ -23,6 +23,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Google sign-in comes back here from its Custom Tab (GoogleSignIn.java). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${applicationId}" />
+            </intent-filter>
+
         </activity>
 
         <provider

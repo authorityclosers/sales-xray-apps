@@ -9,6 +9,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.Base64;
+import android.view.HapticFeedbackConstants;
 import android.webkit.WebView;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -245,6 +246,7 @@ final class PhoneBridge {
             fail(reply, id, "bad_call");
             return;
         }
+        main.post(() -> webView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY));
         try {
             reply(reply, id, calls.call(leadId, number, args.optString("name")));
         } catch (RuntimeException error) {
