@@ -404,14 +404,87 @@
     });
   }
 
+  // The status and navigation bars take the colours at the very top and bottom
+  // of the page, whatever the site's own light or dark setting. A 1-pixel canvas
+  // turns any CSS colour (oklch included) into #rrggbb; see sxPhone "bars".
+  var probe = document.createElement("canvas").getContext("2d", {
+    willReadFrequently: true,
+  });
+  function opaqueHex(color) {
+    if (!probe || !color) return "";
+    probe.clearRect(0, 0, 1, 1);
+    probe.fillStyle = "rgba(0,0,0,0)";
+    probe.fillStyle = color;
+    probe.fillRect(0, 0, 1, 1);
+    var pixel = probe.getImageData(0, 0, 1, 1).data;
+    if (pixel[3] < 250) return "";
+    return (
+      "#" +
+      [pixel[0], pixel[1], pixel[2]]
+        .map(function (n) {
+          return (n < 16 ? "0" : "") + n.toString(16);
+        })
+        .join("")
+    );
+  }
+  function colourAt(y) {
+    var node = document.elementFromPoint(Math.floor(window.innerWidth / 2), y);
+    for (; node; node = node.parentElement) {
+      var hex = opaqueHex(getComputedStyle(node).backgroundColor);
+      if (hex) return hex;
+    }
+    return "";
+  }
+  var painted = "";
+  function paintBars() {
+    var status = colourAt(1);
+    if (!status) return;
+    var nav = colourAt(window.innerHeight - 2) || status;
+    if (status + nav === painted) return;
+    painted = status + nav;
+    call("bars", { status: status, nav: nav }).catch(function () {
+      painted = "";
+    });
+  }
+  var paintTimer;
+  function schedulePaint() {
+    clearTimeout(paintTimer);
+    paintTimer = setTimeout(paintBars, 120);
+  }
+  new MutationObserver(schedulePaint).observe(document.documentElement, {
+    attributes: true,
+  });
+  if (document.body)
+    new MutationObserver(schedulePaint).observe(document.body, {
+      attributes: true,
+    });
+  ["pushState", "replaceState"].forEach(function (name) {
+    var original = history[name];
+    history[name] = function () {
+      var result = original.apply(this, arguments);
+      schedulePaint();
+      return result;
+    };
+  });
+  window.addEventListener("popstate", schedulePaint);
+  if (window.matchMedia)
+    window
+      .matchMedia("(prefers-color-scheme: dark)")
+      .addEventListener("change", schedulePaint);
+  setInterval(paintBars, 3000);
+
   window.__sxPhone = {
     onNative: function (event) {
       if (event === "launch") continuePick();
-      else refresh();
+      else if (event !== "bars") refresh();
+      // Back in the app, or light/dark mode changed: measure and paint again.
+      painted = "";
+      schedulePaint();
     },
     // "Calls on this phone" in the page's app menu.
     openCalls: openSheet,
   };
 
+  schedulePaint();
   refresh().then(continuePick);
 })();

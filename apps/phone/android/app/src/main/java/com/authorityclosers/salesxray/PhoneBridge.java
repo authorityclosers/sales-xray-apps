@@ -170,6 +170,11 @@ final class PhoneBridge {
                 case "setWatch":
                     setWatch(reply, id, args.optBoolean("on"));
                     break;
+                case "bars":
+                    // The colours at the top and bottom of the page, from sx-phone.js.
+                    SystemBarColors.paint(activity, args.optString("status"), args.optString("nav"));
+                    reply(reply, id, new JSONObject());
+                    break;
                 case "consumeLaunch": {
                     JSONObject result = new JSONObject();
                     result.put("source", launchSource == null ? JSONObject.NULL : launchSource);

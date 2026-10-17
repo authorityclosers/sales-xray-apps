@@ -2,13 +2,13 @@ package com.authorityclosers.salesxray;
 
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Message;
 import android.view.ViewGroup;
-import android.view.Window;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -16,16 +16,12 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import androidx.annotation.NonNull;
-import androidx.core.graphics.ColorUtils;
-import androidx.core.view.WindowCompat;
-import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /** Sales Xray in a Capacitor shell, plus the phone's own call recordings. */
 public class MainActivity extends BridgeActivity {
@@ -41,14 +37,6 @@ public class MainActivity extends BridgeActivity {
             WebViewClient.ERROR_PROXY_AUTHENTICATION
         )
     );
-
-    /** The page's own theme colour for the current light or dark mode. */
-    private static final String THEME_COLOR =
-        "(function(){var m=Array.prototype.filter.call(document.querySelectorAll('meta[name=\"theme-color\"]')," +
-        "function(x){return !x.media||matchMedia(x.media).matches;})[0];return m?m.content:'';})()";
-
-    /** Only a plain #rrggbb or #aarrggbb paints the bars; anything else (no page yet) is skipped. */
-    private static final Pattern HEX_COLOR = Pattern.compile("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?");
 
     private PhoneBridge phone;
     private GoogleSignIn google;
@@ -74,7 +62,6 @@ public class MainActivity extends BridgeActivity {
                     public void onPageFinished(WebView view, String url) {
                         super.onPageFinished(view, url);
                         phone.inject(view, url);
-                        paintSystemBars(view);
                         google.onPageFinished(view, url);
                     }
 
@@ -113,6 +100,15 @@ public class MainActivity extends BridgeActivity {
             }
         );
         google.take(getIntent());
+        // After Capacitor's SystemBars has painted the theme's colours at start-up.
+        webView.post(() -> SystemBarColors.restore(this));
+    }
+
+    @Override
+    public void onConfigurationChanged(@NonNull Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // Light or dark mode changed: Capacitor repainted the bars, so the page measures again.
+        if (phone != null) phone.signal("bars");
     }
 
     @Override
@@ -129,7 +125,6 @@ public class MainActivity extends BridgeActivity {
         super.onResume();
         if (phone != null) phone.onResume();
         if (google != null) google.onResume();
-        if (getBridge() != null) paintSystemBars(getBridge().getWebView());
     }
 
     @Override
@@ -199,23 +194,5 @@ public class MainActivity extends BridgeActivity {
         ((ViewGroup) window.getParent()).removeView(window);
         google.signInWindowClosed(window);
         window.destroy();
-    }
-
-    /** Status and navigation bars take the page's colour, so the app reads as one surface. */
-    private void paintSystemBars(WebView view) {
-        if (view == null) return;
-        view.evaluateJavascript(THEME_COLOR, value -> {
-            // Before the page loads the answer is "" (or null): leave the bars as they are.
-            String hex = value == null ? "" : value.replace("\"", "").trim();
-            if (!HEX_COLOR.matcher(hex).matches()) return;
-            int color = Color.parseColor(hex);
-            Window window = getWindow();
-            window.setStatusBarColor(color);
-            window.setNavigationBarColor(color);
-            boolean light = ColorUtils.calculateLuminance(color) > 0.5;
-            WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(window, window.getDecorView());
-            bars.setAppearanceLightStatusBars(light);
-            bars.setAppearanceLightNavigationBars(light);
-        });
     }
 }
