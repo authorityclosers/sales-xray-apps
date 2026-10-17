@@ -463,6 +463,7 @@
     history[name] = function () {
       var result = original.apply(this, arguments);
       schedulePaint();
+      dropAlertsWhenSignedOut();
       return result;
     };
   });
@@ -473,8 +474,20 @@
       .addEventListener("change", schedulePaint);
   setInterval(paintBars, 3000);
 
+  // A signed-out phone drops its lead-alert address, so no alert reaches it.
+  var signInPaths = /^\/(login|register|auth)(\/|$)/;
+  function dropAlertsWhenSignedOut() {
+    if (signInPaths.test(location.pathname)) call("pushReset").catch(function () {});
+  }
+
   window.__sxPhone = {
     onNative: function (event) {
+      // The page listens too: "resume" refreshes the Leads desk, "alert" as well.
+      try {
+        window.dispatchEvent(
+          new CustomEvent("sx-phone", { detail: { event: event } }),
+        );
+      } catch (error) {}
       if (event === "launch") continuePick();
       else if (event !== "bars") refresh();
       // Back in the app, or light/dark mode changed: measure and paint again.
@@ -486,5 +499,6 @@
   };
 
   schedulePaint();
+  dropAlertsWhenSignedOut();
   refresh().then(continuePick);
 })();

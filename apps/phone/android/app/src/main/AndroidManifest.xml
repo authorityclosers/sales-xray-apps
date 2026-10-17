@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <application
+        android:name=".SalesXrayApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="${appLabel}"
@@ -33,6 +34,15 @@
 
         </activity>
 
+        <!-- Lead alerts from Sales Xray (Firebase Cloud Messaging; LeadAlerts.java). -->
+        <service
+            android:name=".LeadAlertService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -58,6 +68,6 @@
     <!-- Download builds only: Play allows call history just for default phone apps. -->
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
-    <!-- "Tell me about new recordings". -->
+    <!-- "Tell me about new recordings", and lead alerts. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

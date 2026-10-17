@@ -71,6 +71,9 @@ dependencies {
     implementation "androidx.work:work-runtime:2.10.0"
     // Google sign-in opens in a Chrome Custom Tab: Google refuses web views.
     implementation "androidx.browser:browser:1.8.0"
+    // Lead alerts. Firebase starts with settings Sales Xray sends at run time
+    // (LeadAlerts.java), so no google-services.json is needed or kept here.
+    implementation "com.google.firebase:firebase-messaging:24.1.2"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

@@ -20,6 +20,7 @@ import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
 import java.util.Arrays;
+import org.json.JSONObject;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -40,6 +41,9 @@ public class MainActivity extends BridgeActivity {
 
     private PhoneBridge phone;
     private GoogleSignIn google;
+    /** A lead to open from an alert (a /leads path), once the page is there. */
+    private String pendingOpen;
+    private boolean pageReady;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -49,6 +53,7 @@ public class MainActivity extends BridgeActivity {
         google = new GoogleSignIn(this, webView);
         phone.attach();
         phone.takeLaunch(getIntent());
+        takeOpen(getIntent());
         getBridge()
             .setWebViewClient(
                 new BridgeWebViewClient(getBridge()) {
@@ -63,6 +68,9 @@ public class MainActivity extends BridgeActivity {
                         super.onPageFinished(view, url);
                         phone.inject(view, url);
                         google.onPageFinished(view, url);
+                        Uri page = Uri.parse(url);
+                        pageReady = "https".equals(page.getScheme()) && PhoneBridge.HOSTS.contains(page.getHost());
+                        deliverOpen();
                     }
 
                     @Override
@@ -118,6 +126,8 @@ public class MainActivity extends BridgeActivity {
         phone.takeLaunch(intent);
         phone.signal("launch");
         google.take(intent);
+        takeOpen(intent);
+        deliverOpen();
     }
 
     @Override
@@ -137,6 +147,23 @@ public class MainActivity extends BridgeActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (phone != null) phone.onPermissionResult(requestCode);
+    }
+
+    private void takeOpen(Intent intent) {
+        if (intent == null) return;
+        String path = intent.getStringExtra(LeadAlerts.EXTRA_OPEN);
+        intent.removeExtra(LeadAlerts.EXTRA_OPEN);
+        if (path != null && path.startsWith("/leads")) pendingOpen = path;
+    }
+
+    /** Opens the alert's lead in the page (a fresh mark each time, so the same lead opens again). */
+    private void deliverOpen() {
+        if (pendingOpen == null || !pageReady) return;
+        String path = pendingOpen + (pendingOpen.contains("#") ? "&" : "#") + "n=" + System.currentTimeMillis();
+        pendingOpen = null;
+        Uri parsed = Uri.parse("https://x" + path.replace('#', '?'));
+        LeadAlerts.clear(this, parsed.getQueryParameter("lead"));
+        getBridge().getWebView().evaluateJavascript("location.assign(" + JSONObject.quote(path) + ")", null);
     }
 
     /**

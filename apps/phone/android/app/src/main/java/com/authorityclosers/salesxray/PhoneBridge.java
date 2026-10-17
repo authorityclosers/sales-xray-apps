@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat;
 import androidx.webkit.JavaScriptReplyProxy;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
+import com.google.firebase.messaging.FirebaseMessaging;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -48,6 +49,10 @@ final class PhoneBridge {
     private static final int REQUEST_AUDIO = 7101;
     private static final int REQUEST_NOTIFY = 7102;
     private static final int REQUEST_CALL = 7103;
+    private static final int REQUEST_PUSH = 7104;
+
+    /** The bridge of the open app, for signals from outside the page (lead alerts). */
+    private static volatile PhoneBridge active;
     private static final int CHUNK = 512 * 1024;
 
     private final AppCompatActivity activity;
@@ -61,6 +66,8 @@ final class PhoneBridge {
     /** The page that spoke last: a call's result is sent there. */
     private JavaScriptReplyProxy events;
     private final CallTracker calls;
+    private JavaScriptReplyProxy pushReply;
+    private String pushId;
 
     PhoneBridge(AppCompatActivity activity, WebView webView) {
         this.activity = activity;
@@ -91,7 +98,13 @@ final class PhoneBridge {
         });
     }
 
+    static void signalActive(String event) {
+        PhoneBridge bridge = active;
+        if (bridge != null) bridge.signal(event);
+    }
+
     void attach() {
+        active = this;
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return;
         Set<String> origins = new HashSet<>();
         for (String host : HOSTS) origins.add("https://" + host);
@@ -122,6 +135,14 @@ final class PhoneBridge {
     }
 
     void onPermissionResult(int requestCode) {
+        if (requestCode == REQUEST_PUSH && pushReply != null) {
+            JavaScriptReplyProxy reply = pushReply;
+            String id = pushId;
+            pushReply = null;
+            pushId = null;
+            fetchToken(reply, id);
+            return;
+        }
         if ((requestCode == REQUEST_AUDIO || requestCode == REQUEST_NOTIFY || requestCode == REQUEST_CALL) && pendingReply != null) {
             if (requestCode == REQUEST_NOTIFY) RecordingWatchWorker.setWatching(activity, true);
             reply(pendingReply, pendingId, status());
@@ -170,6 +191,20 @@ final class PhoneBridge {
                 case "setWatch":
                     setWatch(reply, id, args.optBoolean("on"));
                     break;
+                case "haptic":
+                    haptic(args.optString("kind"));
+                    reply(reply, id, new JSONObject());
+                    break;
+                case "pushStatus":
+                    reply(reply, id, pushState());
+                    break;
+                case "pushEnable":
+                    pushEnable(reply, id, args);
+                    break;
+                case "pushReset":
+                    pushReset();
+                    reply(reply, id, pushState());
+                    break;
                 case "bars":
                     // The colours at the top and bottom of the page, from sx-phone.js.
                     SystemBarColors.paint(activity, args.optString("status"), args.optString("nav"));
@@ -202,6 +237,7 @@ final class PhoneBridge {
             status.put("watching", RecordingWatchWorker.watching(activity));
             status.put("calling", true);
             status.put("callAccess", CallTracker.hasCallAccess(activity));
+            status.put("push", true);
             status.put("version", versionName());
         } catch (JSONException ignored) {}
         return status;
@@ -256,6 +292,75 @@ final class PhoneBridge {
             reply(reply, id, calls.call(leadId, number, args.optString("name")));
         } catch (RuntimeException error) {
             fail(reply, id, "call_failed");
+        }
+    }
+
+    /** A light buzz: a tick on a swipe, a press on a long hold, done on a save. */
+    private void haptic(String kind) {
+        int effect = HapticFeedbackConstants.KEYBOARD_TAP;
+        if ("press".equals(kind)) effect = HapticFeedbackConstants.LONG_PRESS;
+        else if ("done".equals(kind)) effect = Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.VIRTUAL_KEY;
+        final int chosen = effect;
+        main.post(() -> webView.performHapticFeedback(chosen));
+    }
+
+    private JSONObject pushState() {
+        JSONObject state = new JSONObject();
+        try {
+            state.put("supported", true);
+            state.put("allowed", LeadAlerts.allowed(activity));
+            String token = LeadAlerts.token(activity);
+            state.put("token", token == null ? JSONObject.NULL : token);
+        } catch (JSONException ignored) {}
+        return state;
+    }
+
+    /** Lead alerts on: start Firebase with Sales Xray's settings, ask to notify once, get the address. */
+    private void pushEnable(JavaScriptReplyProxy reply, String id, JSONObject config) {
+        if (!LeadAlerts.configure(activity, config)) {
+            fail(reply, id, "push_config");
+            return;
+        }
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pushReply = reply;
+            pushId = id;
+            ActivityCompat.requestPermissions(activity, new String[] { Manifest.permission.POST_NOTIFICATIONS }, REQUEST_PUSH);
+            return;
+        }
+        fetchToken(reply, id);
+    }
+
+    private void fetchToken(JavaScriptReplyProxy reply, String id) {
+        if (!LeadAlerts.allowed(activity) || !LeadAlerts.init(activity)) {
+            reply(reply, id, pushState());
+            return;
+        }
+        try {
+            FirebaseMessaging messaging = FirebaseMessaging.getInstance();
+            messaging.setAutoInitEnabled(true);
+            messaging
+                .getToken()
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful() && task.getResult() != null) LeadAlerts.saveToken(activity, task.getResult());
+                    reply(reply, id, pushState());
+                });
+        } catch (RuntimeException error) {
+            fail(reply, id, "push_unavailable");
+        }
+    }
+
+    /** Signed out on this phone: drop its alert address, so no alert reaches it. */
+    private void pushReset() {
+        if (LeadAlerts.token(activity) == null) return;
+        LeadAlerts.forget(activity);
+        if (!LeadAlerts.init(activity)) return;
+        try {
+            FirebaseMessaging.getInstance().deleteToken();
+        } catch (RuntimeException ignored) {
+            // Firebase isn't running; the server drops the address on its next failed send.
         }
     }
 
