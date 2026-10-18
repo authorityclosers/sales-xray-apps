@@ -91,7 +91,7 @@ jobs:
         working-directory: apps/phone/android
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
-        run: ./gradlew --no-daemon --stacktrace assembleDebugAndroidTest -PsxDev
+        run: ./gradlew --no-daemon --stacktrace :app:assembleDebugAndroidTest -PsxDev
       - name: Keep Sales Xray Dev
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk "dist/sales-xray-dev-android-0.3.${{ github.run_number }}-test.apk"
