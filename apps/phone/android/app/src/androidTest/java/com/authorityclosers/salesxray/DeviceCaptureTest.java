@@ -139,6 +139,36 @@ public class DeviceCaptureTest {
         assertTrue(mine.loadDescription(context.getPackageManager()).contains("does not read your screen"));
     }
 
+    /**
+     * After a call (the emulator's `adb emu gsm call/accept/cancel`, or the Dev
+     * build's simulated call on a phone without a SIM): the recorder made one
+     * file, tagged "accessibility", that lists and reads back. Runs only when
+     * the caller passes -e expectCall <phone|simulated>.
+     */
+    @Test
+    public void aCallWasRecordedByTheRecorder() throws Exception {
+        String expect = InstrumentationRegistry.getArguments().getString("expectCall");
+        org.junit.Assume.assumeTrue("run with -e expectCall phone|simulated", expect != null);
+        Context context = context();
+        JSONObject status = CallRecorderService.status(context);
+        Log.i(TAG, "after call " + status);
+        assertTrue(status.getBoolean("wanted"));
+        assertTrue(status.getBoolean("enabled"));
+        String source = status.getString("last");
+        assertTrue(source.startsWith("app:" + CallRecorderService.PREFIX));
+        if ("simulated".equals(expect)) assertTrue(source.contains("(simulated)"));
+        JSONObject listed = null;
+        for (JSONObject item : RecordingScanner.list(context, 500)) if (source.equals(item.optString("source"))) listed = item;
+        Log.i(TAG, "call recording listed " + listed);
+        assertNotNull(listed);
+        assertEquals("accessibility", listed.getString("captured"));
+        try (InputStream stream = RecordingScanner.open(context, source)) {
+            byte[] bytes = readAll(stream);
+            Log.i(TAG, "call recording bytes " + bytes.length);
+            assertEquals("ftyp", new String(bytes, 4, 4, "US-ASCII"));
+        }
+    }
+
     @Test
     public void refusesToReadOutsideTheRecordingFolders() {
         for (String source : new String[] { "app:../../shared_prefs/sx_call_log.xml", "file:/sdcard/DCIM/x.jpg", "media:content://contacts/people/1" }) {
