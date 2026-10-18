@@ -184,8 +184,14 @@ final class LeadAlerts {
         }
     }
 
-    /** A small JSON read on the seller's session (the web view's cookies), or null. */
+    /** The words for a lead alert, or null. */
     private static JSONObject read(String address) {
+        JSONObject words = readJson(address);
+        return words == null || words.optString("title").isEmpty() ? null : words;
+    }
+
+    /** A small JSON read on the signed-in person's session (the web view's cookies), or null. */
+    static JSONObject readJson(String address) {
         HttpURLConnection connection = null;
         try {
             String cookies = CookieManager.getInstance().getCookie(address);
@@ -207,8 +213,7 @@ final class LeadAlerts {
                     out.write(buffer, 0, count);
                     total += count;
                 }
-                JSONObject words = new JSONObject(out.toString(StandardCharsets.UTF_8.name()));
-                return words.optString("title").isEmpty() ? null : words;
+                return new JSONObject(out.toString(StandardCharsets.UTF_8.name()));
             }
         } catch (Exception error) {
             return null;

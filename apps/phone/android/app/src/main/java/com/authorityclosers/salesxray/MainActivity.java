@@ -41,7 +41,7 @@ public class MainActivity extends BridgeActivity {
 
     private PhoneBridge phone;
     private GoogleSignIn google;
-    /** A lead to open from an alert (a /leads path), once the page is there. */
+    /** A lead or Report to open from an alert (a /leads or /review path), once the page is there. */
     private String pendingOpen;
     private boolean pageReady;
 
@@ -155,16 +155,17 @@ public class MainActivity extends BridgeActivity {
         if (intent == null) return;
         String path = intent.getStringExtra(LeadAlerts.EXTRA_OPEN);
         intent.removeExtra(LeadAlerts.EXTRA_OPEN);
-        if (path != null && path.startsWith("/leads")) pendingOpen = path;
+        if (path != null && (path.startsWith("/leads") || ReviewAlertRules.isPath(path))) pendingOpen = path;
     }
 
-    /** Opens the alert's lead in the page (a fresh mark each time, so the same lead opens again). */
+    /** Opens the alert's lead or Report in the page (a fresh mark each time, so the same one opens again). */
     private void deliverOpen() {
         if (pendingOpen == null || !pageReady) return;
         String path = pendingOpen + (pendingOpen.contains("#") ? "&" : "#") + "n=" + System.currentTimeMillis();
         pendingOpen = null;
         Uri parsed = Uri.parse("https://x" + path.replace('#', '?'));
-        LeadAlerts.clear(this, parsed.getQueryParameter("lead"));
+        if (ReviewAlertRules.isPath(path)) ReviewAlerts.clear(this);
+        else LeadAlerts.clear(this, parsed.getQueryParameter("lead"));
         getBridge().getWebView().evaluateJavascript("location.assign(" + JSONObject.quote(path) + ")", null);
     }
 

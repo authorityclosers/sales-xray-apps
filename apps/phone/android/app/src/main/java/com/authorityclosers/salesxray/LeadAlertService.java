@@ -5,20 +5,27 @@ import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 import java.util.Map;
 
-/** Receives Sales Xray's lead alerts from Firebase Cloud Messaging. */
+/** Receives Sales Xray's lead alerts and review alerts from Firebase Cloud Messaging. */
 public class LeadAlertService extends FirebaseMessagingService {
 
     @Override
     public void onMessageReceived(@NonNull RemoteMessage message) {
         Map<String, String> data = message.getData();
-        if (!"lead_desk".equals(data.get("type"))) return;
-        int waiting = 0;
-        try {
-            waiting = Integer.parseInt(data.getOrDefault("count", "0"));
-        } catch (NumberFormatException ignored) {
-            // A bad count shows no number.
+        String type = data.get("type");
+        if ("gold_review".equals(type)) {
+            ReviewAlerts.show(getApplicationContext(), data.get("kind"), data.get("assignment"), count(data));
+            return;
         }
-        LeadAlerts.show(getApplicationContext(), data.get("kind"), data.get("lead"), waiting);
+        if (!"lead_desk".equals(type)) return;
+        LeadAlerts.show(getApplicationContext(), data.get("kind"), data.get("lead"), count(data));
+    }
+
+    private static int count(Map<String, String> data) {
+        try {
+            return Integer.parseInt(data.getOrDefault("count", "0"));
+        } catch (NumberFormatException ignored) {
+            return 0; // A bad count shows no number.
+        }
     }
 
     @Override
