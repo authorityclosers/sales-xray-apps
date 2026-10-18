@@ -109,6 +109,7 @@ final class RecorderProfile {
             status.put("newestMs", newest > 0 ? newest : JSONObject.NULL);
             status.put("otherDialers", otherDialers(context, dialer, family));
             status.put("appRecorder", AppRecorder.state(context));
+            status.put("callRecorder", CallRecorderService.status(context));
         } catch (JSONException ignored) {}
         return status;
     }

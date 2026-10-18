@@ -225,9 +225,11 @@ final class RecordingScanner {
             if (!file.isFile() || file.length() == 0 || !AUDIO.contains(extension(file.getName()))) continue;
             if (!seen.add(file.getName().toLowerCase(Locale.ROOT) + ":" + file.length())) continue;
             JSONObject entry = item("app:" + file.getName(), file.getName(), "Sales Xray", file.lastModified(), 0, file.length(), null);
+            boolean call = file.getName().startsWith(CallRecorderService.PREFIX);
             try {
-                entry.put("title", "Recorded in Sales Xray");
+                entry.put("title", call ? "Call recorded by Sales Xray" : "Recorded in Sales Xray");
                 entry.put("inApp", true);
+                entry.put("captured", call ? "accessibility" : "in_app");
             } catch (JSONException ignored) {}
             found.add(entry);
         }
@@ -247,6 +249,9 @@ final class RecordingScanner {
             json.put("ext", ext);
             json.put("mime", mime != null ? mime : mimeFor(ext));
             json.put("supported", SUPPORTED.contains(ext));
+            // How it was captured, so quality can be compared (CEO 19 Oct): the phone's own
+            // dialer here; "accessibility" or "in_app" for Sales Xray's own files (fromApp).
+            json.put("captured", "dialer");
         } catch (JSONException ignored) {}
         return json;
     }

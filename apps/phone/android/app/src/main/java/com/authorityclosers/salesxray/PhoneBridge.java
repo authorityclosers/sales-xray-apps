@@ -318,6 +318,35 @@ final class PhoneBridge {
                 case "recordState":
                     reply(reply, id, AppRecorder.state(activity));
                     break;
+                case "callRecorderStatus":
+                    reply(reply, id, CallRecorderService.status(activity));
+                    break;
+                case "callRecorderSet":
+                    // The in-app switch; Android's Accessibility switch is the seller's own tap.
+                    CallRecorderService.setWanted(activity, args.optBoolean("on"));
+                    reply(reply, id, CallRecorderService.status(activity));
+                    break;
+                case "callRecorderConsent":
+                    CallRecorderService.consentShown(activity);
+                    reply(reply, id, CallRecorderService.status(activity));
+                    break;
+                case "callRecorderOpen": {
+                    // "accessibility": Android's list, where the seller turns the recorder on;
+                    // "appInfo": App info, for "Allow restricted settings" on sideloaded apps.
+                    String what = args.optString("what");
+                    Intent intent = "appInfo".equals(what)
+                        ? new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + activity.getPackageName()))
+                        : new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                    boolean opened;
+                    try {
+                        activity.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        opened = true;
+                    } catch (RuntimeException error) {
+                        opened = false;
+                    }
+                    reply(reply, id, new JSONObject().put("opened", opened));
+                    break;
+                }
                 case "consumeLaunch": {
                     JSONObject result = new JSONObject();
                     result.put("source", launchSource == null ? JSONObject.NULL : launchSource);
