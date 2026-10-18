@@ -56,6 +56,37 @@ final class CallLogRules {
         return rangOut ? "no_answer" : "unknown";
     }
 
+    /**
+     * The phone's family for the setup steps (UX study item 7), from Android's
+     * maker and brand: Redmi and POCO are Xiaomi, iQOO is vivo.
+     */
+    static String family(String manufacturer, String brand) {
+        String name = ((manufacturer == null ? "" : manufacturer) + " " + (brand == null ? "" : brand)).toLowerCase(Locale.ROOT);
+        if (name.contains("xiaomi") || name.contains("redmi") || name.contains("poco")) return "xiaomi";
+        if (name.contains("samsung")) return "samsung";
+        if (name.contains("vivo") || name.contains("iqoo")) return "vivo";
+        if (name.contains("realme")) return "realme";
+        if (name.contains("oppo")) return "oppo";
+        if (name.contains("oneplus")) return "oneplus";
+        if (name.contains("huawei") || name.contains("honor")) return "huawei";
+        return "other";
+    }
+
+    /** Brands that stop apps in the background unless "Autostart" is allowed for them. */
+    static boolean hasAutostart(String family) {
+        switch (family) {
+            case "xiaomi":
+            case "vivo":
+            case "oppo":
+            case "realme":
+            case "oneplus":
+            case "huawei":
+                return true;
+            default:
+                return false;
+        }
+    }
+
     static String digits(String raw) {
         return raw == null ? "" : raw.replaceAll("\\D", "");
     }

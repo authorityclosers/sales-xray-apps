@@ -51,6 +51,7 @@ final class PhoneBridge {
     private static final int REQUEST_CALL = 7103;
     private static final int REQUEST_PUSH = 7104;
     private static final int REQUEST_LOG = 7105;
+    private static final int REQUEST_ALERTS = 7106;
 
     /** The bridge of the open app, for signals from outside the page (lead alerts). */
     private static volatile PhoneBridge active;
@@ -156,6 +157,14 @@ final class PhoneBridge {
             fetchToken(reply, id);
             return;
         }
+        if (requestCode == REQUEST_ALERTS && pendingReply != null) {
+            JavaScriptReplyProxy reply = pendingReply;
+            String id = pendingId;
+            pendingReply = null;
+            pendingId = null;
+            io.execute(() -> reply(reply, id, setupStatus()));
+            return;
+        }
         if ((requestCode == REQUEST_AUDIO || requestCode == REQUEST_NOTIFY || requestCode == REQUEST_CALL) && pendingReply != null) {
             if (requestCode == REQUEST_NOTIFY) RecordingWatchWorker.setWatching(activity, true);
             reply(pendingReply, pendingId, status());
@@ -229,6 +238,26 @@ final class PhoneBridge {
                     io.execute(() -> reply(reply, asked, CallLogSync.run(activity)));
                     break;
                 }
+                case "setupStatus": {
+                    String asked = id;
+                    io.execute(() -> reply(reply, asked, setupStatus()));
+                    break;
+                }
+                case "setupOpen": {
+                    JSONObject result = new JSONObject();
+                    result.put("opened", PhoneSetup.open(activity, args.optString("what")));
+                    reply(reply, id, result);
+                    break;
+                }
+                case "setupMark": {
+                    PhoneSetup.mark(activity, args.optString("what"), args.optBoolean("done"));
+                    String asked = id;
+                    io.execute(() -> reply(reply, asked, setupStatus()));
+                    break;
+                }
+                case "requestNotifications":
+                    requestNotifications(reply, id);
+                    break;
                 case "bars":
                     // The colours at the top and bottom of the page, from sx-phone.js.
                     SystemBarColors.paint(activity, args.optString("status"), args.optString("nav"));
@@ -263,6 +292,7 @@ final class PhoneBridge {
             status.put("callAccess", CallTracker.hasCallAccess(activity));
             status.put("push", true);
             status.put("callLog", true);
+            status.put("setup", true);
             status.put("version", versionName());
         } catch (JSONException ignored) {}
         return status;
@@ -387,6 +417,34 @@ final class PhoneBridge {
         } catch (RuntimeException ignored) {
             // Firebase isn't running; the server drops the address on its next failed send.
         }
+    }
+
+    /** The phone setup checklist (UX study item 7), with this app's version. */
+    private JSONObject setupStatus() {
+        JSONObject status = PhoneSetup.status(activity);
+        try {
+            status.put("version", versionName());
+        } catch (JSONException ignored) {}
+        return status;
+    }
+
+    /** Notifications alone (lead alerts and new recordings use them); older Android opens the settings. */
+    private void requestNotifications(JavaScriptReplyProxy reply, String id) {
+        if (PhoneSetup.notificationsAllowed(activity)) {
+            io.execute(() -> reply(reply, id, setupStatus()));
+            return;
+        }
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingReply = reply;
+            pendingId = id;
+            ActivityCompat.requestPermissions(activity, new String[] { Manifest.permission.POST_NOTIFICATIONS }, REQUEST_ALERTS);
+            return;
+        }
+        PhoneSetup.open(activity, "notifications");
+        io.execute(() -> reply(reply, id, setupStatus()));
     }
 
     /** Work calls logged by themselves (UX study item 5): call history access is asked for once. */

@@ -79,6 +79,22 @@ public class CallLogRulesTest {
     }
 
     @Test
+    public void phonesAreGroupedForTheSetupSteps() {
+        assertEquals("xiaomi", CallLogRules.family("Xiaomi", "Redmi"));
+        assertEquals("xiaomi", CallLogRules.family("Xiaomi", "POCO"));
+        assertEquals("samsung", CallLogRules.family("samsung", "samsung"));
+        assertEquals("vivo", CallLogRules.family("vivo", "iQOO"));
+        assertEquals("realme", CallLogRules.family("realme", "realme"));
+        assertEquals("oppo", CallLogRules.family("OPPO", "OPPO"));
+        assertEquals("other", CallLogRules.family("Google", "google"));
+        assertEquals("other", CallLogRules.family(null, null));
+        assertTrue(CallLogRules.hasAutostart("xiaomi"));
+        assertTrue(CallLogRules.hasAutostart("vivo"));
+        assertFalse(CallLogRules.hasAutostart("samsung"));
+        assertFalse(CallLogRules.hasAutostart("other"));
+    }
+
+    @Test
     public void timesGoOutInUtc() {
         assertEquals("2025-10-09T08:53:20.000Z", CallLogRules.iso(1_760_000_000_000L));
     }

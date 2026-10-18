@@ -176,6 +176,8 @@ final class CallTracker {
         bringBack();
         JSONObject recording = findRecording(call);
         put(call, "recording", recording == null ? JSONObject.NULL : recording);
+        // Recording works end to end: the setup checklist ticks its test call.
+        if (recording != null) PhoneSetup.testCallRecorded(activity);
         put(call, "final", true);
         if (!keep(call)) return;
         synchronized (this) {
