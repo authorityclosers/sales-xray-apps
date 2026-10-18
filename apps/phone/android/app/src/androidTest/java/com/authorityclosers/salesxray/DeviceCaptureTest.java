@@ -169,6 +169,45 @@ public class DeviceCaptureTest {
         }
     }
 
+    /**
+     * An internet call (WhatsApp, Meet, Telegram) puts the phone in "in
+     * communication" mode; this test does the same for six seconds and checks
+     * the recorder made one "(internet call)" file tagged "accessibility".
+     * Runs only with -e expectCall voip, with the recorder on in Accessibility.
+     */
+    @Test
+    public void anInternetCallIsRecorded() throws Exception {
+        String expect = InstrumentationRegistry.getArguments().getString("expectCall");
+        org.junit.Assume.assumeTrue("run with -e expectCall voip", "voip".equals(expect));
+        Context context = context();
+        assertTrue("turn the recorder on in Accessibility first", CallRecorderService.enabledInSettings(context));
+        CallRecorderService.setWanted(context, true);
+        String before = CallRecorderService.status(context).optString("last");
+        android.media.AudioManager audio = context.getSystemService(android.media.AudioManager.class);
+        audio.setMode(android.media.AudioManager.MODE_IN_COMMUNICATION);
+        try {
+            Thread.sleep(6000);
+        } finally {
+            audio.setMode(android.media.AudioManager.MODE_NORMAL);
+        }
+        JSONObject status = CallRecorderService.status(context);
+        for (int i = 0; i < 50 && status.optString("last").equals(before); i++) {
+            Thread.sleep(100);
+            status = CallRecorderService.status(context);
+        }
+        Log.i(TAG, "after internet call " + status);
+        String source = status.getString("last");
+        assertTrue(source, source.startsWith("app:" + CallRecorderService.PREFIX) && source.contains("(internet call)"));
+        JSONObject listed = null;
+        for (JSONObject item : RecordingScanner.list(context, 500)) if (source.equals(item.optString("source"))) listed = item;
+        Log.i(TAG, "internet call listed " + listed);
+        assertNotNull(listed);
+        assertEquals("accessibility", listed.getString("captured"));
+        try (InputStream stream = RecordingScanner.open(context, source)) {
+            assertEquals("ftyp", new String(readAll(stream), 4, 4, "US-ASCII"));
+        }
+    }
+
     @Test
     public void refusesToReadOutsideTheRecordingFolders() {
         for (String source : new String[] { "app:../../shared_prefs/sx_call_log.xml", "file:/sdcard/DCIM/x.jpg", "media:content://contacts/people/1" }) {

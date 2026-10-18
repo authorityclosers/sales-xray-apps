@@ -43,3 +43,8 @@ adb shell am instrument -w -e class com.authorityclosers.salesxray.DeviceCapture
   -e expectCall phone "$P.test/androidx.test.runner.AndroidJUnitRunner" | tee instrument.txt
 adb logcat -d -s SXTEST:I | tail -20
 grep -q "^OK (1 test)" instrument.txt
+
+# An internet call: the phone in "in communication" mode (what WhatsApp, Meet and Telegram set).
+adb shell am instrument -w -e class com.authorityclosers.salesxray.DeviceCaptureTest#anInternetCallIsRecorded   -e expectCall voip "$P.test/androidx.test.runner.AndroidJUnitRunner" | tee voip.txt
+adb logcat -d -s SXTEST:I | tail -6
+grep -q "^OK (1 test)" voip.txt
