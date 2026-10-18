@@ -9,13 +9,17 @@ P=com.authorityclosers.salesxray.dev
 # An Android 13 emulator from the runner's own SDK (only GitHub-owned actions are allowed here).
 sdk=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
 image="system-images;android-33;google_apis;x86_64"
+# "yes" ends on a closed pipe (SIGPIPE) once the licences are accepted: not a failure.
+set +o pipefail
 yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" --install emulator platform-tools "$image" >/dev/null
+set -o pipefail
 echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n sx -k "$image" --force >/dev/null
 "$sdk/emulator/emulator" -avd sx -no-window -no-snapshot -no-boot-anim -gpu swiftshader_indirect -camera-back none -camera-front none >emulator.log 2>&1 &
 export PATH="$sdk/platform-tools:$PATH"
 adb wait-for-device
 for _ in $(seq 1 120); do
-  [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '')" = "1" ] && break
+  [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '
+')" = "1" ] && break
   sleep 3
 done
 adb shell getprop ro.build.version.release
