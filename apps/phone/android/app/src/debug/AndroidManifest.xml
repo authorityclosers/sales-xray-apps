@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Debug builds only: the simulated call for phones without a SIM (SimulateCallReceiver). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- For SimulateCallReceiver's voip-start/voip-end: setMode needs it. Debug builds only. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <application>
         <receiver
             android:name="com.authorityclosers.salesxray.SimulateCallReceiver"

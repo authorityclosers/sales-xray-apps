@@ -49,16 +49,12 @@ adb emu gsm accept 5551234
 sleep 10
 adb emu gsm cancel 5551234
 sleep 6
-adb shell am instrument -w -e class com.authorityclosers.salesxray.DeviceCaptureTest#aCallWasRecordedByTheRecorder \
-  -e expectCall phone "$P.test/androidx.test.runner.AndroidJUnitRunner" | tee instrument.txt
-adb logcat -d -s SXTEST:I | tail -20
-grep -q "^OK (1 test)" instrument.txt
-
 # An internet call: the phone in "in communication" mode (what WhatsApp, Meet and Telegram set).
 adb shell am broadcast -n "$P/com.authorityclosers.salesxray.SimulateCallReceiver" -e state voip-start
 sleep 8
 adb shell am broadcast -n "$P/com.authorityclosers.salesxray.SimulateCallReceiver" -e state voip-end
 sleep 4
-adb shell am instrument -w -e class com.authorityclosers.salesxray.DeviceCaptureTest#anInternetCallIsRecorded   -e expectCall voip "$P.test/androidx.test.runner.AndroidJUnitRunner" | tee voip.txt
-adb logcat -d -s SXTEST:I | tail -6
-grep -q "^OK (1 test)" voip.txt
+# One check after both calls (starting a test stops the app, and with it the recorder).
+adb shell am instrument -w -e class "com.authorityclosers.salesxray.DeviceCaptureTest#aCallWasRecordedByTheRecorder,com.authorityclosers.salesxray.DeviceCaptureTest#anInternetCallIsRecorded"   -e expectCall phone,voip "$P.test/androidx.test.runner.AndroidJUnitRunner" | tee instrument.txt
+adb logcat -d -s SXTEST:I | tail -20
+grep -q "^OK (2 tests)" instrument.txt

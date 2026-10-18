@@ -145,20 +145,30 @@ public class DeviceCaptureTest {
      * file, tagged "accessibility", that lists and reads back. Runs only when
      * the caller passes -e expectCall <phone|simulated>.
      */
+    /** The newest recording the call recorder made whose name has {@code marker} ("" = a SIM call). */
+    private JSONObject newestCallRecording(String marker) {
+        for (JSONObject item : RecordingScanner.list(context(), 500)) {
+            if (!"accessibility".equals(item.optString("captured"))) continue;
+            String name = item.optString("name");
+            boolean sim = !name.contains("(");
+            if (marker.isEmpty() ? sim : name.contains(marker)) return item;
+        }
+        return null;
+    }
+
     @Test
     public void aCallWasRecordedByTheRecorder() throws Exception {
         String expect = InstrumentationRegistry.getArguments().getString("expectCall");
-        org.junit.Assume.assumeTrue("run with -e expectCall phone|simulated", expect != null);
+        org.junit.Assume.assumeTrue("run with -e expectCall phone|simulated[,voip]", expect != null && (expect.contains("phone") || expect.contains("simulated")));
         Context context = context();
         JSONObject status = CallRecorderService.status(context);
         Log.i(TAG, "after call " + status);
         assertTrue(status.getBoolean("wanted"));
         assertTrue(status.getBoolean("enabled"));
-        String source = status.getString("last");
+        JSONObject listed = newestCallRecording(expect.contains("simulated") ? "(simulated)" : "");
+        assertNotNull("no call recording listed", listed);
+        String source = listed.getString("source");
         assertTrue(source.startsWith("app:" + CallRecorderService.PREFIX));
-        if ("simulated".equals(expect)) assertTrue(source.contains("(simulated)"));
-        JSONObject listed = null;
-        for (JSONObject item : RecordingScanner.list(context, 500)) if (source.equals(item.optString("source"))) listed = item;
         Log.i(TAG, "call recording listed " + listed);
         assertNotNull(listed);
         assertEquals("accessibility", listed.getString("captured"));
@@ -179,14 +189,13 @@ public class DeviceCaptureTest {
     @Test
     public void anInternetCallIsRecorded() throws Exception {
         String expect = InstrumentationRegistry.getArguments().getString("expectCall");
-        org.junit.Assume.assumeTrue("run with -e expectCall voip", "voip".equals(expect));
+        org.junit.Assume.assumeTrue("run with -e expectCall ...,voip", expect != null && expect.contains("voip"));
         Context context = context();
         JSONObject status = CallRecorderService.status(context);
         Log.i(TAG, "after internet call " + status);
-        String source = status.getString("last");
-        assertTrue(source, source.startsWith("app:" + CallRecorderService.PREFIX) && source.contains("(internet call)"));
-        JSONObject listed = null;
-        for (JSONObject item : RecordingScanner.list(context, 500)) if (source.equals(item.optString("source"))) listed = item;
+        JSONObject listed = newestCallRecording("(internet call)");
+        assertNotNull("no internet-call recording listed", listed);
+        String source = listed.getString("source");
         Log.i(TAG, "internet call listed " + listed);
         assertNotNull(listed);
         assertEquals("accessibility", listed.getString("captured"));
