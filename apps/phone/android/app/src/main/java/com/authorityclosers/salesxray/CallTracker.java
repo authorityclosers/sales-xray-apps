@@ -11,7 +11,10 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.CallLog;
+import android.provider.Settings;
 import android.telephony.PhoneStateListener;
+import android.telephony.ServiceState;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyCallback;
 import android.telephony.TelephonyManager;
 import androidx.annotation.RequiresApi;
@@ -98,6 +101,8 @@ final class CallTracker {
         put(call, "startedMs", System.currentTimeMillis());
         put(call, "endedMs", JSONObject.NULL);
         put(call, "final", false);
+        // No SIM, no service or airplane mode: the call can't go through (UX study item 6).
+        put(call, "network", networkProblem());
         synchronized (this) {
             save(call);
             finishing = false;
@@ -194,24 +199,68 @@ final class CallTracker {
         if (granted(activity, Manifest.permission.READ_CALL_LOG)) {
             long deadline = System.currentTimeMillis() + LOG_WAIT_MS;
             do {
-                Long seconds = loggedSeconds(started, digits);
-                if (seconds != null) {
-                    boolean talked = seconds > 0;
-                    put(call, "durationSeconds", seconds);
+                long[] row = loggedCall(started, digits);
+                if (row != null) {
+                    long seconds = row[0];
+                    boolean talked = seconds > 0 && row[1] == CallLog.Calls.OUTGOING_TYPE;
+                    put(call, "durationSeconds", talked ? seconds : 0);
                     put(call, "connected", talked);
-                    put(call, "result", talked ? "answered" : ended - started >= RANG_OUT_MS ? "no_answer" : "unknown");
+                    put(call, "result", talked ? "answered" : missed(call, (int) row[1], ended - started));
                     return;
                 }
                 sleep(POLL_MS);
             } while (System.currentTimeMillis() < deadline);
         }
-        put(call, "durationSeconds", JSONObject.NULL);
-        put(call, "connected", JSONObject.NULL);
-        put(call, "result", "unknown");
+        boolean offline = !call.isNull("network");
+        put(call, "durationSeconds", offline ? 0 : JSONObject.NULL);
+        put(call, "connected", offline ? false : JSONObject.NULL);
+        put(call, "result", offline ? "no_network" : "unknown");
     }
 
-    /** Talk time of the outgoing call to this number placed since the call started, from the phone's history. */
-    private Long loggedSeconds(long started, String digits) {
+    private static String missed(JSONObject call, int type, long rangMs) {
+        return CallLogRules.missedResult(type, !call.isNull("network"), rangMs >= RANG_OUT_MS);
+    }
+
+    /**
+     * "no_sim", "no_service" or "airplane" when this phone can't place a call
+     * now; null when it can (or when the phone won't say).
+     */
+    @SuppressWarnings("deprecation")
+    private String networkProblem() {
+        try {
+            if (Settings.Global.getInt(activity.getContentResolver(), Settings.Global.AIRPLANE_MODE_ON, 0) != 0) return "airplane";
+            TelephonyManager manager = (TelephonyManager) activity.getSystemService(Context.TELEPHONY_SERVICE);
+            if (manager == null) return null;
+            if (!anySim(manager)) return "no_sim";
+            if (Build.VERSION.SDK_INT < 26 || !granted(activity, Manifest.permission.READ_PHONE_STATE)) return null;
+            int voice = SubscriptionManager.getDefaultVoiceSubscriptionId();
+            TelephonyManager line = voice >= 0 ? manager.createForSubscriptionId(voice) : manager;
+            ServiceState state = Build.VERSION.SDK_INT >= 33
+                ? line.getServiceState(TelephonyManager.INCLUDE_LOCATION_DATA_NONE)
+                : line.getServiceState();
+            if (state == null) return null;
+            int service = state.getState();
+            return service == ServiceState.STATE_OUT_OF_SERVICE || service == ServiceState.STATE_POWER_OFF ? "no_service" : null;
+        } catch (RuntimeException error) {
+            // The phone won't say (older Android without location access): no guess.
+            return null;
+        }
+    }
+
+    private static boolean anySim(TelephonyManager manager) {
+        if (Build.VERSION.SDK_INT < 26) return manager.getSimState() != TelephonyManager.SIM_STATE_ABSENT;
+        int slots = Build.VERSION.SDK_INT >= 30 ? manager.getActiveModemCount() : manager.getPhoneCount();
+        for (int slot = 0; slot < Math.max(1, slots); slot++) {
+            if (manager.getSimState(slot) != TelephonyManager.SIM_STATE_ABSENT) return true;
+        }
+        return false;
+    }
+
+    /**
+     * The call to this number since the call started, from the phone's history:
+     * {talk seconds, type}. The outgoing row, or a declined or blocked one.
+     */
+    private long[] loggedCall(long started, String digits) {
         String[] columns = { CallLog.Calls.NUMBER, CallLog.Calls.DURATION, CallLog.Calls.TYPE };
         try (
             Cursor cursor = activity
@@ -226,9 +275,12 @@ final class CallTracker {
         ) {
             if (cursor == null) return null;
             while (cursor.moveToNext()) {
-                if (cursor.getInt(2) != CallLog.Calls.OUTGOING_TYPE) continue;
+                int type = cursor.getInt(2);
+                if (
+                    type != CallLog.Calls.OUTGOING_TYPE && type != CallLog.Calls.REJECTED_TYPE && type != CallLog.Calls.BLOCKED_TYPE
+                ) continue;
                 if (!sameNumber(digits, digits(cursor.getString(0)))) continue;
-                return cursor.getLong(1);
+                return new long[] { cursor.getLong(1), type };
             }
         } catch (RuntimeException ignored) {
             // History unavailable: the person answers by hand.

@@ -44,6 +44,18 @@ final class CallLogRules {
         }
     }
 
+    /**
+     * Why a call placed from the app never connected (UX study item 6): the
+     * after-call sheet pre-fills it. No SIM, no service or airplane mode is "no
+     * network"; a declined or blocked row is "they cut the call"; a call that
+     * rang its full time is "no answer"; anything else the seller answers.
+     */
+    static String missedResult(int type, boolean offline, boolean rangOut) {
+        if (offline) return "no_network";
+        if (type == REJECTED || type == BLOCKED) return "rejected";
+        return rangOut ? "no_answer" : "unknown";
+    }
+
     static String digits(String raw) {
         return raw == null ? "" : raw.replaceAll("\\D", "");
     }

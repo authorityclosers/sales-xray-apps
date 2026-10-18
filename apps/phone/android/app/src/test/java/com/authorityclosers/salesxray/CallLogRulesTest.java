@@ -67,6 +67,18 @@ public class CallLogRulesTest {
     }
 
     @Test
+    public void aCallThatNeverConnectedSaysWhy() {
+        // No SIM, no service or airplane mode wins over everything else.
+        assertEquals("no_network", CallLogRules.missedResult(2, true, true));
+        assertEquals("no_network", CallLogRules.missedResult(5, true, false));
+        // Declined or blocked: "Cut the call".
+        assertEquals("rejected", CallLogRules.missedResult(5, false, false));
+        assertEquals("rejected", CallLogRules.missedResult(6, false, true));
+        assertEquals("no_answer", CallLogRules.missedResult(2, false, true));
+        assertEquals("unknown", CallLogRules.missedResult(2, false, false));
+    }
+
+    @Test
     public void timesGoOutInUtc() {
         assertEquals("2025-10-09T08:53:20.000Z", CallLogRules.iso(1_760_000_000_000L));
     }
