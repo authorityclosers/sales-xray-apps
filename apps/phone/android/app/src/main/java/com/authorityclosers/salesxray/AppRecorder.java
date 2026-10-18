@@ -162,9 +162,11 @@ public class AppRecorder extends Service {
             recorder.setAudioSource(MediaRecorder.AudioSource.MIC);
             recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
             recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+            // Speech: 16 kHz mono AAC at 32 kbps (about 14 MB an hour). Asked for 96 kbps
+            // at 44.1 kHz, the Redmi's encoder wrote 670 kbps (300 MB an hour).
             recorder.setAudioChannels(1);
-            recorder.setAudioSamplingRate(44100);
-            recorder.setAudioEncodingBitRate(96_000);
+            recorder.setAudioSamplingRate(16_000);
+            recorder.setAudioEncodingBitRate(32_000);
             recorder.setMaxDuration((int) MAX_MS);
             recorder.setOutputFile(file.getAbsolutePath());
             recorder.setOnInfoListener((media, what, extra) -> {

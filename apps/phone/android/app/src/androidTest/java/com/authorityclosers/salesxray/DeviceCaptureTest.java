@@ -110,6 +110,8 @@ public class DeviceCaptureTest {
                 assertTrue(bytes.length > 4000);
                 // An MPEG-4 audio file: "ftyp" at byte 4.
                 assertEquals("ftyp", new String(bytes, 4, 4, "US-ASCII"));
+                // Speech size: well under 10 KB a second (6 s recorded).
+                assertTrue("too big for speech: " + bytes.length, bytes.length < 60_000);
             }
         }
     }
