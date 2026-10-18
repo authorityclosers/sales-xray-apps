@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sales Xray's call recorder (CallRecorderService): Android lets only an accessibility
+  service capture audio during a call. It reads no screen content
+  (canRetrieveWindowContent false) and asks for events from Sales Xray alone.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/call_recorder_description"
+    android:summary="@string/call_recorder_summary"
+    android:accessibilityEventTypes="typeAnnouncement"
+    android:packageNames="@string/sx_self_package"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault"
+    android:canRetrieveWindowContent="false"
+    android:notificationTimeout="1000" />

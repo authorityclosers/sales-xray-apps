@@ -236,6 +236,48 @@
     return '<div class="sxp-watch sxp-recorder"><span>' + text + "</span>" + act + "</div>";
   }
 
+  var CAPTURED = {
+    dialer: "Phone app",
+    accessibility: "Call · Sales Xray",
+    in_app: "Recorded here",
+  };
+
+  var callSetup = false;
+  /**
+   * The optional call recorder (CEO 19 Oct): off by default, an Accessibility
+   * service, sideload builds only. The disclosure says exactly what it does.
+   */
+  function callCard() {
+    var cr = recorder && recorder.callRecorder;
+    if (!cr || !cr.available) return "";
+    if (cr.wanted && cr.enabled) {
+      return (
+        '<div class="sxp-watch"><span><b>Records your phone calls · On</b><small>Your side is clear; the other side clearly only on speaker. Tell the other person the call is recorded.</small></span>' +
+        '<button type="button" class="sxp-go" data-call="off">Turn off</button></div>'
+      );
+    }
+    if (cr.wanted) {
+      return (
+        '<div class="sxp-watch sxp-recorder"><span><b>Almost on: allow the call recorder</b><small>In Accessibility, open Sales Xray call recorder and turn it on. If Android says “Restricted setting”, open App info, tap ⋮, Allow restricted settings, then try again.</small></span>' +
+        '<span><button type="button" class="sxp-go" data-call="accessibility">Open</button> <button type="button" class="sxp-go" data-call="appInfo">App info</button></span></div>'
+      );
+    }
+    if (callSetup) {
+      return (
+        '<div class="sxp-watch sxp-recorder"><span><b>Record phone calls in Sales Xray</b><small>' +
+        "Android lets an app hear a call only through Accessibility, so Sales Xray uses it for this and nothing else. " +
+        "It records only while a call is on. It does not read your screen, your messages or any other app. " +
+        "Recordings stay on this phone until you tap Analyse. Android will warn that Accessibility can see and control your phone: Sales Xray uses none of that. " +
+        "Mostly your side is heard; put the call on speaker for both sides." +
+        '</small></span><span><button type="button" class="sxp-go" data-call="on">Turn on</button> <button type="button" class="sxp-go" data-call="cancel">Not now</button></span></div>'
+      );
+    }
+    return (
+      '<div class="sxp-watch"><span><b>Record phone calls in Sales Xray</b><small>Off. For phones whose own Phone app can’t save recordings.</small></span>' +
+      '<button type="button" class="sxp-go" data-call="setup">Set up</button></div>'
+    );
+  }
+
   /** Record a conversation in Sales Xray itself: a meeting, a walk-in, a talk on speaker. */
   function recordCard() {
     if (rec && rec.recording) {
@@ -251,6 +293,15 @@
       '<button type="button" class="sxp-go" data-rec="start">Record</button></div>'
     );
   }
+
+  // Back from Android's settings (recording, Accessibility, Phone app): show what changed.
+  document.addEventListener("visibilitychange", function () {
+    var sheet = document.querySelector(".sxp-sheet");
+    if (document.visibilityState !== "visible" || !sheet) return;
+    refresh().then(function () {
+      if (document.body.contains(sheet)) drawSheet(sheet);
+    });
+  });
 
   var ticker = null;
   function tick(sheet) {
@@ -313,6 +364,7 @@
       '<button type="button" class="sxp-close" aria-label="Close">×</button></div>' +
       '<p class="sxp-sub">Your call recordings and conversations recorded here. Nothing leaves this phone until you tap Analyse.</p>' +
       recorderCard() +
+      callCard() +
       recordCard() +
       (state && (state.audio || state.allFiles)
         ? '<div class="sxp-watch"><span><b>Tell me about new recordings</b><small>Checks every 15 minutes, even when Sales Xray is closed</small></span>' +
@@ -350,6 +402,7 @@
                 ? '<span class="sxp-tag sxp-new">New</span>'
                 : "";
             var meta = [
+              CAPTURED[item.captured] || "",
               when(item.addedMs),
               clock(item.durationMs),
               megabytes(item.size),
@@ -398,6 +451,46 @@
           },
         );
       });
+    Array.prototype.forEach.call(sheet.querySelectorAll("[data-call]"), function (button) {
+      button.addEventListener("click", function () {
+        var what = button.getAttribute("data-call");
+        var redraw = function () {
+          refresh().then(function () {
+            drawSheet(sheet);
+          });
+        };
+        if (what === "setup") {
+          callSetup = true;
+          return drawSheet(sheet);
+        }
+        if (what === "cancel") {
+          callSetup = false;
+          return drawSheet(sheet);
+        }
+        if (what === "off") return call("callRecorderSet", { on: false }).then(redraw);
+        if (what === "on") {
+          callSetup = false;
+          var cr = (recorder && recorder.callRecorder) || {};
+          var consent = cr.consentShown
+            ? Promise.resolve()
+            : call("callRecorderConsent").then(function () {
+                window.alert("Tell the other person the call is recorded.");
+              });
+          return consent
+            .then(function () {
+              return call("callRecorderSet", { on: true });
+            })
+            .then(function (next) {
+              if (!next.enabled) {
+                call("callRecorderOpen", { what: "accessibility" });
+                toast("Open Sales Xray call recorder and turn it on, then come back.");
+              }
+              redraw();
+            });
+        }
+        call("callRecorderOpen", { what: what });
+      });
+    });
     Array.prototype.forEach.call(sheet.querySelectorAll("[data-rec]"), function (button) {
       button.addEventListener("click", function () {
         var what = button.getAttribute("data-rec");

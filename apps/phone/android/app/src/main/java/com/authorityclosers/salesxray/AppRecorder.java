@@ -158,22 +158,10 @@ public class AppRecorder extends Service {
         String stamp = new SimpleDateFormat("yyyy-MM-dd HH.mm.ss", Locale.ROOT).format(new Date());
         File file = new File(dir, "Sales Xray recording " + stamp + ".m4a");
         try {
-            recorder = Build.VERSION.SDK_INT >= 31 ? new MediaRecorder(this) : new MediaRecorder();
-            recorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
-            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
-            // Speech: 16 kHz mono AAC at 32 kbps (about 14 MB an hour). Asked for 96 kbps
-            // at 44.1 kHz, the Redmi's encoder wrote 670 kbps (300 MB an hour).
-            recorder.setAudioChannels(1);
-            recorder.setAudioSamplingRate(16_000);
-            recorder.setAudioEncodingBitRate(32_000);
-            recorder.setMaxDuration((int) MAX_MS);
-            recorder.setOutputFile(file.getAbsolutePath());
+            recorder = Mic.start(this, file, MediaRecorder.AudioSource.MIC, MAX_MS);
             recorder.setOnInfoListener((media, what, extra) -> {
                 if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) finish();
             });
-            recorder.prepare();
-            recorder.start();
         } catch (Exception error) {
             release();
             file.delete();
@@ -194,13 +182,8 @@ public class AppRecorder extends Service {
         SharedPreferences prefs = prefs(this);
         boolean saved = false;
         if (recorder != null) {
-            try {
-                recorder.stop();
-                saved = true;
-            } catch (RuntimeException error) {
-                // Stopped within a moment of starting: there's no audio to keep.
-            }
-            release();
+            saved = Mic.stop(recorder);
+            recorder = null;
         }
         String name = prefs.getString(FILE, null);
         SharedPreferences.Editor edit = prefs.edit().putBoolean(ON, false);

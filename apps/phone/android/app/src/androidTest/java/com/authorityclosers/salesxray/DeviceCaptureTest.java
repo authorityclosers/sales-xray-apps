@@ -119,6 +119,27 @@ public class DeviceCaptureTest {
     }
 
     @Test
+    public void theCallRecorderReadsNoScreenAndHearsOnlySalesXray() throws Exception {
+        Context context = context();
+        JSONObject status = CallRecorderService.status(context);
+        Log.i(TAG, "callRecorder " + status);
+        assertTrue("sideload build has the recorder", status.getBoolean("available"));
+        assertTrue("off by default", !status.getBoolean("wanted"));
+        android.view.accessibility.AccessibilityManager manager = context.getSystemService(android.view.accessibility.AccessibilityManager.class);
+        android.accessibilityservice.AccessibilityServiceInfo mine = null;
+        for (android.accessibilityservice.AccessibilityServiceInfo info : manager.getInstalledAccessibilityServiceList()) {
+            if (info.getResolveInfo().serviceInfo.packageName.equals(context.getPackageName())) mine = info;
+        }
+        assertNotNull(mine);
+        Log.i(TAG, "accessibility capabilities " + mine.getCapabilities() + " packages " + java.util.Arrays.toString(mine.packageNames));
+        assertEquals(0, mine.getCapabilities() & android.accessibilityservice.AccessibilityServiceInfo.CAPABILITY_CAN_RETRIEVE_WINDOW_CONTENT);
+        assertNotNull(mine.packageNames);
+        assertEquals(1, mine.packageNames.length);
+        assertEquals(context.getPackageName(), mine.packageNames[0]);
+        assertTrue(mine.loadDescription(context.getPackageManager()).contains("does not read your screen"));
+    }
+
+    @Test
     public void refusesToReadOutsideTheRecordingFolders() {
         for (String source : new String[] { "app:../../shared_prefs/sx_call_log.xml", "file:/sdcard/DCIM/x.jpg", "media:content://contacts/people/1" }) {
             try {

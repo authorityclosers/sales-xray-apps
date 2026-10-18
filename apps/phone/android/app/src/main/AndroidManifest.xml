@@ -49,6 +49,22 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- Optional call recorder (CEO 19 Oct): off until the seller switches it on in the app and
+             in Accessibility settings. Sideload builds only: a Play build (-PsxPlay) removes it. -->
+        <service
+            android:name=".CallRecorderService"
+            android:exported="true"
+            android:label="Sales Xray call recorder"
+            android:foregroundServiceType="microphone"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/call_recorder_service" />
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
