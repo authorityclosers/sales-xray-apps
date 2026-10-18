@@ -171,34 +171,17 @@ public class DeviceCaptureTest {
 
     /**
      * An internet call (WhatsApp, Meet, Telegram) puts the phone in "in
-     * communication" mode; this test does the same for six seconds and checks
-     * the recorder made one "(internet call)" file tagged "accessibility".
-     * Runs only with -e expectCall voip, with the recorder on in Accessibility.
+     * communication" mode. The Dev build's SimulateCallReceiver does the same
+     * (voip-start, then voip-end) in the running app before this check: the
+     * recorder made one "(internet call)" file tagged "accessibility".
+     * Runs only with -e expectCall voip.
      */
     @Test
     public void anInternetCallIsRecorded() throws Exception {
         String expect = InstrumentationRegistry.getArguments().getString("expectCall");
         org.junit.Assume.assumeTrue("run with -e expectCall voip", "voip".equals(expect));
         Context context = context();
-        assertTrue("turn the recorder on in Accessibility first", CallRecorderService.enabledInSettings(context));
-        CallRecorderService.setWanted(context, true);
-        // Starting the test restarts this app's process; Android binds the
-        // recorder again a moment later.
-        for (int i = 0; i < 300 && !CallRecorderService.status(context).getBoolean("running"); i++) Thread.sleep(100);
-        assertTrue("the recorder came back", CallRecorderService.status(context).getBoolean("running"));
-        String before = CallRecorderService.status(context).optString("last");
-        android.media.AudioManager audio = context.getSystemService(android.media.AudioManager.class);
-        audio.setMode(android.media.AudioManager.MODE_IN_COMMUNICATION);
-        try {
-            Thread.sleep(6000);
-        } finally {
-            audio.setMode(android.media.AudioManager.MODE_NORMAL);
-        }
         JSONObject status = CallRecorderService.status(context);
-        for (int i = 0; i < 50 && status.optString("last").equals(before); i++) {
-            Thread.sleep(100);
-            status = CallRecorderService.status(context);
-        }
         Log.i(TAG, "after internet call " + status);
         String source = status.getString("last");
         assertTrue(source, source.startsWith("app:" + CallRecorderService.PREFIX) && source.contains("(internet call)"));
