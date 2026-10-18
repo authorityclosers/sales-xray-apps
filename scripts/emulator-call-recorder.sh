@@ -13,7 +13,10 @@ image="system-images;android-33;google_apis;x86_64"
 set +o pipefail
 yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" --install emulator platform-tools "$image" >/dev/null
 set -o pipefail
-echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n sx -k "$image" --force >/dev/null
+export ANDROID_AVD_HOME="$HOME/.android/avd"
+mkdir -p "$ANDROID_AVD_HOME"
+echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n sx -k "$image" -d pixel_6 --force -p "$ANDROID_AVD_HOME/sx.avd"
+ls "$ANDROID_AVD_HOME"
 echo "emulator: $("$sdk/emulator/emulator" -version 2>/dev/null | head -1)"
 "$sdk/emulator/emulator" -avd sx -no-window -no-snapshot -no-boot-anim -gpu swiftshader_indirect -camera-back none -camera-front none >emulator.log 2>&1 &
 export PATH="$sdk/platform-tools:$PATH"
