@@ -78,6 +78,7 @@
     ".sxp-tag.sxp-new{background:rgba(239,68,68,.16);color:#f87171}" +
     ".sxp-go{flex:none;border:0;border-radius:10px;padding:9px 12px;background:var(--lx-teal,#14b8a6);color:var(--lx-on-teal,#04221d);font:600 13px/1 inherit}" +
     ".sxp-go[disabled]{opacity:.45}" +
+    ".sxp-stop{background:#ef4444;color:#fff}.sxp-recorder small,.sxp-rec small{display:block}" +
     ".sxp-empty{padding:22px 14px;text-align:center;color:var(--lx-muted,#94a3b8)}" +
     ".sxp-empty b{display:block;color:var(--lx-ink,#e6edf6);font-size:15px;margin-bottom:6px}" +
     ".sxp-action{margin-top:14px;border:0;border-radius:12px;padding:11px 16px;background:var(--lx-teal,#14b8a6);color:var(--lx-on-teal,#04221d);font:600 14px/1 inherit}" +
@@ -142,9 +143,18 @@
 
   var items = [];
   var state = null;
+  // This phone's call recorder (RecorderProfile) and the in-app recorder (AppRecorder).
+  var recorder = null;
+  var rec = null;
 
   function refresh() {
-    return call("status")
+    var profile = call("recorderStatus")
+      .then(function (result) {
+        recorder = result;
+        rec = result.appRecorder || rec;
+      })
+      .catch(function () {});
+    var calls = call("status")
       .then(function (status) {
         state = status;
         if (!status.audio && !status.allFiles) {
@@ -156,6 +166,111 @@
         });
       })
       .catch(function () {});
+    return Promise.all([profile, calls]);
+  }
+
+  var MAKERS = {
+    xiaomi: "Xiaomi's Phone app",
+    samsung: "Samsung's Phone app",
+    oplus: "the Phone app",
+    vivo: "Vivo's Phone app",
+    huawei: "the Phone app",
+  };
+
+  /** One line on what this phone's recorder does, with the one fix it needs. */
+  function recorderCard() {
+    if (!recorder) return "";
+    var app = escape(recorder.dialerLabel || "your Phone app");
+    var text;
+    var act = "";
+    if (recorder.kind === "private") {
+      var maker = (recorder.otherDialers || []).filter(function (d) {
+        return d.savesToFolder;
+      })[0];
+      text =
+        "<b>" +
+        app +
+        " keeps call recordings to itself</b><small>No other app can read them. " +
+        (maker
+          ? "Make " +
+            escape(maker.label) +
+            " your phone app and turn on its call recording, or record conversations here."
+          : "Record conversations here, or use a phone whose own Phone app records calls.") +
+        "</small>";
+      if (maker)
+        act =
+          '<button type="button" class="sxp-go" data-rec="defaultDialer">Switch</button>';
+    } else if (recorder.recording === "on") {
+      var found = (recorder.folders || []).filter(function (f) {
+        return f.state === "found";
+      })[0];
+      text =
+        "<b>" +
+        app +
+        " records your calls</b><small>" +
+        (found
+          ? "Saved in " + escape(found.path) + " · " + found.recordings + " found"
+          : "Sales Xray picks them up after each call") +
+        "</small>";
+    } else if (!recorder.canRead) {
+      text =
+        "<b>Let Sales Xray check your call recordings</b><small>It looks only in " +
+        escape((MAKERS[recorder.maker] || app) + "'s") +
+        " recordings folder.</small>";
+      act = '<button type="button" class="sxp-go" data-act="allow">Allow</button>';
+    } else {
+      var where = (recorder.folders || [])[0];
+      text =
+        "<b>Turn on call recording in " +
+        app +
+        "</b><small>" +
+        (recorder.recording === "off"
+          ? "It's off. "
+          : "No recordings yet. ") +
+        "Phone settings → Call recording → Record calls automatically" +
+        (where ? ". They save to " + escape(where.path) : "") +
+        ".</small>";
+      act =
+        '<button type="button" class="sxp-go" data-rec="settings">Open</button>';
+    }
+    return '<div class="sxp-watch sxp-recorder"><span>' + text + "</span>" + act + "</div>";
+  }
+
+  /** Record a conversation in Sales Xray itself: a meeting, a walk-in, a talk on speaker. */
+  function recordCard() {
+    if (rec && rec.recording) {
+      return (
+        '<div class="sxp-watch sxp-rec"><span><b>Recording · <span class="sxp-elapsed">' +
+        clock(Date.now() - (rec.startedMs || Date.now())) +
+        "</span></b><small>Keep Sales Xray near the people talking.</small></span>" +
+        '<button type="button" class="sxp-go sxp-stop" data-rec="stop">Stop</button></div>'
+      );
+    }
+    return (
+      '<div class="sxp-watch"><span><b>Record a conversation</b><small>A meeting or a talk in person. Phone calls can’t be recorded by apps.</small></span>' +
+      '<button type="button" class="sxp-go" data-rec="start">Record</button></div>'
+    );
+  }
+
+  var ticker = null;
+  function tick(sheet) {
+    clearInterval(ticker);
+    if (!rec || !rec.recording) return;
+    var polls = 0;
+    ticker = setInterval(function () {
+      if (!document.body.contains(sheet)) return clearInterval(ticker);
+      var node = sheet.querySelector(".sxp-elapsed");
+      if (node) node.textContent = clock(Date.now() - (rec.startedMs || Date.now()));
+      if (++polls % 3) return;
+      call("recordState").then(function (next) {
+        if (next.recording) return;
+        rec = next;
+        clearInterval(ticker);
+        refresh().then(function () {
+          drawSheet(sheet);
+        });
+      });
+    }, 1000);
   }
 
   function closeSheet() {
@@ -196,7 +311,9 @@
     var head =
       '<header class="sxp-head"><div class="sxp-grab"></div><div class="sxp-title"><h2>Calls on this phone</h2>' +
       '<button type="button" class="sxp-close" aria-label="Close">×</button></div>' +
-      '<p class="sxp-sub">Your phone records calls. Sales Xray finds them here. Nothing leaves this phone until you tap Analyse.</p>' +
+      '<p class="sxp-sub">Your call recordings and conversations recorded here. Nothing leaves this phone until you tap Analyse.</p>' +
+      recorderCard() +
+      recordCard() +
       (state && (state.audio || state.allFiles)
         ? '<div class="sxp-watch"><span><b>Tell me about new recordings</b><small>Checks every 15 minutes, even when Sales Xray is closed</small></span>' +
           '<button type="button" class="sxp-switch" role="switch" aria-label="Tell me about new recordings" aria-checked="' +
@@ -214,8 +331,10 @@
         '<br><button type="button" class="sxp-action" data-act="allow">Allow access</button></div>';
     } else if (!items.length) {
       body =
-        '<div class="sxp-empty"><b>No call recordings found</b>' +
-        "Turn on automatic call recording in your phone's dialer settings. If it is already on, your phone may hide the folder." +
+        '<div class="sxp-empty"><b>No recordings yet</b>' +
+        (recorder && recorder.kind === "private"
+          ? "Record a conversation above, or switch to a Phone app that saves call recordings."
+          : "Turn on automatic call recording in your Phone app (see above). If it is already on, your phone may hide the folder.") +
         (state.allFilesSupported && !state.allFiles
           ? '<br><button type="button" class="sxp-action" data-act="allfiles">Let Sales Xray look in the call folder</button>'
           : "") +
@@ -279,8 +398,45 @@
           },
         );
       });
-    var allow = sheet.querySelector('[data-act="allow"]');
-    if (allow)
+    Array.prototype.forEach.call(sheet.querySelectorAll("[data-rec]"), function (button) {
+      button.addEventListener("click", function () {
+        var what = button.getAttribute("data-rec");
+        if (what === "start") {
+          button.disabled = true;
+          call("recordStart", {}).then(function (result) {
+            rec = result;
+            if (result.outcome === "in_call")
+              toast("Android doesn't let apps record during a phone call. Record after the call, or in person.");
+            else if (result.outcome === "no_mic")
+              toast("Allow the microphone for Sales Xray to record conversations.");
+            else rec = { recording: true, startedMs: Date.now() };
+            drawSheet(sheet);
+            tick(sheet);
+          });
+        } else if (what === "stop") {
+          button.disabled = true;
+          call("recordStop").then(function () {
+            toast("Saved. It's at the top of the list: tap Analyse to send it.");
+            setTimeout(function () {
+              call("recordState").then(function (next) {
+                rec = next;
+                refresh().then(function () {
+                  drawSheet(sheet);
+                });
+              });
+            }, 700);
+          });
+        } else {
+          call("recorderOpen", { what: what }).then(function (result) {
+            if (!result.opened) toast("Open your Phone app's settings and look for Call recording.");
+            else if (what === "defaultDialer")
+              toast("Choose your phone maker's Phone app, then turn on its call recording.");
+            else toast("Turn on Record calls automatically, then come back.");
+          });
+        }
+      });
+    });
+    Array.prototype.forEach.call(sheet.querySelectorAll('[data-act="allow"]'), function (allow) {
       allow.addEventListener("click", function () {
         call("requestAccess").then(function () {
           refresh().then(function () {
@@ -288,6 +444,7 @@
           });
         });
       });
+    });
     var allFiles = sheet.querySelector('[data-act="allfiles"]');
     if (allFiles)
       allFiles.addEventListener("click", function () {
@@ -297,13 +454,14 @@
         );
       });
     Array.prototype.forEach.call(
-      sheet.querySelectorAll(".sxp-go"),
+      sheet.querySelectorAll(".sxp-go[data-index]"),
       function (button) {
         button.addEventListener("click", function () {
           analyse(items[Number(button.getAttribute("data-index"))]);
         });
       },
     );
+    tick(sheet);
   }
 
   function waitFor(selector, ms) {
