@@ -50,6 +50,7 @@ final class PhoneBridge {
     private static final int REQUEST_NOTIFY = 7102;
     private static final int REQUEST_CALL = 7103;
     private static final int REQUEST_PUSH = 7104;
+    private static final int REQUEST_LOG = 7105;
 
     /** The bridge of the open app, for signals from outside the page (lead alerts). */
     private static volatile PhoneBridge active;
@@ -68,6 +69,9 @@ final class PhoneBridge {
     private final CallTracker calls;
     private JavaScriptReplyProxy pushReply;
     private String pushId;
+    private JavaScriptReplyProxy logReply;
+    private String logId;
+    private String logSim;
 
     PhoneBridge(AppCompatActivity activity, WebView webView) {
         this.activity = activity;
@@ -135,6 +139,15 @@ final class PhoneBridge {
     }
 
     void onPermissionResult(int requestCode) {
+        if (requestCode == REQUEST_LOG && logReply != null) {
+            JavaScriptReplyProxy reply = logReply;
+            String id = logId;
+            logReply = null;
+            logId = null;
+            if (CallLogSync.hasAccess(activity) && CallLogSync.setOn(activity, true, logSim)) CallLogSync.soon(activity);
+            reply(reply, id, CallLogSync.status(activity));
+            return;
+        }
         if (requestCode == REQUEST_PUSH && pushReply != null) {
             JavaScriptReplyProxy reply = pushReply;
             String id = pushId;
@@ -205,6 +218,15 @@ final class PhoneBridge {
                     pushReset();
                     reply(reply, id, pushState());
                     break;
+                case "callLogStatus":
+                    reply(reply, id, CallLogSync.status(activity));
+                    break;
+                case "callLogSetup":
+                    callLogSetup(reply, id, args.optBoolean("on"), args.optString("sim", ""));
+                    break;
+                case "callLogSync":
+                    io.execute(() -> reply(reply, id, CallLogSync.run(activity)));
+                    break;
                 case "bars":
                     // The colours at the top and bottom of the page, from sx-phone.js.
                     SystemBarColors.paint(activity, args.optString("status"), args.optString("nav"));
@@ -238,6 +260,7 @@ final class PhoneBridge {
             status.put("calling", true);
             status.put("callAccess", CallTracker.hasCallAccess(activity));
             status.put("push", true);
+            status.put("callLog", true);
             status.put("version", versionName());
         } catch (JSONException ignored) {}
         return status;
@@ -362,6 +385,19 @@ final class PhoneBridge {
         } catch (RuntimeException ignored) {
             // Firebase isn't running; the server drops the address on its next failed send.
         }
+    }
+
+    /** Work calls logged by themselves (UX study item 5): call history access is asked for once. */
+    private void callLogSetup(JavaScriptReplyProxy reply, String id, boolean on, String sim) {
+        if (on && !CallLogSync.hasAccess(activity)) {
+            logReply = reply;
+            logId = id;
+            logSim = sim;
+            ActivityCompat.requestPermissions(activity, CallLogSync.wanted(), REQUEST_LOG);
+            return;
+        }
+        if (CallLogSync.setOn(activity, on, sim) && on) CallLogSync.soon(activity);
+        reply(reply, id, CallLogSync.status(activity));
     }
 
     private void setWatch(JavaScriptReplyProxy reply, String id, boolean on) {

@@ -135,6 +135,8 @@ public class MainActivity extends BridgeActivity {
         super.onResume();
         if (phone != null) phone.onResume();
         if (google != null) google.onResume();
+        // Work calls made since the last look reach their leads (UX study item 5).
+        CallLogSync.soon(this);
     }
 
     @Override

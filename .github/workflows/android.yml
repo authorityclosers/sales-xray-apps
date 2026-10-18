@@ -61,6 +61,9 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Sync the web shell into Android (live site)
         run: npx cap sync android
+      - name: Unit tests
+        working-directory: apps/phone/android
+        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
       - name: Build Sales Xray (test)
         working-directory: apps/phone/android
         env:

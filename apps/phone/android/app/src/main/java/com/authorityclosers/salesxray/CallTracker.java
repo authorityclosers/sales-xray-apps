@@ -103,6 +103,8 @@ final class CallTracker {
             finishing = false;
             inCall = false;
         }
+        // The after-call sheet logs this call, so the call-history sync skips it.
+        CallLogSync.rememberInApp(activity, number, System.currentTimeMillis());
         boolean direct = granted(activity, Manifest.permission.CALL_PHONE);
         Uri uri = Uri.fromParts("tel", number, null);
         try {
