@@ -51,6 +51,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      - name: Check out
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
       - name: Get the test APKs
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -68,13 +72,7 @@ jobs:
           target: google_apis
           arch: x86_64
           disable-animations: true
-          script: |
-            P=com.authorityclosers.salesxray.dev; adb install dist/sales-xray-dev-android-0.3.${{ github.run_number }}-test.apk; adb install dist/sales-xray-dev-android-0.3.${{ github.run_number }}-device-tests.apk
-            for perm in RECORD_AUDIO READ_PHONE_STATE READ_MEDIA_AUDIO POST_NOTIFICATIONS; do adb shell pm grant $P android.permission.$perm; done
-            adb shell settings put secure enabled_accessibility_services $P/com.authorityclosers.salesxray.CallRecorderService; adb shell settings put secure accessibility_enabled 1; sleep 8
-            adb shell am broadcast -n $P/com.authorityclosers.salesxray.SimulateCallReceiver -e state want-on
-            adb emu gsm call 5551234; sleep 4; adb emu gsm accept 5551234; sleep 10; adb emu gsm cancel 5551234; sleep 6
-            adb shell am instrument -w -e class com.authorityclosers.salesxray.DeviceCaptureTest#aCallWasRecordedByTheRecorder -e expectCall phone $P.test/androidx.test.runner.AndroidJUnitRunner | tee instrument.txt; adb logcat -d -s SXTEST:I | tail -20; grep -q "^OK (1 test)" instrument.txt
+          script: bash scripts/emulator-call-recorder.sh ${{ github.run_number }}
 
   test-build:
     if: ${{ !inputs.publish }}
