@@ -224,9 +224,11 @@ final class PhoneBridge {
                 case "callLogSetup":
                     callLogSetup(reply, id, args.optBoolean("on"), args.optString("sim", ""));
                     break;
-                case "callLogSync":
-                    io.execute(() -> reply(reply, id, CallLogSync.run(activity)));
+                case "callLogSync": {
+                    String asked = id;
+                    io.execute(() -> reply(reply, asked, CallLogSync.run(activity)));
                     break;
+                }
                 case "bars":
                     // The colours at the top and bottom of the page, from sx-phone.js.
                     SystemBarColors.paint(activity, args.optString("status"), args.optString("nav"));
