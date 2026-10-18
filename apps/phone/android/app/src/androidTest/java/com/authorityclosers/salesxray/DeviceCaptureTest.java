@@ -182,6 +182,10 @@ public class DeviceCaptureTest {
         Context context = context();
         assertTrue("turn the recorder on in Accessibility first", CallRecorderService.enabledInSettings(context));
         CallRecorderService.setWanted(context, true);
+        // Starting the test restarts this app's process; Android binds the
+        // recorder again a moment later.
+        for (int i = 0; i < 300 && !CallRecorderService.status(context).getBoolean("running"); i++) Thread.sleep(100);
+        assertTrue("the recorder came back", CallRecorderService.status(context).getBoolean("running"));
         String before = CallRecorderService.status(context).optString("last");
         android.media.AudioManager audio = context.getSystemService(android.media.AudioManager.class);
         audio.setMode(android.media.AudioManager.MODE_IN_COMMUNICATION);
