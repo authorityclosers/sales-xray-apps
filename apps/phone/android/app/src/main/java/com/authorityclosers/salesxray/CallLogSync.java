@@ -181,6 +181,19 @@ final class CallLogSync {
         return "";
     }
 
+    /** This install's own id (no phone or SIM number in it): call logging and the setup checklist use it. */
+    static String deviceId(Context context) {
+        synchronized (LOCK) {
+            SharedPreferences prefs = prefs(context);
+            String device = prefs.getString(DEVICE, null);
+            if (device == null) {
+                device = UUID.randomUUID().toString();
+                prefs.edit().putString(DEVICE, device).apply();
+            }
+            return device;
+        }
+    }
+
     /** A call placed from a lead in the app: its after-call sheet logs it, so this skips it. */
     static void rememberInApp(Context context, String number, long startedMs) {
         synchronized (LOCK) {
@@ -299,11 +312,7 @@ final class CallLogSync {
         }
 
         int logged = 0;
-        String device = prefs.getString(DEVICE, null);
-        if (device == null) {
-            device = UUID.randomUUID().toString();
-            prefs.edit().putString(DEVICE, device).apply();
-        }
+        String device = deviceId(context);
         for (int start = 0; start < calls.size(); start += BATCH) {
             JSONObject body = new JSONObject();
             try {

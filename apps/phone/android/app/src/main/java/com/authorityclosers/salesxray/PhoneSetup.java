@@ -85,6 +85,7 @@ final class PhoneSetup {
             status.put("model", Build.MODEL == null ? "" : Build.MODEL);
             status.put("autostartNeeded", autostartNeeded);
             status.put("newestRecordingMs", newest > 0 ? newest : JSONObject.NULL);
+            status.put("device", CallLogSync.deviceId(context));
         } catch (JSONException ignored) {}
         return status;
     }
