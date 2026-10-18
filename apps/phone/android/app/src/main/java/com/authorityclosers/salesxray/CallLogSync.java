@@ -316,7 +316,7 @@ final class CallLogSync {
         String inApp = prefs.getString(IN_APP, "");
         List<JSONObject> calls = new ArrayList<>();
         JSONArray unknown = unknown(context);
-        String ignored = prefs.getString(IGNORED, "");
+        String notLeads = prefs.getString(IGNORED, "");
         long newest = since;
         String[] columns = {
             CallLog.Calls._ID,
@@ -352,7 +352,7 @@ final class CallLogSync {
                 // conversation with one is kept here to offer "Save as lead?".
                 String number = key.length() >= 6 ? numbers.get(key) : null;
                 if (number == null) {
-                    if (CallLogRules.worthSaving(key, direction, cursor.getLong(3), ignored)) {
+                    if (CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)) {
                         unknown = CallLogRules.keepUnknown(unknown, cursor.getString(1), key, date, direction, cursor.getLong(3), now, UNKNOWN_KEEP_MS, UNKNOWN_MAX);
                     }
                     continue;
