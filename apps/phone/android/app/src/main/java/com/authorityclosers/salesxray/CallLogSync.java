@@ -432,7 +432,7 @@ final class CallLogSync {
             connection.setReadTimeout(20_000);
             connection.setInstanceFollowRedirects(false);
             connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("Cookie", cookies);
+            SessionCookies.attach(connection, cookies);
             connection.setRequestProperty("User-Agent", "SalesXrayApp/0.3 (call-log)");
             if (body != null) {
                 // Sales Xray takes a signed-in change only from its own site.
