@@ -72,7 +72,8 @@
     ".sxp-list{overflow:auto;padding:6px 10px 14px}" +
     ".sxp-row{display:flex;align-items:center;gap:12px;padding:12px 8px;border-bottom:1px solid var(--lx-line,rgba(148,163,184,.14))}" +
     ".sxp-icon{flex:none;width:38px;height:38px;display:grid;place-items:center;border-radius:12px;background:var(--lx-teal-tint,rgba(20,184,166,.14));color:var(--lx-teal,#2dd4bf)}" +
-    ".sxp-main{flex:1;min-width:0}.sxp-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    ".sxp-main{flex:1;min-width:0}.sxp-name{display:flex;align-items:center;gap:6px;min-width:0;font-weight:600}" +
+    ".sxp-name>span:first-child{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sxp-name .sxp-tag{flex:none;margin-left:0}.sxp-meta{display:block}" +
     ".sxp-meta{color:var(--lx-muted,#94a3b8);font-size:12px}" +
     ".sxp-tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:9px;font-size:11px;font-weight:600;background:rgba(20,184,166,.16);color:var(--lx-teal,#2dd4bf)}" +
     ".sxp-tag.sxp-new{background:rgba(239,68,68,.16);color:#f87171}" +
@@ -415,8 +416,9 @@
             return (
               '<div class="sxp-row"><span class="sxp-icon">' +
               WAVE +
-              '</span><span class="sxp-main"><span class="sxp-name">' +
+              '</span><span class="sxp-main"><span class="sxp-name"><span>' +
               escape(item.title) +
+              "</span>" +
               tag +
               '</span><span class="sxp-meta">' +
               escape(meta) +
@@ -614,15 +616,11 @@
             type: item.mime,
             lastModified: item.addedMs,
           });
-          var transfer = new DataTransfer();
-          transfer.items.add(file);
-          area.dispatchEvent(
-            new DragEvent("drop", {
-              bubbles: true,
-              cancelable: true,
-              dataTransfer: transfer,
-            }),
-          );
+          // Right after a page load the upload area is drawn before React listens
+          // to it, and an early drop is lost (Redmi, 19 Oct). Drop, then check the
+          // file is listed; try again for a few seconds.
+          return dropUntilAdded(file);
+        }).then(function () {
           var sent = load(SENT_KEY, {});
           sent[item.source] = Date.now();
           save(SENT_KEY, sent);
@@ -634,6 +632,37 @@
           "That recording could not be added. Open New analysis and try again.",
         );
       });
+  }
+
+  function dropUntilAdded(file) {
+    var tries = 0;
+    function added() {
+      return !!document.querySelector('[aria-label="Added audio files"] li');
+    }
+    return new Promise(function (resolve, reject) {
+      (function drop() {
+        var area = document.querySelector(
+          '[role="group"][aria-label="Add sales call audio files"]',
+        );
+        if (added()) return resolve();
+        if (++tries > 8) return reject(new Error("not_added"));
+        if (area) {
+          var transfer = new DataTransfer();
+          transfer.items.add(file);
+          area.dispatchEvent(
+            new DragEvent("drop", {
+              bubbles: true,
+              cancelable: true,
+              dataTransfer: transfer,
+            }),
+          );
+        }
+        setTimeout(function () {
+          if (added()) resolve();
+          else drop();
+        }, 1500);
+      })();
+    });
   }
 
   function continuePick() {
