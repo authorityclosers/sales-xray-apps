@@ -61,6 +61,10 @@ final class CallLogSync {
     private static final String LAST_LOGGED = "last_logged";
     private static final String STATE = "state";
     private static final String IN_APP = "in_app";
+    private static final String UNKNOWN = "unknown";
+    private static final String IGNORED = "ignored";
+    private static final long UNKNOWN_KEEP_MS = 7L * 24 * 60 * 60 * 1000;
+    private static final int UNKNOWN_MAX = 30;
     private static final long RESUME_GAP_MS = 60_000;
     private static final int MAX_ROWS = 600;
     private static final int BATCH = 100;
@@ -194,6 +198,36 @@ final class CallLogSync {
         }
     }
 
+    /** Work calls with numbers that aren't leads, newest first (they never leave the phone by themselves). */
+    static JSONArray unknown(Context context) {
+        try {
+            JSONArray stored = new JSONArray(prefs(context).getString(UNKNOWN, "[]"));
+            return CallLogRules.keepUnknown(stored, null, null, 0, null, 0, System.currentTimeMillis(), UNKNOWN_KEEP_MS, UNKNOWN_MAX);
+        } catch (JSONException error) {
+            return new JSONArray();
+        }
+    }
+
+    /** "Not a lead": never offer this number again. */
+    static void ignore(Context context, String number) {
+        String key = CallLogRules.key(number);
+        if (key.length() < 6) return;
+        synchronized (LOCK) {
+            SharedPreferences prefs = prefs(context);
+            String ignored = prefs.getString(IGNORED, "");
+            String kept = CallLogRules.addIgnored(ignored, key, 200);
+            prefs.edit().putString(IGNORED, kept).putString(UNKNOWN, CallLogRules.dropUnknown(unknown(context), key).toString()).apply();
+        }
+    }
+
+    /** Saved as a lead: the next sync logs its calls on the lead, so drop it here. */
+    static void forget(Context context, String number) {
+        String key = CallLogRules.key(number);
+        synchronized (LOCK) {
+            prefs(context).edit().putString(UNKNOWN, CallLogRules.dropUnknown(unknown(context), key).toString()).apply();
+        }
+    }
+
     /** A call placed from a lead in the app: its after-call sheet logs it, so this skips it. */
     static void rememberInApp(Context context, String number, long startedMs) {
         synchronized (LOCK) {
@@ -281,6 +315,8 @@ final class CallLogSync {
         String alt = prefs.getString(SIM_ALT, "");
         String inApp = prefs.getString(IN_APP, "");
         List<JSONObject> calls = new ArrayList<>();
+        JSONArray unknown = unknown(context);
+        String ignored = prefs.getString(IGNORED, "");
         long newest = since;
         String[] columns = {
             CallLog.Calls._ID,
@@ -312,9 +348,15 @@ final class CallLogSync {
                 String account = cursor.isNull(5) ? "" : cursor.getString(5);
                 if (!CallLogRules.onWorkSim(account, sim, alt)) continue;
                 String key = CallLogRules.key(cursor.getString(1));
-                // A number that is not a lead's never leaves the phone.
+                // A number that is not a lead's never leaves the phone. A real
+                // conversation with one is kept here to offer "Save as lead?".
                 String number = key.length() >= 6 ? numbers.get(key) : null;
-                if (number == null) continue;
+                if (number == null) {
+                    if (CallLogRules.worthSaving(key, direction, cursor.getLong(3), ignored)) {
+                        unknown = CallLogRules.keepUnknown(unknown, cursor.getString(1), key, date, direction, cursor.getLong(3), now, UNKNOWN_KEEP_MS, UNKNOWN_MAX);
+                    }
+                    continue;
+                }
                 if ("outgoing".equals(direction) && CallLogRules.placedInApp(inApp, key, date)) continue;
                 JSONObject call = new JSONObject();
                 call.put("log_id", String.valueOf(cursor.getLong(0)));
@@ -349,6 +391,7 @@ final class CallLogSync {
         }
         prefs
             .edit()
+            .putString(UNKNOWN, unknown.toString())
             .putLong(SINCE, newest)
             .putLong(LAST_SYNC, now)
             .putInt(LAST_LOGGED, logged)

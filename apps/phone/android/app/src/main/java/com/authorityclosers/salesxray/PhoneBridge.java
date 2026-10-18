@@ -238,6 +238,21 @@ final class PhoneBridge {
                     io.execute(() -> reply(reply, asked, CallLogSync.run(activity)));
                     break;
                 }
+                case "unknownCalls": {
+                    // Work calls with numbers that aren't leads: shown here only.
+                    JSONObject result = new JSONObject();
+                    result.put("items", CallLogSync.unknown(activity));
+                    reply(reply, id, result);
+                    break;
+                }
+                case "ignoreNumber":
+                    CallLogSync.ignore(activity, args.optString("number"));
+                    reply(reply, id, new JSONObject().put("items", CallLogSync.unknown(activity)));
+                    break;
+                case "forgetUnknown":
+                    CallLogSync.forget(activity, args.optString("number"));
+                    reply(reply, id, new JSONObject().put("items", CallLogSync.unknown(activity)));
+                    break;
                 case "setupStatus": {
                     String asked = id;
                     io.execute(() -> reply(reply, asked, setupStatus()));

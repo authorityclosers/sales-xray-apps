@@ -1,14 +1,20 @@
 package com.authorityclosers.salesxray;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * The plain rules of call logging (UX study item 5), kept free of Android so
- * they are tested on their own: which call-history rows are work calls with a
- * lead, and which were already placed from the app.
+ * they are tested on their own (org.json is a plain library in the tests):
+ * which call-history rows are work calls with a lead, which were already
+ * placed from the app, and which unknown numbers to offer "Save as lead?".
  */
 final class CallLogRules {
 
@@ -110,6 +116,96 @@ final class CallLogRules {
     static int minutes(String clock) {
         if (clock == null || !clock.matches("\\d{2}:\\d{2}")) return -1;
         return Integer.parseInt(clock.substring(0, 2)) * 60 + Integer.parseInt(clock.substring(3));
+    }
+
+    /**
+     * Worth asking "Save as lead?": a real phone number (not a short service
+     * code), a call that connected or that they made and nobody took, and not
+     * a number the seller marked "Not a lead".
+     */
+    static boolean worthSaving(String key, String direction, long seconds, String ignored) {
+        if (key == null || key.length() < 8 || isIgnored(ignored, key)) return false;
+        if ("missed".equals(direction)) return true;
+        return ("outgoing".equals(direction) || "incoming".equals(direction)) && seconds > 0;
+    }
+
+    static boolean isIgnored(String ignored, String key) {
+        return ignored != null && ("\n" + ignored + "\n").contains("\n" + key + "\n");
+    }
+
+    /** Adds a number to "Not a lead", keeping the newest {@code max}. */
+    static String addIgnored(String ignored, String key, int max) {
+        if (isIgnored(ignored, key)) return ignored;
+        String all = ignored == null || ignored.isEmpty() ? key : ignored + "\n" + key;
+        String[] lines = all.split("\n");
+        int from = Math.max(0, lines.length - max);
+        StringBuilder kept = new StringBuilder();
+        for (int i = from; i < lines.length; i++) kept.append(i > from ? "\n" : "").append(lines[i]);
+        return kept.toString();
+    }
+
+    /**
+     * The unknown work numbers, newest first: adds this call (when {@code key}
+     * is given) to its number, with a count of calls, drops numbers last seen
+     * longer ago than {@code keepMs}, and keeps the newest {@code max}.
+     */
+    static JSONArray keepUnknown(
+        JSONArray list,
+        String number,
+        String key,
+        long dateMs,
+        String direction,
+        long seconds,
+        long now,
+        long keepMs,
+        int max
+    ) {
+        List<JSONObject> items = new ArrayList<>();
+        boolean merged = key == null;
+        for (int i = 0; list != null && i < list.length(); i++) {
+            JSONObject item = list.optJSONObject(i);
+            if (item == null || now - item.optLong("lastMs") > keepMs) continue;
+            if (!merged && key.equals(item.optString("key"))) {
+                merged = true;
+                try {
+                    item.put("count", item.optInt("count", 1) + 1);
+                    if (dateMs >= item.optLong("lastMs")) {
+                        item.put("lastMs", dateMs).put("direction", direction).put("seconds", seconds).put("number", number);
+                    }
+                } catch (JSONException ignored) {
+                    // Keys and values here are always valid.
+                }
+            }
+            items.add(item);
+        }
+        if (!merged && now - dateMs <= keepMs) {
+            try {
+                items.add(
+                    new JSONObject()
+                        .put("number", number)
+                        .put("key", key)
+                        .put("lastMs", dateMs)
+                        .put("direction", direction)
+                        .put("seconds", seconds)
+                        .put("count", 1)
+                );
+            } catch (JSONException ignored) {
+                // Keys and values here are always valid.
+            }
+        }
+        items.sort((a, b) -> Long.compare(b.optLong("lastMs"), a.optLong("lastMs")));
+        JSONArray kept = new JSONArray();
+        for (int i = 0; i < Math.min(max, items.size()); i++) kept.put(items.get(i));
+        return kept;
+    }
+
+    static JSONArray dropUnknown(JSONArray list, String key) {
+        JSONArray kept = new JSONArray();
+        for (int i = 0; list != null && i < list.length(); i++) {
+            JSONObject item = list.optJSONObject(i);
+            if (item != null && !item.optString("key").equals(key)) kept.put(item);
+        }
+        return kept;
     }
 
     static String digits(String raw) {

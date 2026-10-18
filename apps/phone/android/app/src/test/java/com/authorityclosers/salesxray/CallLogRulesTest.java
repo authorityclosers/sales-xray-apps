@@ -115,6 +115,34 @@ public class CallLogRulesTest {
     }
 
     @Test
+    public void unknownWorkNumbersStayOnThePhoneToOfferSaveAsLead() throws Exception {
+        long now = 1_792_382_400_000L;
+        long day = 86_400_000L;
+        assertTrue(CallLogRules.worthSaving("9123456789", "outgoing", 40, ""));
+        assertTrue(CallLogRules.worthSaving("9123456789", "missed", 0, ""));
+        assertFalse(CallLogRules.worthSaving("9123456789", "outgoing", 0, ""));
+        assertFalse(CallLogRules.worthSaving("121", "incoming", 60, ""));
+        assertFalse(CallLogRules.worthSaving("9123456789", "rejected", 0, ""));
+        String ignored = CallLogRules.addIgnored("", "9123456789", 200);
+        assertFalse(CallLogRules.worthSaving("9123456789", "incoming", 60, ignored));
+        assertEquals(ignored, CallLogRules.addIgnored(ignored, "9123456789", 200));
+        assertEquals("2\n3", CallLogRules.addIgnored("1\n2", "3", 2));
+
+        org.json.JSONArray list = CallLogRules.keepUnknown(new org.json.JSONArray(), "+91 91234 56789", "9123456789", now - 3_600_000, "outgoing", 40, now, 7 * day, 30);
+        list = CallLogRules.keepUnknown(list, "09123456789", "9123456789", now - 60_000, "missed", 0, now, 7 * day, 30);
+        list = CallLogRules.keepUnknown(list, "9988776655", "9988776655", now - 8 * day, "incoming", 30, now, 7 * day, 30);
+        assertEquals(1, list.length());
+        assertEquals(2, list.getJSONObject(0).getInt("count"));
+        assertEquals("missed", list.getJSONObject(0).getString("direction"));
+        list = CallLogRules.keepUnknown(list, "9988776655", "9988776655", now - 2 * day, "incoming", 30, now, 7 * day, 30);
+        assertEquals("9123456789", list.getJSONObject(0).getString("key"));
+        assertEquals(2, list.length());
+        // A week later both are gone.
+        assertEquals(0, CallLogRules.keepUnknown(list, null, null, 0, null, 0, now + 7 * day, 7 * day, 30).length());
+        assertEquals(1, CallLogRules.dropUnknown(list, "9123456789").length());
+    }
+
+    @Test
     public void timesGoOutInUtc() {
         assertEquals("2025-10-09T08:53:20.000Z", CallLogRules.iso(1_760_000_000_000L));
     }
