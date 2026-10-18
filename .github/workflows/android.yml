@@ -65,14 +65,8 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Ring, answer and hang up; check the recording
-        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
-        with:
-          api-level: 33
-          target: google_apis
-          arch: x86_64
-          disable-animations: true
-          script: bash scripts/emulator-call-recorder.sh ${{ github.run_number }}
+      - name: Ring, answer and hang up on an emulator; check the recording
+        run: bash scripts/emulator-call-recorder.sh ${{ github.run_number }}
 
   test-build:
     if: ${{ !inputs.publish }}
