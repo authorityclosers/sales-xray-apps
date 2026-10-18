@@ -87,9 +87,16 @@ jobs:
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
         run: ./gradlew --no-daemon --stacktrace assembleDebug -PsxDev
+      - name: Build the on-phone tests for Sales Xray Dev
+        working-directory: apps/phone/android
+        env:
+          SX_BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew --no-daemon --stacktrace assembleDebugAndroidTest -PsxDev
       - name: Keep Sales Xray Dev
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk "dist/sales-xray-dev-android-0.3.${{ github.run_number }}-test.apk"
+          # Run on a connected phone with adb (DeviceCaptureTest.java says how).
+          cp android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "dist/sales-xray-dev-android-0.3.${{ github.run_number }}-device-tests.apk"
           sha256sum dist/*.apk
       - name: Keep the test APKs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
