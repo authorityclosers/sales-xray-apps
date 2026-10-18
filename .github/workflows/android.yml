@@ -185,13 +185,15 @@ jobs:
           cp "sales-xray-android-$VERSION.apk" sales-xray-android.apk
           sha256sum sales-xray-android.apk > SHA256SUMS.txt
           title="Sales Xray for Android $VERSION"
-          notes="Built from $GITHUB_SHA and signed with Authority Closers' key. Install from the Phone app button on the Leads page in Sales Xray."
+          notes="Built from $GITHUB_SHA and signed with Authority Closers' key. Install help: https://salesxray.authorityclosers.com/apps"
+          # A normal release marked latest (owner, 18 Oct): /releases/latest/download/sales-xray-android.apk
+          # and the /apps page read it, so a publish must never turn it back into a pre-release.
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             # Replace the files in place so the download links never break, then move the tag to this build.
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber sales-xray-android.apk SHA256SUMS.txt
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true > /dev/null
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease --title "$title" --notes "$notes"
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease=false --latest --title "$title" --notes "$notes"
           else
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
               --title "$title" --notes "$notes" sales-xray-android.apk SHA256SUMS.txt
           fi
