@@ -95,6 +95,26 @@ public class CallLogRulesTest {
     }
 
     @Test
+    public void callsOutsideWorkHoursStayOnThePhone() {
+        int[] monToSat = { 0, 1, 2, 3, 4, 5 };
+        int start = CallLogRules.minutes("09:30");
+        int end = CallLogRules.minutes("19:00");
+        assertEquals(570, start);
+        assertEquals(-1, CallLogRules.minutes("9:30"));
+        // Monday 19 Oct 2026, 09:30 India time is 04:00 UTC.
+        long mondayOpen = 1_792_382_400_000L;
+        assertTrue(CallLogRules.inWorkHours(mondayOpen, monToSat, start, end));
+        assertFalse(CallLogRules.inWorkHours(mondayOpen - 60_000, monToSat, start, end));
+        assertTrue(CallLogRules.inWorkHours(mondayOpen + (9 * 60 + 29) * 60_000L, monToSat, start, end));
+        assertFalse(CallLogRules.inWorkHours(mondayOpen + (9 * 60 + 30) * 60_000L, monToSat, start, end));
+        // Sunday 18 Oct at the same hour is not a work day.
+        assertFalse(CallLogRules.inWorkHours(mondayOpen - 86_400_000L, monToSat, start, end));
+        // No work hours set: every call counts.
+        assertTrue(CallLogRules.inWorkHours(mondayOpen - 86_400_000L, new int[0], start, end));
+        assertTrue(CallLogRules.inWorkHours(mondayOpen - 86_400_000L, null, start, end));
+    }
+
+    @Test
     public void timesGoOutInUtc() {
         assertEquals("2025-10-09T08:53:20.000Z", CallLogRules.iso(1_760_000_000_000L));
     }

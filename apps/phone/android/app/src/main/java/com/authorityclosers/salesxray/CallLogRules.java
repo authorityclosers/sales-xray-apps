@@ -87,6 +87,31 @@ final class CallLogRules {
         }
     }
 
+    /** India time is UTC+5:30 all year. */
+    private static final long IST_OFFSET_MS = (5 * 60 + 30) * 60_000L;
+
+    /**
+     * True when the call started inside the team's work hours (India time; days
+     * 0 Monday to 6 Sunday, minutes from midnight). No days means no work
+     * hours are set: every call counts. Outside them a call stays on the phone.
+     */
+    static boolean inWorkHours(long dateMs, int[] days, int startMinute, int endMinute) {
+        if (days == null || days.length == 0) return true;
+        long local = dateMs + IST_OFFSET_MS;
+        long day = Math.floorDiv(local, 86_400_000L);
+        int weekday = (int) Math.floorMod(day + 3, 7L); // 1 Jan 1970 was a Thursday
+        int minute = (int) (Math.floorMod(local, 86_400_000L) / 60_000L);
+        boolean workDay = false;
+        for (int value : days) if (value == weekday) workDay = true;
+        return workDay && minute >= startMinute && minute < endMinute;
+    }
+
+    /** "09:30" as minutes from midnight, or -1. */
+    static int minutes(String clock) {
+        if (clock == null || !clock.matches("\\d{2}:\\d{2}")) return -1;
+        return Integer.parseInt(clock.substring(0, 2)) * 60 + Integer.parseInt(clock.substring(3));
+    }
+
     static String digits(String raw) {
         return raw == null ? "" : raw.replaceAll("\\D", "");
     }

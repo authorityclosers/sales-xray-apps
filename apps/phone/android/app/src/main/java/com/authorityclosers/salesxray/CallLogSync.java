@@ -240,9 +240,25 @@ final class CallLogSync {
         if (book.code != 200 || book.body == null) return state(context, failure(book.code));
         Map<String, String> numbers = new HashMap<>();
         String person;
+        int[] workDays = new int[0];
+        int workStart = 0;
+        int workEnd = 24 * 60;
         try {
             JSONObject json = new JSONObject(book.body);
             person = json.getString("person_id");
+            // The team's work hours: a call outside them stays on the phone.
+            JSONObject hours = json.optJSONObject("work_hours");
+            if (hours != null) {
+                JSONArray days = hours.optJSONArray("days");
+                int start = CallLogRules.minutes(hours.optString("start"));
+                int end = CallLogRules.minutes(hours.optString("end"));
+                if (days != null && days.length() > 0 && start >= 0 && end > start) {
+                    workDays = new int[days.length()];
+                    for (int i = 0; i < days.length(); i++) workDays[i] = days.optInt(i, -1);
+                    workStart = start;
+                    workEnd = end;
+                }
+            }
             JSONArray list = json.getJSONArray("numbers");
             for (int i = 0; i < list.length(); i++) {
                 String number = list.optString(i);
@@ -292,6 +308,7 @@ final class CallLogSync {
                 newest = Math.max(newest, date);
                 String direction = CallLogRules.direction(cursor.getInt(4));
                 if (direction == null) continue;
+                if (!CallLogRules.inWorkHours(date, workDays, workStart, workEnd)) continue;
                 String account = cursor.isNull(5) ? "" : cursor.getString(5);
                 if (!CallLogRules.onWorkSim(account, sim, alt)) continue;
                 String key = CallLogRules.key(cursor.getString(1));
