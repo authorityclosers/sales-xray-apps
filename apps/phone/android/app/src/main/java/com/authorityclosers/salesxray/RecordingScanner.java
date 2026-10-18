@@ -46,7 +46,21 @@ final class RecordingScanner {
         "CallRecordings",
         "Call Recordings",
         "Sounds/CallRecord",
+        "Recordings/Call recordings",
+        "Recordings/Record/Call",
+        "Recordings/CallRecord",
+        "Music/Call Recordings",
+        "record",
     };
+
+    /** Every folder a maker's dialer may use (RecorderRules), plus the older list above. */
+    static String[] folders() {
+        java.util.LinkedHashSet<String> all = new java.util.LinkedHashSet<>(Arrays.asList(KNOWN_FOLDERS));
+        for (String[] maker : new String[][] { RecorderRules.XIAOMI, RecorderRules.SAMSUNG, RecorderRules.OPLUS, RecorderRules.VIVO, RecorderRules.HUAWEI, RecorderRules.OTHER }) {
+            all.addAll(Arrays.asList(maker));
+        }
+        return all.toArray(new String[0]);
+    }
 
     /** Path fragments that mark a call-recorder folder in the media index. */
     private static final String[] PATH_HINTS = { "%call%", "%phonerecord%", "%call_rec%", "%callrecord%" };
@@ -79,14 +93,45 @@ final class RecordingScanner {
         return Build.VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager();
     }
 
+    /**
+     * Can the recorder folders be read by path? With all-files access always;
+     * with audio access on Android 9 and older, and on Android 11 and newer
+     * (shared storage lets an app read audio files it may see by their path).
+     */
+    static boolean canReadFolders(Context context) {
+        if (hasAllFilesAccess()) return true;
+        boolean audio = hasAudioAccess(context);
+        return audio && (Build.VERSION.SDK_INT < 29 || Build.VERSION.SDK_INT >= 30);
+    }
+
+    static final class FolderCount {
+
+        int recordings;
+        long newestMs;
+    }
+
+    /** Audio files in one folder and the newest one's time (0 when none or unreadable). */
+    static FolderCount count(File folder) {
+        FolderCount count = new FolderCount();
+        File[] files = folder.listFiles();
+        if (files == null) return count;
+        for (File file : files) {
+            if (!file.isFile() || !AUDIO.contains(extension(file.getName()))) continue;
+            count.recordings++;
+            count.newestMs = Math.max(count.newestMs, file.lastModified());
+        }
+        return count;
+    }
+
     /** Newest first, at most {@code limit} items. */
     static List<JSONObject> list(Context context, int limit) {
         List<JSONObject> found = new ArrayList<>();
         Set<String> seen = new HashSet<>();
+        fromApp(context, found, seen);
         if (hasAudioAccess(context) || hasAllFilesAccess()) fromMediaIndex(context, found, seen);
-        // Some phones hide the call folder from the media index (.nomedia);
-        // with full file access the folders are read directly.
-        if (hasAllFilesAccess() || (Build.VERSION.SDK_INT < 29 && hasAudioAccess(context))) fromFolders(found, seen);
+        // Some phones hide the call folder from the media index (.nomedia), so
+        // the maker's folders are also read by path where Android allows it.
+        if (canReadFolders(context)) fromFolders(found, seen);
         found.sort((a, b) -> Long.compare(b.optLong("addedMs"), a.optLong("addedMs")));
         return found.size() > limit ? new ArrayList<>(found.subList(0, limit)) : found;
     }
@@ -159,7 +204,7 @@ final class RecordingScanner {
 
     private static void fromFolders(List<JSONObject> found, Set<String> seen) {
         File root = Environment.getExternalStorageDirectory();
-        for (String relative : KNOWN_FOLDERS) {
+        for (String relative : folders()) {
             File folder = new File(root, relative);
             File[] files = folder.listFiles();
             if (files == null) continue;
@@ -168,6 +213,23 @@ final class RecordingScanner {
                 if (!seen.add(file.getName().toLowerCase(Locale.ROOT) + ":" + file.length())) continue;
                 found.add(item("file:" + file.getAbsolutePath(), file.getName(), relative, file.lastModified(), 0, file.length(), null));
             }
+        }
+    }
+
+    /** Conversations recorded in Sales Xray itself (AppRecorder). */
+    private static void fromApp(Context context, List<JSONObject> found, Set<String> seen) {
+        File dir = context.getExternalFilesDir(AppRecorder.FOLDER);
+        File[] files = dir == null ? null : dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (!file.isFile() || file.length() == 0 || !AUDIO.contains(extension(file.getName()))) continue;
+            if (!seen.add(file.getName().toLowerCase(Locale.ROOT) + ":" + file.length())) continue;
+            JSONObject entry = item("app:" + file.getName(), file.getName(), "Sales Xray", file.lastModified(), 0, file.length(), null);
+            try {
+                entry.put("title", "Recorded in Sales Xray");
+                entry.put("inApp", true);
+            } catch (JSONException ignored) {}
+            found.add(entry);
         }
     }
 
@@ -255,12 +317,22 @@ final class RecordingScanner {
             if (stream == null) throw new IOException("recording_unavailable");
             return stream;
         }
+        if (source.startsWith("app:")) {
+            // Only a file directly inside the app's own Recordings folder.
+            File dir = context.getExternalFilesDir(AppRecorder.FOLDER);
+            String name = source.substring(4);
+            if (dir != null && !name.contains("/") && !name.contains("\\") && !name.startsWith(".")) {
+                File file = new File(dir, name);
+                if (file.getCanonicalPath().startsWith(dir.getCanonicalPath() + File.separator)) return new FileInputStream(file);
+            }
+            throw new IOException("recording_not_allowed");
+        }
         if (source.startsWith("file:")) {
             File file = new File(source.substring(5));
             // Only files inside the known call-recorder folders may be read.
             String path = file.getCanonicalPath();
             File root = Environment.getExternalStorageDirectory();
-            for (String relative : KNOWN_FOLDERS) {
+            for (String relative : folders()) {
                 if (path.startsWith(new File(root, relative).getCanonicalPath() + File.separator)) return new FileInputStream(file);
             }
         }

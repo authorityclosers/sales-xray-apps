@@ -14,7 +14,6 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
-import java.util.List;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -64,17 +63,19 @@ final class PhoneSetup {
         String family = family();
         boolean autostartNeeded = CallLogRules.hasAutostart(family);
         boolean recordings = RecordingScanner.hasAudioAccess(context) || RecordingScanner.hasAllFilesAccess();
-        long newest = 0;
-        if (recordings) {
-            List<JSONObject> found = RecordingScanner.list(context, 1);
-            if (!found.isEmpty()) newest = found.get(0).optLong("addedMs");
-        }
+        // Which dialer records, where it saves, and whether it's on (19 Oct: check, don't ask).
+        JSONObject recorder = RecorderProfile.status(context);
+        String recording = recorder.optString("recording", "unknown");
+        long newest = recorder.optLong("newestMs", 0);
         try {
             checks.put("calls", CallTracker.hasCallAccess(context));
             checks.put("recordings", recordings);
             checks.put("notifications", notificationsAllowed(context));
-            // The dialer records calls: the seller said so, or a recent recording shows it.
-            checks.put("recorder", prefs.getBoolean(RECORDER, false) || System.currentTimeMillis() - newest < RECENT_MS);
+            // The dialer records calls: its own switch says so, a recent recording
+            // shows it, or (where the phone can't tell) the seller said so. Never
+            // ticked for Google's Phone app, whose recordings no app can read.
+            boolean saidSo = prefs.getBoolean(RECORDER, false) && !"private".equals(recording) && !"off".equals(recording);
+            checks.put("recorder", "on".equals(recording) || saidSo || (!"private".equals(recording) && System.currentTimeMillis() - newest < RECENT_MS && newest > 0));
             checks.put("folder", newest > 0);
             checks.put("battery", batteryUnrestricted(context));
             checks.put("autostart", !autostartNeeded || prefs.getBoolean(AUTOSTART, false));
@@ -86,6 +87,7 @@ final class PhoneSetup {
             status.put("autostartNeeded", autostartNeeded);
             status.put("newestRecordingMs", newest > 0 ? newest : JSONObject.NULL);
             status.put("device", CallLogSync.deviceId(context));
+            status.put("recorderProfile", recorder);
         } catch (JSONException ignored) {}
         return status;
     }
@@ -130,8 +132,8 @@ final class PhoneSetup {
                 }
                 return appDetails(activity);
             case "recorder":
-                // The dialer's own settings hold "Record calls automatically".
-                return start(activity, new Intent(Intent.ACTION_DIAL));
+                // The default dialer's call settings hold "Record calls automatically".
+                return RecorderProfile.open(activity, "settings");
             case "notifications":
                 if (Build.VERSION.SDK_INT >= 26) {
                     Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, app);

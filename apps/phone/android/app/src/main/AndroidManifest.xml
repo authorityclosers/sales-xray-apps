@@ -43,6 +43,12 @@
             </intent-filter>
         </service>
 
+        <!-- In-app recording of a conversation (AppRecorder.java): microphone only, never during a phone call. -->
+        <service
+            android:name=".AppRecorder"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -72,4 +78,16 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- "Tell me about new recordings", and lead alerts. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- In-app recording (AppRecorder): the microphone, in a foreground service with a Stop button. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <!-- The installed dialers, to say which one saves recordings where (RecorderProfile). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+        </intent>
+    </queries>
 </manifest>

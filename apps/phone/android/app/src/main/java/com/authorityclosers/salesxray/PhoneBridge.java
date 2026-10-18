@@ -52,6 +52,7 @@ final class PhoneBridge {
     private static final int REQUEST_PUSH = 7104;
     private static final int REQUEST_LOG = 7105;
     private static final int REQUEST_ALERTS = 7106;
+    private static final int REQUEST_MIC = 7107;
 
     /** The bridge of the open app, for signals from outside the page (lead alerts). */
     private static volatile PhoneBridge active;
@@ -163,6 +164,14 @@ final class PhoneBridge {
             pendingReply = null;
             pendingId = null;
             io.execute(() -> reply(reply, id, setupStatus()));
+            return;
+        }
+        if (requestCode == REQUEST_MIC && pendingReply != null) {
+            JavaScriptReplyProxy reply = pendingReply;
+            String id = pendingId;
+            pendingReply = null;
+            pendingId = null;
+            reply(reply, id, recordResult(AppRecorder.hasMic(activity) ? AppRecorder.start(activity, micLead) : "no_mic"));
             return;
         }
         if ((requestCode == REQUEST_AUDIO || requestCode == REQUEST_NOTIFY || requestCode == REQUEST_CALL) && pendingReply != null) {
@@ -278,6 +287,37 @@ final class PhoneBridge {
                     SystemBarColors.paint(activity, args.optString("status"), args.optString("nav"));
                     reply(reply, id, new JSONObject());
                     break;
+                case "recorderStatus": {
+                    // Which dialer, where it saves, and whether recording is on (RecorderProfile).
+                    String asked = id;
+                    io.execute(() -> reply(reply, asked, RecorderProfile.status(activity)));
+                    break;
+                }
+                case "recorderOpen": {
+                    JSONObject result = new JSONObject();
+                    result.put("opened", RecorderProfile.open(activity, args.optString("what")));
+                    reply(reply, id, result);
+                    break;
+                }
+                case "recordStart": {
+                    String lead = args.optString("leadId", "");
+                    if (!AppRecorder.hasMic(activity)) {
+                        micLead = lead;
+                        pendingReply = reply;
+                        pendingId = id;
+                        ActivityCompat.requestPermissions(activity, new String[] { Manifest.permission.RECORD_AUDIO }, REQUEST_MIC);
+                        break;
+                    }
+                    reply(reply, id, recordResult(AppRecorder.start(activity, lead)));
+                    break;
+                }
+                case "recordStop":
+                    AppRecorder.stop(activity);
+                    reply(reply, id, AppRecorder.state(activity));
+                    break;
+                case "recordState":
+                    reply(reply, id, AppRecorder.state(activity));
+                    break;
                 case "consumeLaunch": {
                     JSONObject result = new JSONObject();
                     result.put("source", launchSource == null ? JSONObject.NULL : launchSource);
@@ -291,6 +331,16 @@ final class PhoneBridge {
         } catch (JSONException error) {
             fail(reply, id, "bad_message");
         }
+    }
+
+    private String micLead = "";
+
+    private JSONObject recordResult(String outcome) {
+        JSONObject result = AppRecorder.state(activity);
+        try {
+            result.put("outcome", outcome);
+        } catch (JSONException ignored) {}
+        return result;
     }
 
     private JSONObject status() {
