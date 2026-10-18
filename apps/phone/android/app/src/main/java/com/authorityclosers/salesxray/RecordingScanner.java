@@ -55,8 +55,14 @@ final class RecordingScanner {
         Arrays.asList("m4a", "mp3", "mpeg", "aac", "amr", "awb", "wav", "3gp", "ogg", "opus", "flac")
     );
 
-    /** Formats the Sales Xray upload accepts today. */
-    private static final Set<String> SUPPORTED = new HashSet<>(Arrays.asList("m4a", "mp3", "mpeg", "wav", "ogg", "flac"));
+    /**
+     * Formats the Sales Xray upload accepts and analyses. AAC, AMR (narrow and
+     * wide band), 3GP and Opus joined on 18 Oct (UX study item 7): the server's
+     * media allowlist and decoder already took them.
+     */
+    private static final Set<String> SUPPORTED = new HashSet<>(
+        Arrays.asList("m4a", "mp3", "mpeg", "wav", "ogg", "flac", "aac", "amr", "awb", "3gp", "opus")
+    );
 
     private static final String[] SKIP = { "whatsapp", "telegram", "signal", "notification", "ringtone", "alarm" };
 
@@ -229,6 +235,8 @@ final class RecordingScanner {
                 return "audio/aac";
             case "amr":
                 return "audio/amr";
+            case "awb":
+                return "audio/amr-wb";
             case "3gp":
                 return "audio/3gpp";
             default:
