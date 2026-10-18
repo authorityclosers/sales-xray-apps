@@ -267,7 +267,7 @@
       return (
         '<div class="sxp-watch sxp-recorder"><span><b>Record phone calls in Sales Xray</b><small>' +
         "Android lets an app hear a call only through Accessibility, so Sales Xray uses it for this and nothing else. " +
-        "It records only while a call is on. It does not read your screen, your messages or any other app. " +
+        "It records only while a call is on: phone calls, and internet calls such as WhatsApp. It does not read your screen, your messages or any other app. " +
         "Recordings stay on this phone until you tap Analyse. Android will warn that Accessibility can see and control your phone: Sales Xray uses none of that. " +
         "Mostly your side is heard; put the call on speaker for both sides." +
         '</small></span><span><button type="button" class="sxp-go" data-call="on">Turn on</button> <button type="button" class="sxp-go" data-call="cancel">Not now</button></span></div>'

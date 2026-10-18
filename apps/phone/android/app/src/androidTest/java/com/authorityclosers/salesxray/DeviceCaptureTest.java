@@ -139,6 +139,71 @@ public class DeviceCaptureTest {
         assertTrue(mine.loadDescription(context.getPackageManager()).contains("does not read your screen"));
     }
 
+    /**
+     * After a call (the emulator's `adb emu gsm call/accept/cancel`, or the Dev
+     * build's simulated call on a phone without a SIM): the recorder made one
+     * file, tagged "accessibility", that lists and reads back. Runs only when
+     * the caller passes -e expectCall <phone|simulated>.
+     */
+    /** The newest recording the call recorder made whose name has {@code marker} ("" = a SIM call). */
+    private JSONObject newestCallRecording(String marker) {
+        for (JSONObject item : RecordingScanner.list(context(), 500)) {
+            if (!"accessibility".equals(item.optString("captured"))) continue;
+            String name = item.optString("name");
+            boolean sim = !name.contains("(");
+            if (marker.isEmpty() ? sim : name.contains(marker)) return item;
+        }
+        return null;
+    }
+
+    @Test
+    public void aCallWasRecordedByTheRecorder() throws Exception {
+        String expect = InstrumentationRegistry.getArguments().getString("expectCall");
+        org.junit.Assume.assumeTrue("run with -e expectCall phone|simulated[,voip]", expect != null && (expect.contains("phone") || expect.contains("simulated")));
+        Context context = context();
+        JSONObject status = CallRecorderService.status(context);
+        Log.i(TAG, "after call " + status);
+        assertTrue(status.getBoolean("wanted"));
+        assertTrue(status.getBoolean("enabled"));
+        JSONObject listed = newestCallRecording(expect.contains("simulated") ? "(simulated)" : "");
+        assertNotNull("no call recording listed", listed);
+        String source = listed.getString("source");
+        assertTrue(source.startsWith("app:" + CallRecorderService.PREFIX));
+        Log.i(TAG, "call recording listed " + listed);
+        assertNotNull(listed);
+        assertEquals("accessibility", listed.getString("captured"));
+        try (InputStream stream = RecordingScanner.open(context, source)) {
+            byte[] bytes = readAll(stream);
+            Log.i(TAG, "call recording bytes " + bytes.length);
+            assertEquals("ftyp", new String(bytes, 4, 4, "US-ASCII"));
+        }
+    }
+
+    /**
+     * An internet call (WhatsApp, Meet, Telegram) puts the phone in "in
+     * communication" mode. The Dev build's SimulateCallReceiver does the same
+     * (voip-start, then voip-end) in the running app before this check: the
+     * recorder made one "(internet call)" file tagged "accessibility".
+     * Runs only with -e expectCall voip.
+     */
+    @Test
+    public void anInternetCallIsRecorded() throws Exception {
+        String expect = InstrumentationRegistry.getArguments().getString("expectCall");
+        org.junit.Assume.assumeTrue("run with -e expectCall ...,voip", expect != null && expect.contains("voip"));
+        Context context = context();
+        JSONObject status = CallRecorderService.status(context);
+        Log.i(TAG, "after internet call " + status);
+        JSONObject listed = newestCallRecording("(internet call)");
+        assertNotNull("no internet-call recording listed", listed);
+        String source = listed.getString("source");
+        Log.i(TAG, "internet call listed " + listed);
+        assertNotNull(listed);
+        assertEquals("accessibility", listed.getString("captured"));
+        try (InputStream stream = RecordingScanner.open(context, source)) {
+            assertEquals("ftyp", new String(readAll(stream), 4, 4, "US-ASCII"));
+        }
+    }
+
     @Test
     public void refusesToReadOutsideTheRecordingFolders() {
         for (String source : new String[] { "app:../../shared_prefs/sx_call_log.xml", "file:/sdcard/DCIM/x.jpg", "media:content://contacts/people/1" }) {
