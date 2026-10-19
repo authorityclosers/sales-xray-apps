@@ -240,7 +240,9 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             # Replace the files in place so the download links never break, then move the tag to this build.
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber sales-xray-android.apk SHA256SUMS.txt
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true > /dev/null
+            # GitHub refuses the workflow's token a tag move onto a commit that changes workflow
+            # files (19 Oct, run 39223196327): the notes name the build either way, so go on.
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true > /dev/null     || echo "::warning::The tag stays where it was (this build changes workflow files); the release notes name $GITHUB_SHA."
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease=false --latest --title "$title" --notes "$notes"
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
