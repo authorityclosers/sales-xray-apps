@@ -1,0 +1,13 @@
+[Unit]
+Description=Sales Xray signed-in nightly on production with the QA account (one analysis, /home/acdev/qa-nightly)
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=acdev
+Group=acdev
+ExecStart=/home/acdev/qa-nightly/run.sh
+TimeoutStartSec=50min
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
