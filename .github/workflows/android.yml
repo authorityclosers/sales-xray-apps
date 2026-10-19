@@ -116,13 +116,19 @@ jobs:
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
         run: ./gradlew --no-daemon --stacktrace assembleDebug -PsxDev
-      - name: A Play Store build carries no call recorder
+      - name: A Play Store build carries no call recorder, all-files access or battery request
         working-directory: apps/phone/android
         run: |
           ./gradlew --no-daemon --stacktrace :app:processDebugManifest -PsxPlay
           merged=$(find app/build/intermediates -path '*merged_manifest*' -name AndroidManifest.xml | head -1)
-          if grep -q CallRecorderService "$merged"; then echo "Play build still declares CallRecorderService"; exit 1; fi
-          echo "Play build: no accessibility call recorder ($merged)"
+          for banned in CallRecorderService MANAGE_EXTERNAL_STORAGE REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; do
+            if grep -q "$banned" "$merged"; then echo "Play build still declares $banned"; exit 1; fi
+          done
+          grep -q READ_CALL_LOG "$merged"
+          echo "Play build: none of them; READ_CALL_LOG kept for the Call log declaration ($merged)"
+      - name: The Play App Bundle builds (unsigned)
+        working-directory: apps/phone/android
+        run: ./gradlew --no-daemon --stacktrace bundleRelease -PsxPlay
       - name: Build the on-phone tests for Sales Xray Dev
         working-directory: apps/phone/android
         env:

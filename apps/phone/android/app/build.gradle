@@ -12,6 +12,9 @@ android {
         // the main repo made before the apps moved here.
         versionCode(1000 + (System.getenv("SX_BUILD_NUMBER") ?: "1").toInteger())
         versionName "0.3.${System.getenv("SX_BUILD_NUMBER") ?: "0"}"
+        // Play builds (play.yml) number themselves above every sideload build.
+        if (System.getenv("SX_VERSION_CODE")) versionCode(System.getenv("SX_VERSION_CODE").toInteger())
+        if (System.getenv("SX_VERSION_NAME")) versionName System.getenv("SX_VERSION_NAME")
         manifestPlaceholders = [appLabel: "Sales Xray"]
         // The call recorder listens to this app's own events only (call_recorder_service.xml).
         resValue "string", "sx_self_package", "com.authorityclosers.salesxray"
