@@ -48,6 +48,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        SafeArea.apply(this);
         WebView webView = getBridge().getWebView();
         phone = new PhoneBridge(this, webView);
         google = new GoogleSignIn(this, webView);

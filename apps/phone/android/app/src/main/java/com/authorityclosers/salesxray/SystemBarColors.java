@@ -16,9 +16,9 @@ import java.util.regex.Pattern;
  * The status bar and the navigation bar take the colours at the very top and
  * bottom of the page (sx-phone.js measures them), with icons that stay readable.
  *
- * Capacitor 8's SystemBars plugin pads the window's root view by the bars'
- * height, so what shows behind the bars is that view's background, not the
- * window's status bar colour: both are set. The last colours are kept so the
+ * SafeArea pads the page by the bars and the cut-out, so what shows behind the
+ * bars is the window's root view background, not the window's status bar
+ * colour (ignored on Android 15+): both are set. The last colours are kept so the
  * next launch opens in them instead of the theme's grey.
  */
 final class SystemBarColors {

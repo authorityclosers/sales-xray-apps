@@ -11,5 +11,10 @@
   "android": {
     "allowMixedContent": false,
     "backgroundColor": "#0b1220"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "disable"
+    }
   }
 }

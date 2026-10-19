@@ -58,3 +58,11 @@ sleep 4
 adb shell am instrument -w -e class "com.authorityclosers.salesxray.DeviceCaptureTest#aCallWasRecordedByTheRecorder,com.authorityclosers.salesxray.DeviceCaptureTest#anInternetCallIsRecorded"   -e expectCall phone,voip "$P.test/androidx.test.runner.AndroidJUnitRunner" | tee instrument.txt
 adb logcat -d -s SXTEST:I | tail -20
 grep -q "^OK (2 tests)" instrument.txt
+# Safe areas: a punch-hole cut-out like the owner's phone, then the page must sit clear
+# of the status bar, the cut-out and the navigation bar.
+adb shell cmd overlay enable com.android.internal.display.cutout.emulation.hole || adb shell cmd overlay enable com.android.internal.display.cutout.emulation.corner || true
+sleep 3
+adb exec-out screencap -p > safe-area.png || true
+adb shell am instrument -w -e class com.authorityclosers.salesxray.SafeAreaTest "$P.test/androidx.test.runner.AndroidJUnitRunner" | tee safe-area.txt
+adb logcat -d -s SXTEST:I | grep "safe area" | tail -2
+grep -q "^OK (1 test)" safe-area.txt
