@@ -13,7 +13,8 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Plain rules for Connect (Facebook &amp; Instagram, Google Ads, WhatsApp) from the app:
+ * Plain rules for Connect (Facebook &amp; Instagram leads, Google Ads, WhatsApp, Messenger and
+ * Instagram conversations) from the app:
  * which sign-in addresses the app opens in the phone's browser, and which page a
  * return opens. See ConnectFlow.
  */
@@ -33,6 +34,7 @@ final class ConnectRules {
         PAGES.put("meta", "/leads?tab=sources");
         PAGES.put("google", "/leads?tab=sources");
         PAGES.put("whatsapp", "/organisation?tab=integrations");
+        PAGES.put("messaging", "/organisation?tab=integrations");
     }
 
     private static final Pattern HANDOFF = Pattern.compile("[A-Za-z0-9_-]{20,8192}");

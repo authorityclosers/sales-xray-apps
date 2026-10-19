@@ -63,6 +63,11 @@ public class ConnectRulesTest {
             PROD + "/organisation?tab=integrations#connect=whatsapp&handoff=" + HANDOFF,
             ConnectRules.page(PROD, "provider=whatsapp&handoff=" + HANDOFF, HOSTS)
         );
+        // Messenger and Instagram conversations connect in Settings → Integrations too.
+        assertEquals(
+            PROD + "/organisation?tab=integrations#connect=messaging&handoff=" + HANDOFF,
+            ConnectRules.page(PROD, "provider=messaging&handoff=" + HANDOFF, HOSTS)
+        );
     }
 
     @Test
