@@ -41,6 +41,7 @@ public class MainActivity extends BridgeActivity {
 
     private PhoneBridge phone;
     private GoogleSignIn google;
+    private ConnectFlow connect;
     /** A lead or Report to open from an alert (a /leads or /review path), once the page is there. */
     private String pendingOpen;
     private boolean pageReady;
@@ -50,7 +51,8 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         SafeArea.apply(this);
         WebView webView = getBridge().getWebView();
-        phone = new PhoneBridge(this, webView);
+        connect = new ConnectFlow(this, webView);
+        phone = new PhoneBridge(this, webView, connect);
         google = new GoogleSignIn(this, webView);
         phone.attach();
         phone.takeLaunch(getIntent());
@@ -109,6 +111,7 @@ public class MainActivity extends BridgeActivity {
             }
         );
         google.take(getIntent());
+        connect.take(getIntent());
         // After Capacitor's SystemBars has painted the theme's colours at start-up.
         webView.post(() -> SystemBarColors.restore(this));
     }
@@ -127,6 +130,7 @@ public class MainActivity extends BridgeActivity {
         phone.takeLaunch(intent);
         phone.signal("launch");
         google.take(intent);
+        connect.take(intent);
         takeOpen(intent);
         deliverOpen();
     }

@@ -69,16 +69,18 @@ final class PhoneBridge {
     /** The page that spoke last: a call's result is sent there. */
     private JavaScriptReplyProxy events;
     private final CallTracker calls;
+    private final ConnectFlow connect;
     private JavaScriptReplyProxy pushReply;
     private String pushId;
     private JavaScriptReplyProxy logReply;
     private String logId;
     private String logSim;
 
-    PhoneBridge(AppCompatActivity activity, WebView webView) {
+    PhoneBridge(AppCompatActivity activity, WebView webView, ConnectFlow connect) {
         this.activity = activity;
         this.webView = webView;
         this.calls = new CallTracker(activity, this::sendCall);
+        this.connect = connect;
     }
 
     void onResume() {
@@ -347,6 +349,13 @@ final class PhoneBridge {
                     reply(reply, id, new JSONObject().put("opened", opened));
                     break;
                 }
+                case "openConnect": {
+                    // Facebook or Google sign-in for a Connect, in the phone's browser (ConnectFlow).
+                    JSONObject result = new JSONObject();
+                    result.put("opened", connect.open(args.optString("url"), webView.getUrl()));
+                    reply(reply, id, result);
+                    break;
+                }
                 case "consumeLaunch": {
                     JSONObject result = new JSONObject();
                     result.put("source", launchSource == null ? JSONObject.NULL : launchSource);
@@ -387,6 +396,7 @@ final class PhoneBridge {
             status.put("push", true);
             status.put("callLog", true);
             status.put("setup", true);
+            status.put("connect", true);
             status.put("version", versionName());
         } catch (JSONException ignored) {}
         return status;

@@ -24,7 +24,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Google sign-in comes back here from its Custom Tab (GoogleSignIn.java). -->
+            <!-- Google sign-in (GoogleSignIn.java) and Connect (ConnectFlow.java) come back here from the browser. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -104,6 +104,15 @@
     <queries>
         <intent>
             <action android:name="android.intent.action.DIAL" />
+        </intent>
+        <!-- Connect opens Facebook's and Google's sign-in in a browser, never another app (ConnectFlow.java). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
         </intent>
     </queries>
 </manifest>
