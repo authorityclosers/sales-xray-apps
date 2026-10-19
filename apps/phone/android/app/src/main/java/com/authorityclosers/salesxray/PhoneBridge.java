@@ -397,6 +397,8 @@ final class PhoneBridge {
             status.put("callLog", true);
             status.put("setup", true);
             status.put("connect", true);
+            // Facebook and Apple sign-in also open in the phone's browser (GoogleSignIn).
+            status.put("signIn", true);
             status.put("version", versionName());
         } catch (JSONException ignored) {}
         return status;

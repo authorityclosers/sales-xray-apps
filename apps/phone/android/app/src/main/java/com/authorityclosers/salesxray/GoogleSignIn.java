@@ -1,5 +1,6 @@
 package com.authorityclosers.salesxray;
 
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -7,6 +8,7 @@ import android.net.Uri;
 import android.util.Base64;
 import android.webkit.WebView;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.browser.customtabs.CustomTabsClient;
 import androidx.browser.customtabs.CustomTabsIntent;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
@@ -20,16 +22,17 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * Google sign-in for the app. Google refuses sign-in inside web views, so the
- * Sales Xray sign-in start opens in a Chrome Custom Tab instead, with a
- * PKCE-style challenge only this app can answer. The server hands the result
- * back to com.authorityclosers.salesxray:/auth/return. The sign-in window the
- * page opened (a hidden web view, see MainActivity) redeems the one-time code
- * once, lands on /auth/complete and tells the page, exactly as on the web.
+ * Sign-in for the app: Google, and since 19 Oct 2026 Facebook and Apple too
+ * (SignInRules). Providers refuse or break sign-in inside web views, so the
+ * Sales Xray sign-in start opens in a Custom Tab instead, with a PKCE-style
+ * challenge only this app can answer. The server hands the result back to
+ * com.authorityclosers.salesxray:/auth/return. The web view that started it (the
+ * page's sign-in window for Google, the app itself for Facebook and Apple)
+ * redeems the one-time code once, lands on /auth/complete and finishes there,
+ * exactly as on the web.
  */
 final class GoogleSignIn {
 
-    static final String START_PATH = "/v1/auth/google/start";
     static final String RETURN_PATH = "/auth/return";
     static final String EXCHANGE_PATH = "/v1/auth/google/app-exchange";
     static final String COMPLETE_PATH = "/auth/complete";
@@ -71,10 +74,10 @@ final class GoogleSignIn {
         );
     }
 
-    /** Opens a Sales Xray Google sign-in start in a Custom Tab instead of a web view. */
+    /** Opens a Sales Xray sign-in start (Google, Facebook, Apple) in a Custom Tab instead of a web view. */
     boolean intercept(Uri url, WebView source) {
         if (url == null || !"https".equals(url.getScheme()) || !PhoneBridge.HOSTS.contains(url.getHost())) return false;
-        if (!START_PATH.equals(url.getPath()) || url.getQueryParameter("app_challenge") != null) return false;
+        if (!SignInRules.isStart(url.getPath()) || url.getQueryParameter("app_challenge") != null) return false;
         byte[] secret = new byte[32];
         random.nextBytes(secret);
         String verifier = base64Url(secret);
@@ -96,7 +99,21 @@ final class GoogleSignIn {
             .putLong(KEY_STARTED, System.currentTimeMillis())
             .apply();
         Uri start = url.buildUpon().appendQueryParameter("app_challenge", challenge).build();
-        new CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(activity, start);
+        CustomTabsIntent tab = new CustomTabsIntent.Builder().setShowTitle(true).build();
+        // A browser, never the Facebook app: it would take facebook.com links for itself.
+        String browser = CustomTabsClient.getPackageName(activity, null);
+        if (browser != null) tab.intent.setPackage(browser);
+        try {
+            tab.launchUrl(activity, start);
+        } catch (ActivityNotFoundException error) {
+            try {
+                activity.startActivity(new Intent(Intent.ACTION_VIEW, start).addCategory(Intent.CATEGORY_BROWSABLE));
+            } catch (ActivityNotFoundException ignored) {
+                awaiting = false;
+                prefs().edit().clear().apply();
+                report("unavailable");
+            }
+        }
         return true;
     }
 
@@ -156,10 +173,15 @@ final class GoogleSignIn {
         if (target == window) target = null;
     }
 
-    /** Tells the page's sign-in window how Google ended; the page shows the message. */
+    /**
+     * Tells the web view that started the sign-in how it ended; the page shows the
+     * message. For Facebook and Apple that is the app itself: /auth/complete takes
+     * the result back to the page the sign-in started from.
+     */
     private void report(String result) {
         WebView window = target;
-        if (window == null || window == main || origin == null) return;
+        if (window == null || origin == null) return;
+        if (window != main && window.getParent() == null) return;
         Uri.Builder complete = Uri.parse(origin + COMPLETE_PATH).buildUpon();
         if (flow != null) complete.appendQueryParameter("flow", flow);
         complete.appendQueryParameter("auth_result", result);
