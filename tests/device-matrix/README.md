@@ -19,6 +19,10 @@ Today it covers production's public, signed-out pages:
 
 On each page it checks that the key words render and that nothing is wider than the screen.
 
+## Cloudflare's bot check (needs the owner)
+
+Production sits behind Cloudflare's bot check. The first run (19 Oct, run 39206406136) showed it to GitHub's Linux and Windows runners and to the Android emulators instead of Sales Xray; only the macOS runners got through. Each job now fails with "Cloudflare's bot check stopped the page" rather than passing on the challenge page. Tests never try to solve the check. Letting the runners through is a Cloudflare setting for the owner, for example a WAF skip rule for a header carrying a secret token that the workflow sends from a GitHub secret.
+
 ## Not yet (needs the owner)
 
 The signed-in flows need a test account the owner approves:

@@ -5,6 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 const BASE = process.env.SX_BASE_URL || "https://salesxray.authorityclosers.com";
 const DRIVER = process.env.SAFARI_DRIVER || "http://127.0.0.1:4444";
 const OUT = process.env.OUT || "shots";
+const BOT_CHECK = /Performing security verification|Verify you are human/i;
 const PAGES = [
   { path: "/dashboard", name: "sign-in", words: /sign in|email|continue/i },
   { path: "/apps", name: "apps", words: /Download for Android/ },
@@ -31,13 +32,16 @@ try {
   for (const target of PAGES) {
     await call("POST", `/session/${id}/url`, { url: BASE + target.path });
     let text = "";
-    for (let i = 0; i < 20 && !target.words.test(text); i++) {
+    for (let i = 0; i < 20 && !target.words.test(text) && !BOT_CHECK.test(text); i++) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       text = await call("POST", `/session/${id}/execute/sync`, { script: "return document.body ? document.body.innerText : ''", args: [] });
     }
     const png = await call("GET", `/session/${id}/screenshot`);
     writeFileSync(`${OUT}/safari-macos-${target.name}.png`, Buffer.from(png, "base64"));
-    if (target.words.test(text)) console.log(`ok safari-macos/${target.name}`);
+    if (BOT_CHECK.test(text)) {
+      failures.push(target.name);
+      console.log(`FAIL safari-macos/${target.name}: Cloudflare's bot check stopped the page`);
+    } else if (target.words.test(text)) console.log(`ok safari-macos/${target.name}`);
     else {
       failures.push(target.name);
       console.log(`FAIL safari-macos/${target.name}`);

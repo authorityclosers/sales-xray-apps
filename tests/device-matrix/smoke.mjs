@@ -9,6 +9,8 @@ import { mkdirSync } from "node:fs";
 import { chromium, firefox, webkit } from "playwright";
 
 const BASE = process.env.SX_BASE_URL || "https://salesxray.authorityclosers.com";
+// Cloudflare's challenge page, shown instead of the site to some datacenter addresses.
+const BOT_CHECK = /Performing security verification|Verify you are human/i;
 const BROWSER = process.env.BROWSER || "chromium";
 const OUT = process.env.OUT || "shots";
 
@@ -41,6 +43,7 @@ const failures = [];
 for (const screen of SCREENS) {
   const context = await browser.newContext({
     viewport: { width: screen.width, height: screen.height },
+    bypassCSP: true,
     // Firefox has no mobile emulation; it still gets the narrow viewport.
     ...(screen.mobile && BROWSER !== "firefox" ? { isMobile: true, hasTouch: true } : {}),
   });
@@ -50,12 +53,17 @@ for (const screen of SCREENS) {
   for (const target of PAGES) {
     const label = `${BROWSER}/${screen.name}/${target.name}`;
     try {
-      const response = await page.goto(BASE + target.path, { waitUntil: "load", timeout: 45000 });
-      await page.waitForFunction(
-        (source) => new RegExp(source.pattern, source.flags).test(document.body?.innerText || ""),
-        { pattern: target.words.source, flags: target.words.flags },
-        { timeout: 20000 },
-      );
+      const response = await page.goto(BASE + target.path, { waitUntil: "domcontentloaded", timeout: 45000 });
+      // Read the text through the locator: production's CSP forbids eval, which
+      // page.waitForFunction needs in Firefox and WebKit.
+      let text = "";
+      for (let i = 0; i < 20 && !target.words.test(text); i++) {
+        text = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+        if (BOT_CHECK.test(text)) break;
+        if (!target.words.test(text)) await page.waitForTimeout(1000);
+      }
+      if (BOT_CHECK.test(text)) throw new Error("Cloudflare's bot check stopped the page (see README.md)");
+      if (!target.words.test(text)) throw new Error("the page's key words never appeared");
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth > window.innerWidth + 1,
       );
