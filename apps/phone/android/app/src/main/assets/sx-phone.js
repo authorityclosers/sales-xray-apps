@@ -616,6 +616,18 @@
             type: item.mime,
             lastModified: item.addedMs,
           });
+          // How it was captured (ADR 0056 F2): the web upload sends this note as
+          // X-Capture-Source (app/capture-source.ts reads the same key).
+          var captured = {
+            dialer: "android_dialer_pickup",
+            in_app: "android_in_app_recorder",
+            accessibility: "android_call_recorder",
+          }[item.captured];
+          if (captured) {
+            try {
+              sessionStorage.setItem("sx.capture:" + file.name + ":" + file.size, captured);
+            } catch (error) {}
+          }
           // Right after a page load the upload area is drawn before React listens
           // to it, and an early drop is lost (Redmi, 19 Oct). Drop, then check the
           // file is listed; try again for a few seconds.
