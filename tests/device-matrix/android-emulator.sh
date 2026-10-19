@@ -43,7 +43,10 @@ adb exec-out screencap -p > "$OUT/$tag-app.png"
 sleep 10
 adb exec-out screencap -p > "$OUT/$tag-app-later.png"
 # The app must still be in front (it hasn't crashed).
-adb shell dumpsys activity activities | grep -q "topResumedActivity.*com.authorityclosers.salesxray"
+# "topResumedActivity" on Android 11+, "mResumedActivity" on Android 10.
+front=$(adb shell dumpsys activity activities | grep -m1 -E "(topResumedActivity|mResumedActivity|ResumedActivity:)" || true)
+echo "in front: $front"
+echo "$front" | grep -q "com.authorityclosers.salesxray"
 # And it must show Sales Xray, not Cloudflare's bot check.
 adb shell uiautomator dump /sdcard/ui.xml >/dev/null
 adb exec-out cat /sdcard/ui.xml > "$OUT/$tag-screen.xml"
