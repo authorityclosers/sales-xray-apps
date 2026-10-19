@@ -8,7 +8,7 @@
 | browsers-windows | Windows | Chrome and Edge (the runner's own), same five screens |
 | safari-macos | macOS | Real Safari through safaridriver |
 | ios-simulator | macOS | Safari on iPhone SE (3rd gen), 13 mini, 15 and 16 Pro Max, whichever the runner's Xcode has |
-| android-emulators | Ubuntu | The published Android app on Android 10 (small phone), 13 (Pixel 6) and 15 (Pixel Tablet) |
+| android-emulators | Ubuntu | The published Android app on Android 10 (small phone; big fonts, 3-button navigation), 13 (Pixel 6; punch-hole, notch, big fonts), 15 (Pixel 7; punch-hole, dark mode, gesture and 3-button navigation) and 15 (Pixel Tablet; dark). Each variant gets a screenshot and a check that the page starts below the status bar and cut-out |
 | call-recorder | Ubuntu | Starts `android.yml` with `emulator=true`: an emulated SIM call and an internet call, each must make one tagged recording |
 
 Today it covers production's public, signed-out pages:

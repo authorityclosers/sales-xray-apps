@@ -2,10 +2,14 @@
 # The Sales Xray Android app (the published APK, which opens production) on an
 # emulator of a given Android version and screen: start it, let the page load, keep
 # screenshots of the app, the signed-out page and /apps (owner order, 19 Oct).
-#   android-emulator.sh <api level> <device id, e.g. pixel_6 | pixel_tablet | small_phone>
+#   android-emulator.sh <api level> <device id, e.g. pixel_6 | pixel_tablet | small_phone> [variants]
+# variants (comma-separated, owner's phone test 19 Oct): punch-hole, notch, font-large,
+# dark, gesture, buttons. Each is applied in turn after the first launch, and the app gets
+# a screenshot and a safe-area check (the page must sit below the status bar / cut-out).
 set -euo pipefail
 api=$1
 device=$2
+variants=${3:-}
 OUT=${OUT:-shots}
 mkdir -p "$OUT"
 sdk=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
@@ -44,7 +48,48 @@ adb shell dumpsys activity activities | grep -q "topResumedActivity.*com.authori
 adb shell uiautomator dump /sdcard/ui.xml >/dev/null
 adb exec-out cat /sdcard/ui.xml > "$OUT/$tag-screen.xml"
 if grep -qiE "Performing security verification|Verify you are human" "$OUT/$tag-screen.xml"; then
-  echo "FAIL $tag: Cloudflare's bot check stopped the app (see README.md)"
-  exit 1
+  echo "FAIL $tag: Cloudflare's bot check stopped the app (see README.md); layout checks still run"
+  blocked=1
 fi
 echo "ok $tag"
+
+# The page's web view must start below the status bar and any cut-out (SafeArea.java).
+check_safe_area() {
+  local name=$1
+  adb shell uiautomator dump /sdcard/ui.xml >/dev/null
+  adb exec-out cat /sdcard/ui.xml > "$OUT/$tag-$name.xml"
+  local web bar
+  web=$(grep -o 'class="android.webkit.WebView"[^>]*bounds="\[[0-9]*,[0-9]*\]' "$OUT/$tag-$name.xml" | head -1 | sed -E 's/.*bounds="\[[0-9]+,([0-9]+)\]/\1/')
+  # "type=statusBars" on Android 11+, "ITYPE_STATUS_BAR" on Android 10.
+  bar=$(adb shell dumpsys window | grep -m1 -oE '(statusBars|ITYPE_STATUS_BAR)[^ ]* frame=\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | sed -E 's/.*\]\[[0-9]+,([0-9]+)\]/\1/')
+  echo "$tag/$name: web view top ${web:-?}, status bar bottom ${bar:-?}"
+  if [ -n "$web" ] && [ -n "$bar" ] && [ "$web" -lt "$bar" ]; then
+    echo "FAIL $tag/$name: the page starts under the status bar"
+    return 1
+  fi
+}
+relaunch() {
+  adb shell am force-stop com.authorityclosers.salesxray
+  adb shell monkey -p com.authorityclosers.salesxray -c android.intent.category.LAUNCHER 1 >/dev/null
+  sleep 20
+}
+failed=${blocked:-0}
+check_safe_area base || failed=1
+IFS=, read -ra list <<< "$variants"
+for variant in "${list[@]}"; do
+  case "$variant" in
+    punch-hole) adb shell cmd overlay enable com.android.internal.display.cutout.emulation.hole || true ;;
+    notch) adb shell cmd overlay enable com.android.internal.display.cutout.emulation.tall || true ;;
+    font-large) adb shell settings put system font_scale 1.3 ;;
+    dark) adb shell cmd uimode night yes ;;
+    gesture) adb shell cmd overlay enable com.android.internal.systemui.navbar.gestural || true ;;
+    buttons) adb shell cmd overlay enable com.android.internal.systemui.navbar.threebutton || true ;;
+    "") continue ;;
+    *) echo "unknown variant $variant"; continue ;;
+  esac
+  sleep 3
+  relaunch
+  adb exec-out screencap -p > "$OUT/$tag-$variant.png"
+  check_safe_area "$variant" || failed=1
+done
+exit $failed
