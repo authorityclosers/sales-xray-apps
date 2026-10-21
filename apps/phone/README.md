@@ -24,10 +24,15 @@ The Sales Xray web app (https://salesxray.authorityclosers.com) in a Capacitor 8
   | Others                | `PhoneRecord`, `Call Recordings`                                 |
 
 - **Tell me about new recordings.** A 15-minute background check (WorkManager) posts a notification for each new recording.
+- **Dialer calls with a lead get their recording** (owner, 22 Oct 2026). Logging work calls (`CallLogSync`) puts calls made from the phone's own dialer, or taken on the phone, on the lead; Sales Xray answers with each call's id. A call that connected waits on the phone (`RecordingQueue`, three days) until the recording its dialer saved is found (`RecordingMatch`): the lead's number and the call's time must fit, a file named after another number never matches, and a recording is used for one call only. The page lists them (`pendingRecordings`) and uploads one only after the seller agrees to the terms; its Report joins that call on the lead. Nothing leaves the phone before that.
+- **Silent and one-sided recordings** (Redmi audit, 22 Oct). `AudioLevels` decodes the first three minutes on the phone and `AudioCheckRules` calls a recording silent, one-sided (a warning) or fine, so a silent one is never analysed. Phone setup's test call to a colleague (`testCall`) checks that both people are heard; its recording stays on the phone.
+- **Xiaomi, Redmi and POCO hide their recordings.** MIUI and HyperOS keep a `.nomedia` file in `MIUI/sound_recorder`, so on Android 11 and newer the app sees the recordings only with All files access. Phone setup says so and opens Android's screen (`needsAllFiles`, `setupOpen("allFiles")`). "Add the recording" opens Android's picker in the phone's recordings folder, which shows them either way.
+- **Truecaller's after-call screen.** It covers "How did it go?" after a call placed from the app. If something still covers the app 3 seconds after the call, the app comes forward once more; at 7 seconds a "How did the call with … go?" notification brings it back.
 
 ## Limits
 
 - **Google Phone app:** keeps its recordings private, so they can't be read.
+- **Play builds and Xiaomi:** a Play build has no All files access, so a Xiaomi phone's hidden recordings are reached only through the picker until a folder grant is built.
 - **Call history:** download builds read it to tell connected from not connected. Google Play allows that only for default phone apps, so a Play build would drop it and the person answers by hand.
 - **iPhone:** gives apps no access to call audio.
 - **Formats:** `.aac` and `.amr` are listed but cannot be analysed until the server accepts them.
