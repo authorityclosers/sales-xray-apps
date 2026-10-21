@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.TimeZone;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -264,6 +265,103 @@ final class CallLogRules {
         } catch (NumberFormatException error) {
             return -1;
         }
+    }
+
+    /** A logged call looks for its recording this long after it ended, then shows none. */
+    static final long LOOK_MS = 6L * 60 * 60 * 1000;
+    /** Lead calls waiting to be analysed stay this long, newest {@link #QUEUE_MAX}. */
+    static final long QUEUE_KEEP_MS = 3L * 24 * 60 * 60 * 1000;
+    static final int QUEUE_MAX = 40;
+
+    /** A call whose recording is worth finding: someone talked. */
+    static boolean wantsRecording(String direction, long seconds) {
+        return seconds > 0 && ("outgoing".equals(direction) || "incoming".equals(direction));
+    }
+
+    /**
+     * The connected calls Sales Xray put on a lead, from its answer to the phone
+     * log ({log_id, lead_id, event_id} per call; older servers send none), with
+     * what the phone sent for each row ({@code rows} by log id).
+     */
+    static List<JSONObject> waitingCalls(JSONArray answered, Map<String, JSONObject> rows) {
+        List<JSONObject> waiting = new ArrayList<>();
+        for (int i = 0; answered != null && i < answered.length(); i++) {
+            JSONObject ref = answered.optJSONObject(i);
+            if (ref == null) continue;
+            JSONObject row = rows.get(ref.optString("log_id"));
+            String event = ref.optString("event_id");
+            String lead = ref.optString("lead_id");
+            if (row == null || event.isEmpty() || lead.isEmpty()) continue;
+            if (!wantsRecording(row.optString("direction"), row.optLong("seconds"))) continue;
+            try {
+                waiting.add(
+                    new JSONObject()
+                        .put("eventId", event)
+                        .put("leadId", lead)
+                        .put("logId", ref.optString("log_id"))
+                        .put("key", row.optString("key"))
+                        .put("startedMs", row.optLong("startedMs"))
+                        .put("seconds", row.optLong("seconds"))
+                        .put("direction", row.optString("direction"))
+                );
+            } catch (JSONException ignored) {
+                // Keys and values here are always valid.
+            }
+        }
+        return waiting;
+    }
+
+    /** Adds a logged lead call to the calls waiting for their recording (once per call event). */
+    static JSONArray enqueue(JSONArray queue, JSONObject entry, long now) {
+        String event = entry.optString("eventId");
+        JSONArray next = new JSONArray();
+        boolean known = false;
+        for (int i = 0; queue != null && i < queue.length(); i++) {
+            JSONObject item = queue.optJSONObject(i);
+            if (item == null) continue;
+            if (item.optString("eventId").equals(event)) known = true;
+            next.put(item);
+        }
+        if (!known && !event.isEmpty()) next.put(entry);
+        return keepQueue(next, now);
+    }
+
+    /** Newest first; calls older than {@link #QUEUE_KEEP_MS} are dropped. */
+    static JSONArray keepQueue(JSONArray queue, long now) {
+        List<JSONObject> items = new ArrayList<>();
+        for (int i = 0; queue != null && i < queue.length(); i++) {
+            JSONObject item = queue.optJSONObject(i);
+            if (item != null && now - item.optLong("startedMs") <= QUEUE_KEEP_MS) items.add(item);
+        }
+        items.sort((a, b) -> Long.compare(b.optLong("startedMs"), a.optLong("startedMs")));
+        JSONArray kept = new JSONArray();
+        for (int i = 0; i < Math.min(QUEUE_MAX, items.size()); i++) kept.put(items.get(i));
+        return kept;
+    }
+
+    static JSONArray dropQueued(JSONArray queue, String eventId) {
+        JSONArray kept = new JSONArray();
+        for (int i = 0; queue != null && i < queue.length(); i++) {
+            JSONObject item = queue.optJSONObject(i);
+            if (item != null && !item.optString("eventId").equals(eventId)) kept.put(item);
+        }
+        return kept;
+    }
+
+    /** Still worth looking for this call's recording. */
+    static boolean stillLooking(JSONObject entry, long now) {
+        if (entry.optJSONObject("recording") != null) return false;
+        long ended = entry.optLong("startedMs") + entry.optLong("seconds") * 1000L;
+        return now - ended < LOOK_MS;
+    }
+
+    /** A newline list keeping the newest {@code max} lines (recordings already used for a call). */
+    static String remember(String lines, String line, int max) {
+        return addIgnored(lines, line, max);
+    }
+
+    static boolean remembered(String lines, String line) {
+        return isIgnored(lines, line);
     }
 
     /** ISO 8601 in UTC, as Sales Xray reads times. */

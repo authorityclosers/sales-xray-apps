@@ -30,9 +30,9 @@ import org.json.JSONObject;
 /**
  * Places a call for a lead and follows it. When the phone hangs up it reads the
  * phone's own call history (connected or not, and for how long) and looks for
- * the recording the phone's dialer saved. The page hears twice: when the call
- * ends, and again when the recording search is done ("final").
- * Nothing is uploaded here; the page asks the person first.
+ * the recording the phone's dialer saved, and checks it is not silent. The
+ * page hears twice: when the call ends, and again when the recording search
+ * is done ("final"). Nothing is uploaded here; the page asks the person first.
  */
 final class CallTracker {
 
@@ -45,6 +45,9 @@ final class CallTracker {
     private static final long LOG_WAIT_MS = 8_000;
     private static final long RECORDING_WAIT_MS = 30_000;
     private static final long POLL_MS = 1_500;
+    /** Another app's after-call screen opens a moment after the call ends. */
+    private static final long COVER_RETRY_MS = 3_000;
+    private static final long COVER_NOTICE_MS = 7_000;
     /** A call that rang this long and never connected was most likely not answered. */
     private static final long RANG_OUT_MS = 20_000;
     /** A call older than this is no longer offered to the page. */
@@ -174,10 +177,27 @@ final class CallTracker {
         if (!keep(call)) return;
         listener.onCall(copy(call));
         bringBack();
+        watchCovered(call);
         JSONObject recording = findRecording(call);
+        boolean test = PhoneSetup.TEST_LEAD.equals(call.optString("leadId"));
+        if (recording != null) {
+            // Silent or one-sided recordings are flagged before anything is sent (#53, #60).
+            double[] frames = AudioLevels.frames(activity, recording.optString("source"), AudioLevels.MAX_SECONDS, AudioLevels.BUDGET_MS);
+            JSONObject check = AudioLevels.verdict(frames);
+            put(recording, "check", check);
+            if (test) {
+                // The setup test call: were both people heard? Its recording stays on the phone.
+                String result = frames == null ? "unknown" : AudioCheckRules.testCall(frames);
+                put(recording, "test", result);
+                PhoneSetup.testResult(activity, result);
+            } else {
+                // Recording works end to end: the setup checklist ticks its test call.
+                PhoneSetup.testCallRecorded(activity, check.optString("verdict"));
+            }
+        } else if (test) {
+            PhoneSetup.testResult(activity, "not_found");
+        }
         put(call, "recording", recording == null ? JSONObject.NULL : recording);
-        // Recording works end to end: the setup checklist ticks its test call.
-        if (recording != null) PhoneSetup.testCallRecorded(activity);
         put(call, "final", true);
         if (!keep(call)) return;
         synchronized (this) {
@@ -302,6 +322,30 @@ final class CallTracker {
             sleep(POLL_MS * 2);
         } while (System.currentTimeMillis() < deadline);
         return null;
+    }
+
+    /**
+     * Truecaller and similar apps open their own after-call screen on top of
+     * "How did it go?" (Redmi audit #48). If something still covers the app a
+     * few seconds after the call, it comes forward once more; if it still
+     * can't, a notification asks the seller to log the call.
+     */
+    private void watchCovered(JSONObject call) {
+        String name = call.optString("name");
+        long started = call.optLong("startedMs");
+        main.postDelayed(() -> {
+            if (covered(started)) bringBack();
+        }, COVER_RETRY_MS);
+        main.postDelayed(() -> {
+            if (covered(started)) AfterCallNotice.show(activity, name);
+        }, COVER_NOTICE_MS);
+    }
+
+    /** This call is still the latest and the app isn't the one in front. */
+    private boolean covered(long started) {
+        JSONObject stored = load();
+        if (stored == null || stored.optLong("startedMs") != started) return false;
+        return !activity.hasWindowFocus() && !activity.isFinishing();
     }
 
     /** Most phones return to the app after the call; this covers the ones that don't. */

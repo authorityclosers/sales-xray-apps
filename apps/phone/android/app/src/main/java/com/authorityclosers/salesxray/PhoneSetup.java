@@ -31,6 +31,10 @@ final class PhoneSetup {
     private static final String AUTOSTART = "autostart";
     private static final String RECORDER = "recorder";
     private static final String TEST_CALL = "test_call";
+    private static final String TEST_RESULT = "test_result";
+    /** The setup test call's stand-in lead id: its recording never leaves the phone. */
+    static final String TEST_LEAD = "sx-setup-test";
+    static final String TRUECALLER = "com.truecaller";
     private static final long RECENT_MS = 30L * 24 * 60 * 60 * 1000;
 
     /** Autostart screens, newest first, for brands that stop apps in the background. */
@@ -62,9 +66,11 @@ final class PhoneSetup {
         SharedPreferences prefs = prefs(context);
         String family = family();
         boolean autostartNeeded = CallLogRules.hasAutostart(family);
-        boolean recordings = RecordingScanner.hasAudioAccess(context) || RecordingScanner.hasAllFilesAccess();
         // Which dialer records, where it saves, and whether it's on (19 Oct: check, don't ask).
         JSONObject recorder = RecorderProfile.status(context);
+        // On Xiaomi the recordings folder stays hidden until All files access is allowed (#49).
+        boolean needsAllFiles = recorder.optBoolean("needsAllFiles");
+        boolean recordings = (RecordingScanner.hasAudioAccess(context) || RecordingScanner.hasAllFilesAccess()) && !needsAllFiles;
         String recording = recorder.optString("recording", "unknown");
         long newest = recorder.optLong("newestMs", 0);
         try {
@@ -88,6 +94,12 @@ final class PhoneSetup {
             status.put("newestRecordingMs", newest > 0 ? newest : JSONObject.NULL);
             status.put("device", CallLogSync.deviceId(context));
             status.put("recorderProfile", recorder);
+            status.put("needsAllFiles", needsAllFiles);
+            status.put("allFilesSupported", recorder.optBoolean("allFilesSupported"));
+            // The last test call: both, only_you, only_them, silent, unknown or none (#60).
+            status.put("testResult", prefs.getString(TEST_RESULT, "none"));
+            // Truecaller's after-call screen covers "How did it go?" (#48).
+            status.put("truecaller", installed(context, TRUECALLER));
         } catch (JSONException ignored) {}
         return status;
     }
@@ -112,9 +124,34 @@ final class PhoneSetup {
         if (AUTOSTART.equals(what) || RECORDER.equals(what)) prefs(context).edit().putBoolean(what, done).apply();
     }
 
-    /** A call placed from the app found its recording: recording works end to end. */
-    static void testCallRecorded(Context context) {
-        prefs(context).edit().putBoolean(TEST_CALL, true).apply();
+    /**
+     * A call placed from the app found its recording. A silent one says the
+     * phone's recorder isn't working; anything else ticks the test call, unless
+     * a test call already found that the other side is missing.
+     */
+    static void testCallRecorded(Context context, String verdict) {
+        SharedPreferences prefs = prefs(context);
+        if ("silent".equals(verdict)) {
+            prefs.edit().putBoolean(TEST_CALL, false).putString(TEST_RESULT, "silent").apply();
+            return;
+        }
+        String last = prefs.getString(TEST_RESULT, "none");
+        if ("only_you".equals(last) || "only_them".equals(last)) return;
+        prefs.edit().putBoolean(TEST_CALL, true).apply();
+    }
+
+    /** The test call's result: only "both" ticks the line. */
+    static void testResult(Context context, String result) {
+        prefs(context).edit().putBoolean(TEST_CALL, "both".equals(result)).putString(TEST_RESULT, result).apply();
+    }
+
+    static boolean installed(Context context, String app) {
+        try {
+            context.getPackageManager().getPackageInfo(app, 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException | RuntimeException error) {
+            return false;
+        }
     }
 
     /** Opens the screen where the seller fixes a line; false when this phone has none. */
@@ -134,6 +171,14 @@ final class PhoneSetup {
             case "recorder":
                 // The default dialer's call settings hold "Record calls automatically".
                 return RecorderProfile.open(activity, "settings");
+            case "allFiles":
+                // MIUI's hidden recordings folder (#49): Android's All files access screen for this app.
+                return RecorderProfile.open(activity, "allFiles");
+            case "truecaller": {
+                // Truecaller's own settings hold its after-call screen (#48).
+                Intent launch = activity.getPackageManager().getLaunchIntentForPackage(TRUECALLER);
+                return launch != null && start(activity, launch);
+            }
             case "notifications":
                 if (Build.VERSION.SDK_INT >= 26) {
                     Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, app);

@@ -1,5 +1,6 @@
 package com.authorityclosers.salesxray;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
@@ -70,6 +71,9 @@ final class RecorderProfile {
         String dialer = defaultDialer(context);
         RecorderRules.Profile profile = RecorderRules.profile(dialer, family);
         boolean canRead = RecordingScanner.canReadFolders(context);
+        // MIUI hides its recordings folder from the media index (#49): without All
+        // files access it only looks empty, so say it is hidden instead.
+        boolean hidden = RecorderRules.needsAllFiles(profile, Build.VERSION.SDK_INT, RecordingScanner.hasAllFilesAccess());
         File root = Environment.getExternalStorageDirectory();
         long newest = 0;
         try {
@@ -80,6 +84,8 @@ final class RecorderProfile {
                 row.put("path", relative);
                 if (!canRead) {
                     row.put("state", "no_access");
+                } else if (hidden) {
+                    row.put("state", "hidden");
                 } else {
                     RecordingScanner.FolderCount count = RecordingScanner.count(folder);
                     row.put("state", !folder.isDirectory() ? "missing" : count.recordings > 0 ? "found" : "empty");
@@ -104,6 +110,8 @@ final class RecorderProfile {
             status.put("folders", folders);
             status.put("canRead", canRead);
             status.put("allFiles", RecordingScanner.hasAllFilesAccess());
+            status.put("needsAllFiles", hidden);
+            status.put("allFilesSupported", allFilesSupported(context));
             status.put("setting", setting == null ? JSONObject.NULL : setting != 0);
             status.put("recording", RecorderRules.recording(profile, setting, newest, System.currentTimeMillis()));
             status.put("newestMs", newest > 0 ? newest : JSONObject.NULL);
@@ -112,6 +120,22 @@ final class RecorderProfile {
             status.put("callRecorder", CallRecorderService.status(context));
         } catch (JSONException ignored) {}
         return status;
+    }
+
+    /** This build may ask for All files access (download builds; a Play build leaves it out). */
+    static boolean allFilesSupported(Context context) {
+        if (Build.VERSION.SDK_INT < 30) return false;
+        try {
+            String[] wanted = context
+                .getPackageManager()
+                .getPackageInfo(context.getPackageName(), PackageManager.GET_PERMISSIONS)
+                .requestedPermissions;
+            if (wanted == null) return false;
+            for (String permission : wanted) if (Manifest.permission.MANAGE_EXTERNAL_STORAGE.equals(permission)) return true;
+        } catch (PackageManager.NameNotFoundException | RuntimeException error) {
+            // Unknown: don't offer a screen that may not list the app.
+        }
+        return false;
     }
 
     /** Installed dialers other than the default; "folder" ones are offered as the switch. */

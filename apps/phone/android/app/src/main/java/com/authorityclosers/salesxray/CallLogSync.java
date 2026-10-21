@@ -45,7 +45,8 @@ import org.json.JSONObject;
  * own session. The leads' numbers come fresh from Sales Xray each time and are
  * not kept on the phone. A number that matches no lead never leaves the phone.
  * Calls placed from a lead in the app are skipped: the after-call sheet logs
- * those.
+ * those. A logged call that connected then waits for its recording
+ * (RecordingQueue).
  */
 final class CallLogSync {
 
@@ -253,6 +254,11 @@ final class CallLogSync {
             int logged = sync(context);
             if (logged > 0) PhoneBridge.signalActive("calls");
         }
+        // Lead calls that connected look for their recording (owner, 22 Oct).
+        if (RecordingQueue.look(context) > 0) {
+            PhoneBridge.signalActive("recordings");
+            RecordingQueue.announce(context, !MainActivity.inFront);
+        }
         return status(context);
     }
 
@@ -315,6 +321,8 @@ final class CallLogSync {
         String alt = prefs.getString(SIM_ALT, "");
         String inApp = prefs.getString(IN_APP, "");
         List<JSONObject> calls = new ArrayList<>();
+        // What each sent row was, to queue the connected ones for their recording.
+        Map<String, JSONObject> sentRows = new HashMap<>();
         JSONArray unknown = unknown(context);
         String notLeads = prefs.getString(IGNORED, "");
         long newest = since;
@@ -352,7 +360,11 @@ final class CallLogSync {
                 // conversation with one is kept here to offer "Save as lead?".
                 String number = key.length() >= 6 ? numbers.get(key) : null;
                 if (number == null) {
-                    if (CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)) {
+                    // The setup test call is placed from the app to a colleague: not a lead to save.
+                    if (
+                        !CallLogRules.placedInApp(inApp, key, date) &&
+                        CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)
+                    ) {
                         unknown = CallLogRules.keepUnknown(unknown, cursor.getString(1), key, date, direction, cursor.getLong(3), now, UNKNOWN_KEEP_MS, UNKNOWN_MAX);
                     }
                     continue;
@@ -365,12 +377,21 @@ final class CallLogSync {
                 call.put("duration_seconds", Math.max(0, Math.min(14400, cursor.getLong(3))));
                 call.put("direction", direction);
                 calls.add(call);
+                sentRows.put(
+                    String.valueOf(cursor.getLong(0)),
+                    new JSONObject()
+                        .put("key", key)
+                        .put("startedMs", date)
+                        .put("seconds", Math.max(0, Math.min(14400, cursor.getLong(3))))
+                        .put("direction", direction)
+                );
             }
         } catch (RuntimeException | JSONException error) {
             return state(context, "error");
         }
 
         int logged = 0;
+        List<JSONObject> waiting = new ArrayList<>();
         String device = deviceId(context);
         for (int start = 0; start < calls.size(); start += BATCH) {
             JSONObject body = new JSONObject();
@@ -384,11 +405,14 @@ final class CallLogSync {
             // Not sent: the same rows go again next time, and Sales Xray skips any it has.
             if (sent.code != 200 || sent.body == null) return state(context, failure(sent.code));
             try {
-                logged += new JSONObject(sent.body).optInt("logged");
+                JSONObject answer = new JSONObject(sent.body);
+                logged += answer.optInt("logged");
+                waiting.addAll(CallLogRules.waitingCalls(answer.optJSONArray("calls"), sentRows));
             } catch (JSONException ignored) {
                 // Sent; the count is only for the screen.
             }
         }
+        RecordingQueue.add(context, waiting);
         prefs
             .edit()
             .putString(UNKNOWN, unknown.toString())

@@ -9,12 +9,16 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Message;
 import android.view.ViewGroup;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
@@ -39,8 +43,14 @@ public class MainActivity extends BridgeActivity {
         )
     );
 
+    /** The app is the one in front (call logging tells the seller about new recordings otherwise). */
+    static volatile boolean inFront;
+
     private PhoneBridge phone;
     private GoogleSignIn google;
+    /** The page's pending audio file pick (RecordingPicker), and the picker it waits on. */
+    private ValueCallback<Uri[]> pickCallback;
+    private ActivityResultLauncher<Intent> recordingPicker;
     private ConnectFlow connect;
     /** A lead or Report to open from an alert (a /leads or /review path), once the page is there. */
     private String pendingOpen;
@@ -50,6 +60,15 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         SafeArea.apply(this);
+        recordingPicker = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+            ValueCallback<Uri[]> callback = pickCallback;
+            pickCallback = null;
+            if (callback == null) return;
+            Intent data = result.getData();
+            callback.onReceiveValue(
+                result.getResultCode() == RESULT_OK && data != null ? WebChromeClient.FileChooserParams.parseResult(result.getResultCode(), data) : null
+            );
+        });
         WebView webView = getBridge().getWebView();
         connect = new ConnectFlow(this, webView);
         phone = new PhoneBridge(this, webView, connect);
@@ -108,6 +127,21 @@ public class MainActivity extends BridgeActivity {
                 public void onCloseWindow(WebView window) {
                     closeSignInWindow(window);
                 }
+
+                @Override
+                public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                    // "Add the recording" opens in the phone's call recordings folder (#54).
+                    if (!RecordingPicker.wantsAudio(params)) return super.onShowFileChooser(view, callback, params);
+                    if (pickCallback != null) pickCallback.onReceiveValue(null);
+                    pickCallback = callback;
+                    try {
+                        recordingPicker.launch(RecordingPicker.intent(MainActivity.this, params));
+                        return true;
+                    } catch (ActivityNotFoundException error) {
+                        pickCallback = null;
+                        return super.onShowFileChooser(view, callback, params);
+                    }
+                }
             }
         );
         google.take(getIntent());
@@ -138,10 +172,19 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        inFront = true;
+        // Back in the app after a call: "How did it go?" is here, so its reminder goes (#48).
+        AfterCallNotice.clear(this);
         if (phone != null) phone.onResume();
         if (google != null) google.onResume();
         // Work calls made since the last look reach their leads (UX study item 5).
         CallLogSync.soon(this);
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        inFront = false;
     }
 
     @Override

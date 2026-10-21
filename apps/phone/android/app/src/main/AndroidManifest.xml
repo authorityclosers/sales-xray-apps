@@ -114,5 +114,7 @@
         <intent>
             <action android:name="android.support.customtabs.action.CustomTabsService" />
         </intent>
+        <!-- Truecaller's after-call screen covers "How did it go?": Phone setup says how to stop it (PhoneSetup). -->
+        <package android:name="com.truecaller" />
     </queries>
 </manifest>

@@ -8,6 +8,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
 import androidx.core.content.ContextCompat;
 import java.io.File;
@@ -313,22 +314,40 @@ final class RecordingScanner {
 
     static InputStream open(Context context, String source) throws IOException {
         if (source.startsWith("media:")) {
-            Uri uri = Uri.parse(source.substring(6));
-            // Only the shared audio index, never contacts, calls or other providers.
-            if (!"media".equals(uri.getAuthority()) || !uri.getPath().contains("/audio/media/")) {
-                throw new IOException("recording_not_allowed");
-            }
-            InputStream stream = context.getContentResolver().openInputStream(uri);
+            InputStream stream = context.getContentResolver().openInputStream(mediaUri(source));
             if (stream == null) throw new IOException("recording_unavailable");
             return stream;
         }
+        return new FileInputStream(allowedFile(context, source));
+    }
+
+    /** The same recordings as {@link #open}, as a file descriptor (AudioLevels decodes from it). */
+    static ParcelFileDescriptor descriptor(Context context, String source) throws IOException {
+        if (source.startsWith("media:")) {
+            ParcelFileDescriptor descriptor = context.getContentResolver().openFileDescriptor(mediaUri(source), "r");
+            if (descriptor == null) throw new IOException("recording_unavailable");
+            return descriptor;
+        }
+        return ParcelFileDescriptor.open(allowedFile(context, source), ParcelFileDescriptor.MODE_READ_ONLY);
+    }
+
+    /** Only the shared audio index, never contacts, calls or other providers. */
+    private static Uri mediaUri(String source) throws IOException {
+        Uri uri = Uri.parse(source.substring(6));
+        if (!"media".equals(uri.getAuthority()) || uri.getPath() == null || !uri.getPath().contains("/audio/media/")) {
+            throw new IOException("recording_not_allowed");
+        }
+        return uri;
+    }
+
+    private static File allowedFile(Context context, String source) throws IOException {
         if (source.startsWith("app:")) {
             // Only a file directly inside the app's own Recordings folder.
             File dir = context.getExternalFilesDir(AppRecorder.FOLDER);
             String name = source.substring(4);
             if (dir != null && !name.contains("/") && !name.contains("\\") && !name.startsWith(".")) {
                 File file = new File(dir, name);
-                if (file.getCanonicalPath().startsWith(dir.getCanonicalPath() + File.separator)) return new FileInputStream(file);
+                if (file.getCanonicalPath().startsWith(dir.getCanonicalPath() + File.separator)) return file;
             }
             throw new IOException("recording_not_allowed");
         }
@@ -338,7 +357,7 @@ final class RecordingScanner {
             String path = file.getCanonicalPath();
             File root = Environment.getExternalStorageDirectory();
             for (String relative : folders()) {
-                if (path.startsWith(new File(root, relative).getCanonicalPath() + File.separator)) return new FileInputStream(file);
+                if (path.startsWith(new File(root, relative).getCanonicalPath() + File.separator)) return file;
             }
         }
         throw new IOException("recording_not_allowed");

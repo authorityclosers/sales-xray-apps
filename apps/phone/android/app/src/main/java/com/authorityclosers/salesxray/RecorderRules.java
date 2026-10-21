@@ -97,6 +97,20 @@ final class RecorderRules {
         return "unknown";
     }
 
+    /**
+     * MIUI and HyperOS keep a .nomedia file in MIUI/sound_recorder, so their call
+     * recordings never reach Android's media index (Redmi 13, 22 Oct, #49). On
+     * Android 11 and newer an app then sees them only with All files access.
+     */
+    static boolean hidesFromMediaIndex(String maker) {
+        return "xiaomi".equals(maker);
+    }
+
+    /** True when this phone's recordings stay out of sight until All files access is allowed. */
+    static boolean needsAllFiles(Profile profile, int sdk, boolean allFiles) {
+        return sdk >= 30 && !allFiles && hidesFromMediaIndex(profile.maker);
+    }
+
     /** Dialer apps that save to a folder, for "switch to your phone's own dialer". */
     static boolean savesToFolder(String dialer, String family) {
         return "folder".equals(profile(dialer, family).kind);
