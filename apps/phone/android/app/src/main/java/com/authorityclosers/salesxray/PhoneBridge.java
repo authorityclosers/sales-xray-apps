@@ -232,19 +232,10 @@ final class PhoneBridge {
                     break;
                 }
                 case "checkRecording": {
-                    // Silent or one-sided? Decoded on the phone, nothing sent (#53, #60).
+                    // Is anyone heard? Decoded on the phone, nothing sent (#53).
                     String asked = id;
                     String source = args.optString("source");
                     io.execute(() -> reply(reply, asked, AudioLevels.check(activity, source)));
-                    break;
-                }
-                case "testCall": {
-                    // Phone setup's test call to a colleague: are both people heard? (#60)
-                    JSONObject test = new JSONObject();
-                    test.put("leadId", PhoneSetup.TEST_LEAD);
-                    test.put("number", args.optString("number"));
-                    test.put("name", "Test call");
-                    placeCall(reply, id, test);
                     break;
                 }
                 case "list":
@@ -431,11 +422,10 @@ final class PhoneBridge {
             status.put("connect", true);
             // Facebook and Apple sign-in also open in the phone's browser (GoogleSignIn).
             status.put("signIn", true);
-            // Logged lead calls wait here with their recording; recordings are checked for silence;
-            // Phone setup has a test call (app 0.3.80+, owner 22 Oct).
+            // Logged lead calls wait here with their recording; recordings are checked for silence
+            // (app 0.3.80+, owner 22 Oct).
             status.put("autoAttach", true);
             status.put("audioCheck", true);
-            status.put("testCall", true);
             status.put("version", versionName());
         } catch (JSONException ignored) {}
         return status;

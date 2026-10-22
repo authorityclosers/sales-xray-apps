@@ -360,11 +360,7 @@ final class CallLogSync {
                 // conversation with one is kept here to offer "Save as lead?".
                 String number = key.length() >= 6 ? numbers.get(key) : null;
                 if (number == null) {
-                    // The setup test call is placed from the app to a colleague: not a lead to save.
-                    if (
-                        !CallLogRules.placedInApp(inApp, key, date) &&
-                        CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)
-                    ) {
+                    if (CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)) {
                         unknown = CallLogRules.keepUnknown(unknown, cursor.getString(1), key, date, direction, cursor.getLong(3), now, UNKNOWN_KEEP_MS, UNKNOWN_MAX);
                     }
                     continue;

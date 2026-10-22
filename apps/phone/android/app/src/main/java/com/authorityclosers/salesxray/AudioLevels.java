@@ -16,13 +16,13 @@ import org.json.JSONObject;
 
 /**
  * How loud a call recording is, frame by frame, decoded on the phone (Redmi
- * audit #53/#60). Only the start of a long call is read, within a time
+ * audit #53). Only the start of a long call is read, within a time
  * budget, so a check never holds the page up for long. Nothing leaves the
  * phone; AudioCheckRules turns the frames into a verdict.
  */
 final class AudioLevels {
 
-    /** Enough to tell a silent or one-sided recording. */
+    /** Enough to tell a silent recording. */
     static final int MAX_SECONDS = 180;
     static final long BUDGET_MS = 8_000;
     private static final long WAIT_US = 10_000;

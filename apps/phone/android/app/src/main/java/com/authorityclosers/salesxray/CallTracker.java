@@ -179,23 +179,12 @@ final class CallTracker {
         bringBack();
         watchCovered(call);
         JSONObject recording = findRecording(call);
-        boolean test = PhoneSetup.TEST_LEAD.equals(call.optString("leadId"));
         if (recording != null) {
-            // Silent or one-sided recordings are flagged before anything is sent (#53, #60).
-            double[] frames = AudioLevels.frames(activity, recording.optString("source"), AudioLevels.MAX_SECONDS, AudioLevels.BUDGET_MS);
-            JSONObject check = AudioLevels.verdict(frames);
+            // A silent recording is flagged before anything is sent (#53).
+            JSONObject check = AudioLevels.check(activity, recording.optString("source"));
             put(recording, "check", check);
-            if (test) {
-                // The setup test call: were both people heard? Its recording stays on the phone.
-                String result = frames == null ? "unknown" : AudioCheckRules.testCall(frames);
-                put(recording, "test", result);
-                PhoneSetup.testResult(activity, result);
-            } else {
-                // Recording works end to end: the setup checklist ticks its test call.
-                PhoneSetup.testCallRecorded(activity, check.optString("verdict"));
-            }
-        } else if (test) {
-            PhoneSetup.testResult(activity, "not_found");
+            // Recording works end to end: the setup checklist ticks its test call.
+            PhoneSetup.testCallRecorded(activity, check.optString("verdict"));
         }
         put(call, "recording", recording == null ? JSONObject.NULL : recording);
         put(call, "final", true);

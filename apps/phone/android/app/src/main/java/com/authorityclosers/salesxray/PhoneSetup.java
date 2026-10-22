@@ -31,9 +31,6 @@ final class PhoneSetup {
     private static final String AUTOSTART = "autostart";
     private static final String RECORDER = "recorder";
     private static final String TEST_CALL = "test_call";
-    private static final String TEST_RESULT = "test_result";
-    /** The setup test call's stand-in lead id: its recording never leaves the phone. */
-    static final String TEST_LEAD = "sx-setup-test";
     static final String TRUECALLER = "com.truecaller";
     private static final long RECENT_MS = 30L * 24 * 60 * 60 * 1000;
 
@@ -96,8 +93,6 @@ final class PhoneSetup {
             status.put("recorderProfile", recorder);
             status.put("needsAllFiles", needsAllFiles);
             status.put("allFilesSupported", recorder.optBoolean("allFilesSupported"));
-            // The last test call: both, only_you, only_them, silent, unknown or none (#60).
-            status.put("testResult", prefs.getString(TEST_RESULT, "none"));
             // Truecaller's after-call screen covers "How did it go?" (#48).
             status.put("truecaller", installed(context, TRUECALLER));
         } catch (JSONException ignored) {}
@@ -124,25 +119,9 @@ final class PhoneSetup {
         if (AUTOSTART.equals(what) || RECORDER.equals(what)) prefs(context).edit().putBoolean(what, done).apply();
     }
 
-    /**
-     * A call placed from the app found its recording. A silent one says the
-     * phone's recorder isn't working; anything else ticks the test call, unless
-     * a test call already found that the other side is missing.
-     */
+    /** A call placed from the app found its recording: recording works end to end, unless it was silent. */
     static void testCallRecorded(Context context, String verdict) {
-        SharedPreferences prefs = prefs(context);
-        if ("silent".equals(verdict)) {
-            prefs.edit().putBoolean(TEST_CALL, false).putString(TEST_RESULT, "silent").apply();
-            return;
-        }
-        String last = prefs.getString(TEST_RESULT, "none");
-        if ("only_you".equals(last) || "only_them".equals(last)) return;
-        prefs.edit().putBoolean(TEST_CALL, true).apply();
-    }
-
-    /** The test call's result: only "both" ticks the line. */
-    static void testResult(Context context, String result) {
-        prefs(context).edit().putBoolean(TEST_CALL, "both".equals(result)).putString(TEST_RESULT, result).apply();
+        if (!"silent".equals(verdict)) prefs(context).edit().putBoolean(TEST_CALL, true).apply();
     }
 
     static boolean installed(Context context, String app) {
