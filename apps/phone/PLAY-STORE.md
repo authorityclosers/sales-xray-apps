@@ -24,6 +24,44 @@ All secrets go into the GitHub environment `play-release` from the owner's lapto
 7. **Internal testers:** a list of the testers' Google account emails, for Internal testing → Testers. The opt-in link then goes to them.
 8. **Reviewer sign-in** (App content → App access). Google's reviewers need a working account. Use the production QA account. The owner types its email and password into Play Console himself; they never go in chat.
 
+## Release train (owner, 24 Oct 2026: "Can this not be automatyed trains and simpler shit")
+
+When a Sales X-Ray release is live on production, `play.yml` builds the Play bundle on that production commit and
+puts it on **internal testing**. Testers' phones then update from Play by themselves. Each run:
+1. checks the web copy (`scripts/check-play-gates.sh`). The commit must be on the platform repo's main, and it must
+   hold every commit in `play-gates.txt`. It may hold them directly, or through the release PR whose head has
+   exactly the same files (squashed releases).
+2. builds the play flavour with versionCode 100000 + the run number, so no code is ever reused, and the version
+   name 1.0.run. It then checks the merged manifest: no advertising ID, no microphone, no call history.
+3. checks the bundle is signed with the upload key Play knows: SHA-256 FF:1C:81:8F:…:32:D8:CF, the durable key,
+   or the repo variable `PLAY_UPLOAD_CERT_SHA256`.
+4. uploads to internal testing with status completed (`scripts/play-upload.py`). The release notes are the
+   release title, in en-IN. Without the service account secret the run stops there with a notice, and the bundle
+   waits in the run's artifacts.
+
+**Trigger from the platform's ship script**, after "vX is live on production" (sha = platform main's Release
+commit; RELEASE_TITLE = the ship title, e.g. "Sales Xray v0.86: Play-ready web, …"):
+
+    gh api --method POST repos/authorityclosers/sales-xray-apps/dispatches \
+      -f event_type=sales-xray-prod-released \
+      -f "client_payload[sha]=$(git rev-parse origin/main)" \
+      -f "client_payload[title]=$RELEASE_TITLE"
+
+The token needs write access to this repo: acdev's `gh` login has it. By hand: Actions → Google Play → Run
+workflow, with web_ref = the production commit.
+
+**The owner's steps, once** (credentials stay with him):
+1. Google Cloud: in any project, enable the **Google Play Android Developer API**. Create a service account
+   (it needs no Cloud roles), then create a JSON key for it.
+2. Play Console → Users and permissions → Invite new users: the service account's email. Under App
+   permissions → Sales X-Ray, give **Release apps to testing tracks**; it can see app information with that.
+   Leave out production rights for now.
+3. Put the JSON key in GitHub as the secret `PLAY_SERVICE_ACCOUNT_JSON`, in the environment the train uses.
+4. For a train with no click: create an environment (e.g. `play-train`, deployment branch main only, no
+   reviewers). Give it the same `SX_ANDROID_SIGNING_STORE_BASE64` and `SX_ANDROID_SIGNING_PASSWORD` as
+   android-release, plus `PLAY_SERVICE_ACCOUNT_JSON`, then set the repo variable `PLAY_TRAIN_ENVIRONMENT=play-train`.
+   Until then each run waits for the android-release approval.
+
 ## Play Console forms (App content)
 
 | Form | Answer |

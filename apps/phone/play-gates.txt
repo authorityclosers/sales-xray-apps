@@ -1,0 +1,7 @@
+# Platform web commits every Google Play bundle's web copy must carry (Play review, 23 Oct 2026; play-audit M2).
+# play.yml refuses to build a Play bundle from a web_ref without all of them (scripts/check-play-gates.sh).
+9c04b634 Play app is consumption only: no plans, prices, checkout or buy links
+378fd3ce Delete account inside the app
+16d3ea73 no work-call logging in the Play build
+d8ee81bd Sales X-Ray naming
+3d8e6aed no APK download or "updates from here", Play-true permission screens, the deletion address written out

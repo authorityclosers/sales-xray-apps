@@ -13,7 +13,15 @@ name: Google Play
 #   SX_PLAY_SERVICE_ACCOUNT_JSON  the Play Console service account key (Release manager on this app);
 #                                 without it the bundle stays in the run's artifacts to upload by hand
 # Internal testing goes out to testers at once; other tracks stay drafts in Play Console.
+#
+# The release train (owner, 24 Oct 2026: "Can this not be automatyed trains and simpler shit"): when a
+# Sales X-Ray release is live on production, the platform's ship script sends a repository_dispatch
+# "sales-xray-prod-released" with the production commit and the release title; this workflow builds the
+# Play bundle on that commit, checks it (Play gates, no microphone, the upload key) and puts it on internal
+# testing, so testers' phones update from Play by themselves (apps/phone/PLAY-STORE.md, "Release train").
 on:
+  repository_dispatch:
+    types: [sales-xray-prod-released]
   workflow_dispatch:
     inputs:
       web_ref:
@@ -45,7 +53,14 @@ jobs:
   play:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    environment: android-release
+    # android-release asks the owner to approve each run. For a train with no click, the owner makes an
+    # environment without reviewers holding the same secrets and names it in this repo variable.
+    environment: ${{ vars.PLAY_TRAIN_ENVIRONMENT || 'android-release' }}
+    env:
+      # From the dispatch (the production commit and the release title) or from the form.
+      WEB_REF: ${{ inputs.web_ref || github.event.client_payload.sha || 'main' }}
+      TRACK: ${{ inputs.track || 'internal' }}
+      NOTES: ${{ inputs.notes || github.event.client_payload.title || '' }}
     timeout-minutes: 55
     defaults:
       run:
@@ -59,6 +74,11 @@ jobs:
           persist-credentials: false
       - name: Which app is built
         run: echo "Apps repo $(git rev-parse HEAD) (${{ inputs.app_ref || 'main' }})"
+      - name: A release from the train names its commit
+        if: github.event_name == 'repository_dispatch'
+        run: |
+          [[ "$WEB_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::The dispatch's client_payload.sha must be a full commit sha (got '$WEB_REF')"; exit 1; }
+          echo "Play train: production $WEB_REF, track $TRACK"
       - name: Node 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -73,9 +93,13 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: authorityclosers/authority-closers-platform
-          ref: ${{ inputs.web_ref || 'main' }}
+          ref: ${{ env.WEB_REF }}
           path: platform
           persist-credentials: false
+      - name: The web copy is a production release with every Play gate (play-gates.txt)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/check-play-gates.sh "$GITHUB_WORKSPACE/platform" play-gates.txt
       - name: The web app inside the app (its static export, served from the phone; S9)
         run: bash scripts/build-web-shell.sh "$GITHUB_WORKSPACE/platform" android/app/src/main/assets/web salesxray.authorityclosers.com
       - name: Upload key
@@ -106,6 +130,23 @@ jobs:
           size=$(stat -c %s app/build/outputs/bundle/playRelease/app-play-release.aab)
           echo "bundle: $size bytes"
           if [ "$size" -gt 10000000 ]; then echo "::warning::The bundle is $size bytes, over 10 MB: the owner uploads it in Play Console."; fi
+      - name: Signed with the upload key Play knows
+        working-directory: apps/phone/android
+        env:
+          # The durable key's certificate (public): CN=Sales Xray, O=Authority Closers.
+          EXPECTED: ${{ vars.PLAY_UPLOAD_CERT_SHA256 || 'FF:1C:81:8F:67:B0:B3:2B:E9:46:E2:AA:D3:9D:90:E7:DA:51:BF:21:06:79:2E:22:06:8E:91:56:30:32:D8:CF' }}
+        run: |
+          bundle=app/build/outputs/bundle/playRelease/app-play-release.aab
+          signed=$("$JAVA_HOME/bin/keytool" -printcert -jarfile "$bundle" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1)
+          [ "$signed" = "$EXPECTED" ] || { echo "::error::The bundle is signed with $signed, not the upload key $EXPECTED"; exit 1; }
+          sum=$(sha256sum "$bundle" | cut -d' ' -f1)
+          {
+            echo "### Sales X-Ray for Google Play 1.0.${GITHUB_RUN_NUMBER}"
+            echo "- versionCode $((100000 + GITHUB_RUN_NUMBER)), track $TRACK"
+            echo "- web copy: platform $WEB_REF"
+            echo "- bundle sha256 $sum"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "upload key OK; bundle sha256 $sum"
       - name: Keep the bundle (the very first release is uploaded by hand)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -124,12 +165,12 @@ jobs:
         # The first release goes in by hand (Google needs one bundle before API uploads), and so does
         # every one until the service account is set.
         env:
-          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.SX_PLAY_SERVICE_ACCOUNT_JSON }}
-          TRACK: ${{ inputs.track }}
-          NOTES: ${{ inputs.notes }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON || secrets.SX_PLAY_SERVICE_ACCOUNT_JSON }}
+          # The app's default listing language in Play Console (English, India).
+          PLAY_NOTES_LANGUAGE: ${{ vars.PLAY_NOTES_LANGUAGE || 'en-IN' }}
         run: |
           if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
-            echo "No Play service account yet: download the sales-xray-play-${{ github.run_number }} artifact and upload it in Play Console."
+            echo "::notice::No Play service account yet (secret PLAY_SERVICE_ACCOUNT_JSON): download the sales-xray-play-${{ github.run_number }} artifact and upload it in Play Console."
             exit 0
           fi
           pip install --quiet google-api-python-client==2.151.0 google-auth==2.35.0
