@@ -261,6 +261,7 @@ public class MainActivity extends BridgeActivity {
     public void onPause() {
         super.onPause();
         inFront = false;
+        if (phone != null) phone.onPause();
     }
 
     @Override

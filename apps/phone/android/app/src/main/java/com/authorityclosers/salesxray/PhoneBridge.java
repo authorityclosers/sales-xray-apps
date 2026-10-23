@@ -1,6 +1,11 @@
 package com.authorityclosers.salesxray;
 
 import android.Manifest;
+import android.app.NotificationManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
+import android.media.AudioManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -100,9 +105,63 @@ final class PhoneBridge {
         this.bundled = bundled;
     }
 
+    /** The ringer or do-not-disturb changed while the app is open: the page hears at once. */
+    private final BroadcastReceiver soundState = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            // Read from Android, never from the broadcast, which any app could send.
+            pushSoundState();
+        }
+    };
+    private boolean hearingSoundState;
+
     void onResume() {
         calls.onResume();
+        hearSoundState(true);
+        pushSoundState();
         signal("resume");
+    }
+
+    void onPause() {
+        hearSoundState(false);
+    }
+
+    private void hearSoundState(boolean on) {
+        if (on == hearingSoundState) return;
+        try {
+            if (on) {
+                IntentFilter filter = new IntentFilter(AudioManager.RINGER_MODE_CHANGED_ACTION);
+                filter.addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED);
+                ContextCompat.registerReceiver(activity, soundState, filter, ContextCompat.RECEIVER_EXPORTED);
+            } else {
+                activity.unregisterReceiver(soundState);
+            }
+            hearingSoundState = on;
+        } catch (RuntimeException ignored) {
+            // The page keeps its quiet default.
+        }
+    }
+
+    /** data-sx-ringer and data-sx-dnd on the page's root element (DeviceSoundRules). */
+    private String soundStateScript() {
+        String ringer = "normal";
+        boolean dnd = false;
+        try {
+            AudioManager audio = activity.getSystemService(AudioManager.class);
+            if (audio != null) ringer = DeviceSoundRules.ringer(audio.getRingerMode());
+            NotificationManager notices = activity.getSystemService(NotificationManager.class);
+            if (notices != null) dnd = DeviceSoundRules.dnd(notices.getCurrentInterruptionFilter());
+        } catch (RuntimeException ignored) {}
+        return DeviceSoundRules.script(ringer, dnd);
+    }
+
+    private void pushSoundState() {
+        String script = soundStateScript();
+        main.post(() -> {
+            String url = webView.getUrl();
+            Uri page = url == null ? null : Uri.parse(url);
+            if (page != null && "https".equals(page.getScheme()) && HOSTS.contains(page.getHost())) webView.evaluateJavascript(script, null);
+        });
     }
 
     private void sendCall(JSONObject call) {
@@ -146,6 +205,7 @@ final class PhoneBridge {
         if (!"https".equals(uri.getScheme()) || !HOSTS.contains(uri.getHost())) return;
         if (script == null) script = asset("sx-phone.js");
         if (script != null) view.evaluateJavascript(script, null);
+        view.evaluateJavascript(soundStateScript(), null);
     }
 
     void takeLaunch(Intent intent) {
@@ -592,11 +652,16 @@ final class PhoneBridge {
         }
     }
 
-    /** A light buzz: a tick on a swipe, a press on a long hold, done on a save. */
+    /**
+     * A light buzz: a tick on a swipe, a press on a long hold, done (or success) on a save, error
+     * when something failed, warning before something final. Android's own feedback, so the
+     * phone's touch-feedback setting decides whether it buzzes at all.
+     */
     private void haptic(String kind) {
         int effect = HapticFeedbackConstants.KEYBOARD_TAP;
-        if ("press".equals(kind)) effect = HapticFeedbackConstants.LONG_PRESS;
-        else if ("done".equals(kind)) effect = Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.VIRTUAL_KEY;
+        if ("press".equals(kind) || "warning".equals(kind)) effect = HapticFeedbackConstants.LONG_PRESS;
+        else if ("done".equals(kind) || "success".equals(kind)) effect = Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.VIRTUAL_KEY;
+        else if ("error".equals(kind)) effect = Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.REJECT : HapticFeedbackConstants.LONG_PRESS;
         final int chosen = effect;
         main.post(() -> webView.performHapticFeedback(chosen));
     }
