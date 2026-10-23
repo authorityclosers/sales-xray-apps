@@ -70,6 +70,7 @@ final class PhoneBridge {
     private JavaScriptReplyProxy events;
     private final CallTracker calls;
     private final ConnectFlow connect;
+    private BundledWeb bundled;
     private JavaScriptReplyProxy pushReply;
     private String pushId;
     private JavaScriptReplyProxy logReply;
@@ -81,6 +82,10 @@ final class PhoneBridge {
         this.webView = webView;
         this.calls = new CallTracker(activity, this::sendCall);
         this.connect = connect;
+    }
+
+    void setBundledWeb(BundledWeb bundled) {
+        this.bundled = bundled;
     }
 
     void onResume() {
@@ -229,6 +234,17 @@ final class PhoneBridge {
                         RecordingQueue.handled(activity, event);
                         reply(reply, asked, RecordingQueue.pending(activity));
                     });
+                    break;
+                }
+                case "webShell":
+                    // The app's own copy of the web app (S9): built from which version, on or off.
+                    reply(reply, id, bundled == null ? new JSONObject().put("available", false) : bundled.status());
+                    break;
+                case "setWebShell": {
+                    // "Use the live website" (support, or a page the copy can't show): the page reloads.
+                    if (bundled != null) bundled.setLive(args.optBoolean("live"));
+                    reply(reply, id, bundled == null ? new JSONObject().put("available", false) : bundled.status());
+                    main.post(webView::reload);
                     break;
                 }
                 case "checkRecording": {
@@ -427,6 +443,7 @@ final class PhoneBridge {
             // (app 0.3.80+, owner 22 Oct).
             status.put("autoAttach", true);
             status.put("audioCheck", true);
+            status.put("webShell", bundled != null && bundled.on());
             status.put("version", versionName());
         } catch (JSONException ignored) {}
         return status;

@@ -16,6 +16,10 @@ name: Google Play
 on:
   workflow_dispatch:
     inputs:
+      web_ref:
+        description: Platform repo ref whose web app goes inside the app (S9); production's commit for a release
+        type: string
+        default: main
       track:
         description: Play track
         type: choice
@@ -38,7 +42,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     environment: android-release
-    timeout-minutes: 40
+    timeout-minutes: 55
     defaults:
       run:
         working-directory: apps/phone
@@ -47,16 +51,25 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - name: Node 22
+      - name: Node 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24.19.0
       - name: Use the runner's JDK 21
         run: echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
       - name: Capacitor
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npx cap sync android
+      - name: Check out the web app (platform repo)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: authorityclosers/authority-closers-platform
+          ref: ${{ inputs.web_ref || 'main' }}
+          path: platform
+          persist-credentials: false
+      - name: The web app inside the app (its static export, served from the phone; S9)
+        run: bash scripts/build-web-shell.sh "$GITHUB_WORKSPACE/platform" android/app/src/main/assets/web salesxray.authorityclosers.com
       - name: Upload key
         env:
           STORE_BASE64: ${{ secrets.SX_PLAY_UPLOAD_STORE_BASE64 || secrets.SX_ANDROID_SIGNING_STORE_BASE64 }}

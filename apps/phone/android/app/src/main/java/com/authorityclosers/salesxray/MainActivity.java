@@ -62,6 +62,8 @@ public class MainActivity extends BridgeActivity {
 
     private PhoneBridge phone;
     private GoogleSignIn google;
+    /** The web app's own copy in the app (S9): pages come from the phone, the API from the server. */
+    private BundledWeb bundled;
     /** The page's pending audio file pick (RecordingPicker), and the picker it waits on. */
     private ValueCallback<Uri[]> pickCallback;
     private ActivityResultLauncher<Intent> recordingPicker;
@@ -89,6 +91,7 @@ public class MainActivity extends BridgeActivity {
             );
         });
         WebView webView = getBridge().getWebView();
+        bundled = BundledWeb.load(this, LeadAlerts.serverUrl(this));
         // The page's ground before it paints follows the phone's light or dark mode.
         webView.setBackgroundColor(ContextCompat.getColor(this, R.color.sx_ground));
         // Back: through the page's history (it closes sheets and dialogs first); on the first page,
@@ -104,6 +107,7 @@ public class MainActivity extends BridgeActivity {
         });
         connect = new ConnectFlow(this, webView);
         phone = new PhoneBridge(this, webView, connect);
+        phone.setBundledWeb(bundled);
         google = new GoogleSignIn(this, webView);
         phone.attach();
         phone.takeLaunch(getIntent());
@@ -111,6 +115,13 @@ public class MainActivity extends BridgeActivity {
         getBridge()
             .setWebViewClient(
                 new BridgeWebViewClient(getBridge()) {
+                    @Override
+                    public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                        // Pages, screens, scripts and styles from the app's own copy; the rest from the server.
+                        WebResourceResponse local = bundled.serve(request);
+                        return local != null ? local : super.shouldInterceptRequest(view, request);
+                    }
+
                     @Override
                     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                         if (request.isForMainFrame() && google.intercept(request.getUrl(), view)) return true;
@@ -124,7 +135,7 @@ public class MainActivity extends BridgeActivity {
                         // The first page is on screen: the splash goes, and the start time is logged.
                         painted = true;
                         reportFullyDrawn();
-                        Log.i(START_LOG, "first paint " + sinceStart() + " ms after the app started (" + (SystemClock.uptimeMillis() - createdAt) + " ms after the screen opened)");
+                        Log.i(START_LOG, "first paint " + sinceStart() + " ms after the app started (" + (SystemClock.uptimeMillis() - createdAt) + " ms after the screen opened; " + (bundled.on() ? "pages from the app" : "pages from the server") + ")");
                     }
 
                     @Override
@@ -190,6 +201,11 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         );
+        // Capacitor started loading the site before this client was in place: with the app's own
+        // copy on, load the home screen again so it comes from the phone (the live site sends / there).
+        String site = LeadAlerts.serverUrl(this);
+        if (bundled.on() && site != null) webView.loadUrl(site.replaceAll("/+$", "") + "/dashboard/");
+        AppShortcuts.publish(this);
         google.take(getIntent());
         connect.take(getIntent());
         // After Capacitor's SystemBars has painted the theme's colours at start-up.
@@ -250,6 +266,14 @@ public class MainActivity extends BridgeActivity {
         if (phone != null) phone.onPermissionResult(requestCode);
     }
 
+    /** Screens an alert or a long-press shortcut may open: Leads, Calls, Chats and Home. */
+    static boolean opensInApp(String path) {
+        for (String start : new String[] { "/leads", "/analysis/calls", "/chats", "/dashboard" }) {
+            if (path.equals(start) || path.startsWith(start + "/") || path.startsWith(start + "#") || path.startsWith(start + "?")) return true;
+        }
+        return false;
+    }
+
     /** Milliseconds since Android started this app's process. */
     private static long sinceStart() {
         return SystemClock.uptimeMillis() - Process.getStartUptimeMillis();
@@ -259,7 +283,7 @@ public class MainActivity extends BridgeActivity {
         if (intent == null) return;
         String path = intent.getStringExtra(LeadAlerts.EXTRA_OPEN);
         intent.removeExtra(LeadAlerts.EXTRA_OPEN);
-        if (path != null && (path.startsWith("/leads") || ReviewAlertRules.isPath(path))) pendingOpen = path;
+        if (path != null && (opensInApp(path) || ReviewAlertRules.isPath(path))) pendingOpen = path;
     }
 
     /** Opens the alert's lead or Report in the page (a fresh mark each time, so the same one opens again). */
