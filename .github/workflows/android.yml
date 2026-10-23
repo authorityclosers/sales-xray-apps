@@ -124,9 +124,10 @@ jobs:
           ./gradlew --no-daemon --stacktrace :app:processPlayDebugManifest :app:processDirectDebugManifest
           play=$(find app/build/intermediates -path '*merged_manifest*playDebug*' -name AndroidManifest.xml | head -1)
           direct=$(find app/build/intermediates -path '*merged_manifest*directDebug*' -name AndroidManifest.xml | head -1)
-          for banned in READ_CALL_LOG CALL_PHONE CallRecorderService MANAGE_EXTERNAL_STORAGE REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; do
-            if grep -q "$banned" "$play"; then echo "Play flavour still declares $banned ($play)"; exit 1; fi
-            grep -q "$banned" "$direct" || { echo "Direct flavour lost $banned ($direct)"; exit 1; }
+          # Only declarations count: the source manifests' comments name them too.
+          for banned in android.permission.READ_CALL_LOG android.permission.CALL_PHONE com.authorityclosers.salesxray.CallRecorderService android.permission.MANAGE_EXTERNAL_STORAGE android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; do
+            if grep -q "android:name=\"$banned\"" "$play"; then echo "Play flavour still declares $banned ($play)"; exit 1; fi
+            grep -q "android:name=\"$banned\"" "$direct" || { echo "Direct flavour lost $banned ($direct)"; exit 1; }
           done
           echo "Play flavour: none of them ($play); direct keeps all ($direct)"
       - name: The Play App Bundle builds (unsigned)

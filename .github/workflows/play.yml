@@ -83,9 +83,11 @@ jobs:
       - name: No call history, direct calling, accessibility recorder, all-files access or battery request in the bundle
         working-directory: apps/phone/android
         run: |
-          manifest=app/build/intermediates/merged_manifest/playRelease/processPlayReleaseMainManifest/AndroidManifest.xml
-          [ -f "$manifest" ] || manifest=$(find app/build/intermediates -path "*merged_manifest*playRelease*" -name AndroidManifest.xml | head -1)
-          ! grep -E "READ_CALL_LOG|CALL_PHONE|CallRecorderService|MANAGE_EXTERNAL_STORAGE|REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" "$manifest"
+          # The final merged manifest; only declarations count (the source manifests' comments name them).
+          manifest=$(find app/build/intermediates -path "*merged_manifests*playRelease*" -name AndroidManifest.xml | head -1)
+          test -n "$manifest"
+          ! grep -E 'android:name="(android\.permission\.(READ_CALL_LOG|CALL_PHONE|MANAGE_EXTERNAL_STORAGE|REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)|[a-z.]*CallRecorderService)"' "$manifest"
+          echo "Play bundle declares none of them ($manifest)"
       - name: Upload to Play
         # The first release goes in by hand (Google needs one bundle before API uploads), and so does
         # every one until the service account is set.
