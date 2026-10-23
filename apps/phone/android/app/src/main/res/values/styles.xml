@@ -1,18 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
-        <!-- Customize your theme here. -->
+    <!-- Light or dark with the phone, or with the seller's pick in the app (NightMode; owner, 24 Oct 2026).
+         Android never darkens the app by itself: the page has its own dark design. -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.DarkActionBar">
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
         <item name="colorAccent">@color/colorAccent</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
     </style>
 
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- The page's own ground, light or dark, behind it before it paints: never a white flash. -->
+        <item name="android:windowBackground">@color/sx_ground</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
     </style>
 
 

@@ -8,6 +8,8 @@ public class SalesXrayApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        // The seller's Light, Dark or System pick, before any screen opens.
+        NightMode.applySaved(this);
         LeadAlerts.init(this);
     }
 }

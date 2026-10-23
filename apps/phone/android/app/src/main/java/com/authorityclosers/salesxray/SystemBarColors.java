@@ -28,20 +28,29 @@ final class SystemBarColors {
 
     private SystemBarColors() {}
 
-    /** Paints both bars; anything but #rrggbb is ignored. */
+    /** Paints both bars; anything but #rrggbb is ignored. Kept per light and dark mode. */
     static void paint(Activity activity, String status, String nav) {
         if (status == null || !HEX.matcher(status).matches()) return;
         if (nav == null || !HEX.matcher(nav).matches()) nav = status;
         apply(activity, Color.parseColor(status), Color.parseColor(nav));
-        prefs(activity).edit().putString("status", status).putString("nav", nav).apply();
+        boolean dark = NightMode.dark(activity);
+        prefs(activity).edit().putString(ThemeRules.barsKey("status", dark), status).putString(ThemeRules.barsKey("nav", dark), nav).apply();
     }
 
-    /** The colours the app last showed, before the page has said anything. */
+    /**
+     * The colours the app last showed in this mode, before the page has said anything; the page's own
+     * ground when there are none yet, so a phone that just turned dark never opens in light bars.
+     */
     static void restore(Activity activity) {
         SharedPreferences prefs = prefs(activity);
-        String status = prefs.getString("status", null);
-        String nav = prefs.getString("nav", null);
-        if (status == null || !HEX.matcher(status).matches()) return;
+        boolean dark = NightMode.dark(activity);
+        String status = prefs.getString(ThemeRules.barsKey("status", dark), null);
+        String nav = prefs.getString(ThemeRules.barsKey("nav", dark), null);
+        if (status == null || !HEX.matcher(status).matches()) {
+            int ground = androidx.core.content.ContextCompat.getColor(activity, R.color.sx_ground);
+            apply(activity, ground, ground);
+            return;
+        }
         if (nav == null || !HEX.matcher(nav).matches()) nav = status;
         apply(activity, Color.parseColor(status), Color.parseColor(nav));
     }

@@ -414,6 +414,12 @@ final class PhoneBridge {
                 case "requestNotifications":
                     requestNotifications(reply, id);
                     break;
+                case "theme": {
+                    // The seller's Light, Dark or System pick in Sales X-Ray (owner, 24 Oct 2026).
+                    String mode = NightMode.set(activity, args.optString("mode", "system"));
+                    reply(reply, id, new JSONObject().put("mode", mode).put("dark", NightMode.dark(activity)));
+                    break;
+                }
                 case "bars":
                     // The colours at the top and bottom of the page, from sx-phone.js.
                     SystemBarColors.paint(activity, args.optString("status"), args.optString("nav"));
@@ -532,6 +538,9 @@ final class PhoneBridge {
             status.put("inAppReview", StoreReview.available());
             // The app's own telemetry: "telemetry" and "telemetryConsent" (1.0.25).
             status.put("telemetry", true);
+            // Light, Dark or System: what the app keeps, and the mode it shows now ("theme" call).
+            status.put("theme", NightMode.saved(activity));
+            status.put("dark", NightMode.dark(activity));
             // "Picture of this screen" (Report a problem, Redmi bug #13).
             status.put("screenshot", true);
             status.put("folderPicked", !picked.isEmpty());

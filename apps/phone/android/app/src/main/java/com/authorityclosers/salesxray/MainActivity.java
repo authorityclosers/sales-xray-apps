@@ -27,6 +27,8 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.core.splashscreen.SplashScreen;
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewFeature;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
@@ -98,6 +100,11 @@ public class MainActivity extends BridgeActivity {
         bundled = BundledWeb.load(this, LeadAlerts.serverUrl(this));
         // The page's ground before it paints follows the phone's light or dark mode.
         webView.setBackgroundColor(ContextCompat.getColor(this, R.color.sx_ground));
+        // The page has its own dark design (prefers-color-scheme follows the DayNight theme), so the
+        // WebView never darkens it on top (no double darkening on Xiaomi's "dark mode for apps").
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(webView.getSettings(), false);
+        }
         // Back: through the page's history (it closes sheets and dialogs first); on the first page,
         // the app goes to the background and stays ready, so opening it again is quick. Capacitor's
         // own handler did nothing on the first page.
@@ -224,7 +231,12 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        // Light or dark mode changed: Capacitor repainted the bars, so the page measures again.
+        // Light or dark mode changed (the phone's, or the seller's pick): the ground and the bars
+        // take that mode's colours at once, then the page measures and paints them again.
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().setBackgroundColor(ContextCompat.getColor(this, R.color.sx_ground));
+        }
+        SystemBarColors.restore(this);
         if (phone != null) phone.signal("bars");
     }
 
