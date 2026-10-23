@@ -69,10 +69,11 @@ jobs:
           SX_SIGNING_STORE: ${{ runner.temp }}/upload.jks
           SX_SIGNING_PASSWORD: ${{ secrets.SX_PLAY_UPLOAD_PASSWORD || secrets.SX_ANDROID_SIGNING_PASSWORD }}
           SX_SIGNING_ALIAS: ${{ secrets.SX_PLAY_UPLOAD_ALIAS || 'sales-xray' }}
-          # Above every sideload build (1000 + Android run number).
-          SX_VERSION_CODE: ${{ 100000 + github.run_number }}
-          SX_VERSION_NAME: 1.0.${{ github.run_number }}
-        run: ./gradlew --no-daemon --stacktrace bundlePlayRelease
+        run: |
+          # Above every sideload build (1000 + Android run number). Expressions can't add, so the shell does.
+          export SX_VERSION_CODE=$((100000 + GITHUB_RUN_NUMBER))
+          export SX_VERSION_NAME="1.0.${GITHUB_RUN_NUMBER}"
+          ./gradlew --no-daemon --stacktrace bundlePlayRelease
       - name: Keep the bundle (the very first release is uploaded by hand)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
