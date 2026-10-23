@@ -427,7 +427,8 @@ final class PhoneBridge {
             status.put("sdk", Build.VERSION.SDK_INT);
             status.put("audio", RecordingScanner.hasAudioAccess(activity));
             status.put("allFiles", RecordingScanner.hasAllFilesAccess());
-            status.put("allFilesSupported", Build.VERSION.SDK_INT >= 30);
+            // What this build declares: a Play build has no All files access to ask for.
+            status.put("allFilesSupported", RecorderProfile.allFilesSupported(activity));
             status.put("notifications", notificationsAllowed());
             status.put("watching", RecordingWatchWorker.watching(activity));
             status.put("calling", true);
