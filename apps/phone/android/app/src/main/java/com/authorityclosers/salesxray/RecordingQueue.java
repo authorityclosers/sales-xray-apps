@@ -231,7 +231,8 @@ final class RecordingQueue {
         PendingIntent pending = PendingIntent.getActivity(context, 4, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         String title = fresh == 1 ? "A lead call was recorded" : fresh + " lead calls were recorded";
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, RecordingWatchWorker.CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_recording)
+            .setSmallIcon(R.drawable.ic_stat_sx)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(title)
             .setContentText("Tap to analyse in Sales X-Ray.")
             .setContentIntent(pending)

@@ -136,7 +136,8 @@ final class LeadAlerts {
         channel(context);
         int id = one ? leadId.hashCode() : SUMMARY_ID;
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_lead)
+            .setSmallIcon(R.drawable.ic_stat_sx)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))

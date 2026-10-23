@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sales X-Ray brand B "Insight" -->
+    <color name="sx_deep_teal">#0B4A44</color>
+    <color name="sx_evergreen">#073B36</color>
+    <color name="sx_mint">#3DEBB0</color>
+    <color name="sx_paper">#F6FAF8</color>
+    <color name="splash_background">#0B4A44</color>
+    <color name="notification_accent">#0A7A68</color>
+</resources>

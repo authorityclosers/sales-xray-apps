@@ -230,7 +230,8 @@ public class CallRecorderService extends AccessibilityService {
             manager.createNotificationChannel(new NotificationChannel(CHANNEL, "Call recording in Sales X-Ray", NotificationManager.IMPORTANCE_LOW));
         }
         Notification notice = new NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_lead)
+            .setSmallIcon(R.drawable.ic_stat_sx)
+            .setColor(ContextCompat.getColor(this, R.color.notification_accent))
             .setContentTitle("Sales X-Ray is recording this call")
             .setContentText("Tell the other person the call is recorded.")
             .setOngoing(true)

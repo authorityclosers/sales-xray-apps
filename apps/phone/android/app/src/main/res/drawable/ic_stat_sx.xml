@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sales X-Ray status-bar icon: the three-stroke Insight mark, white (Android tints small icons). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <group android:translateX="-3.72" android:translateY="-4.42" android:scaleX="0.31" android:scaleY="0.31">
+        <path android:fillColor="#FFFFFFFF" android:pathData="M27 44H27A7.5 7.5 0 0 1 34.5 51.5V68.5A7.5 7.5 0 0 1 27 76H27A7.5 7.5 0 0 1 19.5 68.5V51.5A7.5 7.5 0 0 1 27 44ZM73 44H73A7.5 7.5 0 0 1 80.5 51.5V68.5A7.5 7.5 0 0 1 73 76H73A7.5 7.5 0 0 1 65.5 68.5V51.5A7.5 7.5 0 0 1 73 44ZM50 47H50A7.5 7.5 0 0 1 57.5 54.5V76.5A7.5 7.5 0 0 1 50 84H50A7.5 7.5 0 0 1 42.5 76.5V54.5A7.5 7.5 0 0 1 50 47ZM40.7 29.7A9.3 9.3 0 1 0 59.3 29.7A9.3 9.3 0 1 0 40.7 29.7Z"/>
+    </group>
+</vector>

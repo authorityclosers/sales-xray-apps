@@ -133,7 +133,8 @@ public class AppRecorder extends Service {
             PendingIntent.FLAG_UPDATE_CURRENT | immutable
         );
         return new NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_lead)
+            .setSmallIcon(R.drawable.ic_stat_sx)
+            .setColor(ContextCompat.getColor(this, R.color.notification_accent))
             .setContentTitle("Recording in Sales X-Ray")
             .setContentText("Tap Stop when the conversation ends.")
             .setOngoing(true)

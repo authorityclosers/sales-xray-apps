@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.os.Build;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
 import org.json.JSONObject;
 
 /**
@@ -45,7 +46,8 @@ final class ReviewAlerts {
         String body = ReviewAlertRules.body(one, waiting);
         channel(context);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_review)
+            .setSmallIcon(R.drawable.ic_stat_sx)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))

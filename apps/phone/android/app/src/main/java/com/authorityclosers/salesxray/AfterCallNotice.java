@@ -43,7 +43,8 @@ final class AfterCallNotice {
         PendingIntent pending = PendingIntent.getActivity(context, 3, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         String who = name == null || name.trim().isEmpty() ? "your lead" : name.trim();
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_stat_recording)
+            .setSmallIcon(R.drawable.ic_stat_sx)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle("How did the call with " + who + " go?")
             .setContentText("Tap to log it in Sales X-Ray.")
             .setContentIntent(pending)
