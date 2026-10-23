@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press shortcut "Add a lead" (Redmi audit, 23 Oct 2026: its own glyph, not the app icon). -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/sx_paper" />
+    <foreground android:drawable="@drawable/ic_shortcut_add_lead_glyph" />
+</adaptive-icon>
