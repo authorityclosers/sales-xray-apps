@@ -125,11 +125,11 @@ final class LeadAlerts {
             path = words.optString("url", "/leads");
         } else if (one) {
             title = "new".equals(kind) ? "New lead waiting" : "A call is due now";
-            body = "Tap to open it in Sales Xray.";
+            body = "Tap to open it in Sales X-Ray.";
             path = "/leads#lead=" + leadId;
         } else {
             title = waiting > 1 ? waiting + " leads to call now" : "Leads to call now";
-            body = "Tap to see who in Sales Xray.";
+            body = "Tap to see who in Sales X-Ray.";
             path = "/leads";
         }
         if (!path.startsWith("/leads")) path = "/leads";

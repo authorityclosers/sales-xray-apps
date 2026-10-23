@@ -15,14 +15,14 @@ android {
         // Play builds (play.yml) number themselves above every sideload build.
         if (System.getenv("SX_VERSION_CODE")) versionCode(System.getenv("SX_VERSION_CODE").toInteger())
         if (System.getenv("SX_VERSION_NAME")) versionName System.getenv("SX_VERSION_NAME")
-        manifestPlaceholders = [appLabel: "Sales Xray"]
+        manifestPlaceholders = [appLabel: "Sales X-Ray"]
         // The call recorder listens to this app's own events only (call_recorder_service.xml).
         resValue "string", "sx_self_package", "com.authorityclosers.salesxray"
         // -PsxDev builds "Sales Xray Dev": dev's site, installed beside the real app.
         if (project.hasProperty("sxDev")) {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
-            manifestPlaceholders = [appLabel: "Sales Xray Dev"]
+            manifestPlaceholders = [appLabel: "Sales X-Ray Dev"]
             resValue "string", "sx_self_package", "com.authorityclosers.salesxray.dev"
         }
         // Which store this build is for (the page and the setup checklist read it).

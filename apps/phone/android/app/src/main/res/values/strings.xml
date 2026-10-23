@@ -1,10 +1,10 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Sales Xray</string>
-    <string name="title_activity_main">Sales Xray</string>
+    <string name="app_name">Sales X-Ray</string>
+    <string name="title_activity_main">Sales X-Ray</string>
     <string name="package_name">com.authorityclosers.salesxray</string>
     <string name="custom_url_scheme">com.authorityclosers.salesxray</string>
     <!-- Shown in Android's Accessibility settings for the optional call recorder (CallRecorderService). -->
-    <string name="call_recorder_summary">Records your work calls with the microphone so Sales Xray can analyse them.</string>
-    <string name="call_recorder_description">Sales Xray uses this only to record phone calls: Android lets an app hear the microphone during a call only through Accessibility. It records only while a call is on, a phone call or an internet call such as WhatsApp, and only after you switch on Record calls in Sales Xray. It does not read your screen, your messages or any other app, and does nothing else. Recordings stay on this phone until you choose to analyse one. Tell the other person the call is recorded.</string>
+    <string name="call_recorder_summary">Records your work calls with the microphone so Sales X-Ray can analyse them.</string>
+    <string name="call_recorder_description">Sales X-Ray uses this only to record phone calls: Android lets an app hear the microphone during a call only through Accessibility. It records only while a call is on, a phone call or an internet call such as WhatsApp, and only after you switch on Record calls in Sales X-Ray. It does not read your screen, your messages or any other app, and does nothing else. Recordings stay on this phone until you choose to analyse one. Tell the other person the call is recorded.</string>
 </resources>

@@ -60,7 +60,7 @@ final class ConnectRules {
         }
     }
 
-    /** "https://" and one of Sales Xray's own hosts, and nothing more. */
+    /** "https://" and one of Sales X-Ray's own hosts, and nothing more. */
     static boolean isSalesXray(String origin, Set<String> hosts) {
         if (origin == null || !origin.startsWith("https://")) return false;
         return hosts.contains(origin.substring("https://".length()));

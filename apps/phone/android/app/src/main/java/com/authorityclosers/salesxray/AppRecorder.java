@@ -26,7 +26,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * Records a conversation in Sales Xray itself (owner, 19 Oct: "in-app recording
+ * Records a conversation in Sales X-Ray itself (owner, 19 Oct: "in-app recording
  * as a second way"): a meeting, a walk-in, or anything said near the phone.
  * It runs as a microphone foreground service with a Stop button in the
  * notification, and saves AAC .m4a files in the app's own Recordings folder,
@@ -117,7 +117,7 @@ public class AppRecorder extends Service {
     private Notification notice() {
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (Build.VERSION.SDK_INT >= 26 && manager != null && manager.getNotificationChannel(CHANNEL) == null) {
-            manager.createNotificationChannel(new NotificationChannel(CHANNEL, "Recording in Sales Xray", NotificationManager.IMPORTANCE_LOW));
+            manager.createNotificationChannel(new NotificationChannel(CHANNEL, "Recording in Sales X-Ray", NotificationManager.IMPORTANCE_LOW));
         }
         int immutable = Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0;
         PendingIntent open = PendingIntent.getActivity(
@@ -134,7 +134,7 @@ public class AppRecorder extends Service {
         );
         return new NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_lead)
-            .setContentTitle("Recording in Sales Xray")
+            .setContentTitle("Recording in Sales X-Ray")
             .setContentText("Tap Stop when the conversation ends.")
             .setOngoing(true)
             .setUsesChronometer(true)

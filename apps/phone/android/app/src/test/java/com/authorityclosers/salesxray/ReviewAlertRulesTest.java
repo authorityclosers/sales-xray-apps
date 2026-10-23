@@ -39,8 +39,8 @@ public class ReviewAlertRulesTest {
         assertEquals("New Report to review", ReviewAlertRules.title(1));
         assertEquals("New Report to review", ReviewAlertRules.title(0));
         assertEquals("12 Reports to review", ReviewAlertRules.title(12));
-        assertEquals("Tap to open it in Sales Xray.", ReviewAlertRules.body(true, 1));
-        assertEquals("A new one is ready. Tap to open it in Sales Xray.", ReviewAlertRules.body(true, 4));
-        assertEquals("New ones are ready. Tap to see them in Sales Xray.", ReviewAlertRules.body(false, 4));
+        assertEquals("Tap to open it in Sales X-Ray.", ReviewAlertRules.body(true, 1));
+        assertEquals("A new one is ready. Tap to open it in Sales X-Ray.", ReviewAlertRules.body(true, 4));
+        assertEquals("New ones are ready. Tap to see them in Sales X-Ray.", ReviewAlertRules.body(false, 4));
     }
 }

@@ -232,7 +232,7 @@ final class RecordingQueue {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, RecordingWatchWorker.CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_recording)
             .setContentTitle(title)
-            .setContentText("Tap to analyse in Sales Xray.")
+            .setContentText("Tap to analyse in Sales X-Ray.")
             .setContentIntent(pending)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT);

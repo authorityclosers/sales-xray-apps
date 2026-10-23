@@ -9,7 +9,7 @@ import java.util.Locale;
  * tested on the JVM.
  *
  * Three kinds:
- * - "folder": the maker's dialer saves ordinary audio files Sales Xray can read
+ * - "folder": the maker's dialer saves ordinary audio files Sales X-Ray can read
  *   (MIUI/HyperOS, Samsung, OnePlus/Oppo/Realme, Vivo, Huawei/Honor).
  * - "private": Google's Phone app keeps recordings inside itself; no other app
  *   can read them on any phone. The seller switches to the maker's dialer, or

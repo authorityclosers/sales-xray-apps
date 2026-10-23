@@ -31,7 +31,7 @@ final class ReviewAlertRules {
     }
 
     static String body(boolean one, int waiting) {
-        if (!one) return "New ones are ready. Tap to see them in Sales Xray.";
-        return waiting > 1 ? "A new one is ready. Tap to open it in Sales Xray." : "Tap to open it in Sales Xray.";
+        if (!one) return "New ones are ready. Tap to see them in Sales X-Ray.";
+        return waiting > 1 ? "A new one is ready. Tap to open it in Sales X-Ray." : "Tap to open it in Sales X-Ray.";
     }
 }

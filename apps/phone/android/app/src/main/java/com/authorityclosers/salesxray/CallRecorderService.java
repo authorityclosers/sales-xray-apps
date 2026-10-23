@@ -37,10 +37,10 @@ import org.json.JSONObject;
  * config asks for no window content and for events from Sales Xray alone, and
  * onAccessibilityEvent does nothing.
  *
- * It records only when the seller switched "Record calls in Sales Xray" on in
+ * It records only when the seller switched "Record calls in Sales X-Ray" on in
  * the app AND turned this service on in Android's Accessibility settings. Mostly
  * the seller's side is heard; the other side clearly only on speaker. Files are
- * named "Sales Xray call recording …" so the way each was captured stays visible.
+ * named "Sales X-Ray call recording …" so the way each was captured stays visible.
  * The Play build (the play flavour) removes this service from the manifest.
  */
 public class CallRecorderService extends AccessibilityService {
@@ -227,11 +227,11 @@ public class CallRecorderService extends AccessibilityService {
     private void startForegroundNotice() {
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (Build.VERSION.SDK_INT >= 26 && manager != null && manager.getNotificationChannel(CHANNEL) == null) {
-            manager.createNotificationChannel(new NotificationChannel(CHANNEL, "Call recording in Sales Xray", NotificationManager.IMPORTANCE_LOW));
+            manager.createNotificationChannel(new NotificationChannel(CHANNEL, "Call recording in Sales X-Ray", NotificationManager.IMPORTANCE_LOW));
         }
         Notification notice = new NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_lead)
-            .setContentTitle("Sales Xray is recording this call")
+            .setContentTitle("Sales X-Ray is recording this call")
             .setContentText("Tell the other person the call is recorded.")
             .setOngoing(true)
             .setUsesChronometer(true)

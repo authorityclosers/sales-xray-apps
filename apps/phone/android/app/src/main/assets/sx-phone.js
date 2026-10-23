@@ -1,6 +1,6 @@
 /*
- * Sales Xray for Android: "Calls on this phone".
- * Injected by the app into Sales Xray pages only. Lists the call recordings the
+ * Sales X-Ray for Android: "Calls on this phone".
+ * Injected by the app into Sales X-Ray pages only. Lists the call recordings the
  * phone saved by itself and hands the chosen one to the normal New analysis
  * upload, so consent, plan and approval stay exactly as on the web.
  * Nothing leaves the phone until the person taps Analyse.
@@ -211,11 +211,11 @@
         " records your calls</b><small>" +
         (found
           ? "Saved in " + escape(found.path) + " · " + found.recordings + " found"
-          : "Sales Xray picks them up after each call") +
+          : "Sales X-Ray picks them up after each call") +
         "</small>";
     } else if (!recorder.canRead) {
       text =
-        "<b>Let Sales Xray check your call recordings</b><small>It looks only in " +
+        "<b>Let Sales X-Ray check your call recordings</b><small>It looks only in " +
         escape((MAKERS[recorder.maker] || app) + "'s") +
         " recordings folder.</small>";
       act = '<button type="button" class="sxp-go" data-act="allow">Allow</button>';
@@ -239,7 +239,7 @@
 
   var CAPTURED = {
     dialer: "Phone app",
-    accessibility: "Call · Sales Xray",
+    accessibility: "Call · Sales X-Ray",
     in_app: "Recorded here",
   };
 
@@ -259,33 +259,33 @@
     }
     if (cr.wanted) {
       return (
-        '<div class="sxp-watch sxp-recorder"><span><b>Almost on: allow the call recorder</b><small>In Accessibility, open Sales Xray call recorder and turn it on. If Android says “Restricted setting”, open App info, tap ⋮, Allow restricted settings, then try again.</small></span>' +
+        '<div class="sxp-watch sxp-recorder"><span><b>Almost on: allow the call recorder</b><small>In Accessibility, open Sales X-Ray call recorder and turn it on. If Android says “Restricted setting”, open App info, tap ⋮, Allow restricted settings, then try again.</small></span>' +
         '<span><button type="button" class="sxp-go" data-call="accessibility">Open</button> <button type="button" class="sxp-go" data-call="appInfo">App info</button></span></div>'
       );
     }
     if (callSetup) {
       return (
-        '<div class="sxp-watch sxp-recorder"><span><b>Record phone calls in Sales Xray</b><small>' +
-        "Android lets an app hear a call only through Accessibility, so Sales Xray uses it for this and nothing else. " +
+        '<div class="sxp-watch sxp-recorder"><span><b>Record phone calls in Sales X-Ray</b><small>' +
+        "Android lets an app hear a call only through Accessibility, so Sales X-Ray uses it for this and nothing else. " +
         "It records only while a call is on: phone calls, and internet calls such as WhatsApp. It does not read your screen, your messages or any other app. " +
-        "Recordings stay on this phone until you tap Analyse. Android will warn that Accessibility can see and control your phone: Sales Xray uses none of that. " +
+        "Recordings stay on this phone until you tap Analyse. Android will warn that Accessibility can see and control your phone: Sales X-Ray uses none of that. " +
         "Mostly your side is heard; put the call on speaker for both sides." +
         '</small></span><span><button type="button" class="sxp-go" data-call="on">Turn on</button> <button type="button" class="sxp-go" data-call="cancel">Not now</button></span></div>'
       );
     }
     return (
-      '<div class="sxp-watch"><span><b>Record phone calls in Sales Xray</b><small>Off. For phones whose own Phone app can’t save recordings.</small></span>' +
+      '<div class="sxp-watch"><span><b>Record phone calls in Sales X-Ray</b><small>Off. For phones whose own Phone app can’t save recordings.</small></span>' +
       '<button type="button" class="sxp-go" data-call="setup">Set up</button></div>'
     );
   }
 
-  /** Record a conversation in Sales Xray itself: a meeting, a walk-in, a talk on speaker. */
+  /** Record a conversation in Sales X-Ray itself: a meeting, a walk-in, a talk on speaker. */
   function recordCard() {
     if (rec && rec.recording) {
       return (
         '<div class="sxp-watch sxp-rec"><span><b>Recording · <span class="sxp-elapsed">' +
         clock(Date.now() - (rec.startedMs || Date.now())) +
-        "</span></b><small>Keep Sales Xray near the people talking.</small></span>" +
+        "</span></b><small>Keep Sales X-Ray near the people talking.</small></span>" +
         '<button type="button" class="sxp-go sxp-stop" data-rec="stop">Stop</button></div>'
       );
     }
@@ -368,7 +368,7 @@
       callCard() +
       recordCard() +
       (state && (state.audio || state.allFiles)
-        ? '<div class="sxp-watch"><span><b>Tell me about new recordings</b><small>Checks every 15 minutes, even when Sales Xray is closed</small></span>' +
+        ? '<div class="sxp-watch"><span><b>Tell me about new recordings</b><small>Checks every 15 minutes, even when Sales X-Ray is closed</small></span>' +
           '<button type="button" class="sxp-switch" role="switch" aria-label="Tell me about new recordings" aria-checked="' +
           Boolean(watching) +
           '"></button></div>'
@@ -379,8 +379,8 @@
       body = '<div class="sxp-empty">Looking for call recordings…</div>';
     } else if (!state.audio && !state.allFiles) {
       body =
-        '<div class="sxp-empty"><b>Let Sales Xray see your call recordings</b>' +
-        "Allow access to audio files so Sales Xray can list the calls your phone recorded. Only the call you pick is uploaded." +
+        '<div class="sxp-empty"><b>Let Sales X-Ray see your call recordings</b>' +
+        "Allow access to audio files so Sales X-Ray can list the calls your phone recorded. Only the call you pick is uploaded." +
         '<br><button type="button" class="sxp-action" data-act="allow">Allow access</button></div>';
     } else if (!items.length) {
       body =
@@ -389,7 +389,7 @@
           ? "Record a conversation above, or switch to a Phone app that saves call recordings."
           : "Turn on automatic call recording in your Phone app (see above). If it is already on, your phone may hide the folder.") +
         (state.allFilesSupported && !state.allFiles
-          ? '<br><button type="button" class="sxp-action" data-act="allfiles">Let Sales Xray look in the call folder</button>'
+          ? '<br><button type="button" class="sxp-action" data-act="allfiles">Let Sales X-Ray look in the call folder</button>'
           : "") +
         "</div>";
     } else {
@@ -446,8 +446,8 @@
             toast(
               status.watching
                 ? status.notifications
-                  ? "Sales Xray will tell you about new call recordings."
-                  : "Turn on notifications for Sales Xray to get alerts."
+                  ? "Sales X-Ray will tell you about new call recordings."
+                  : "Turn on notifications for Sales X-Ray to get alerts."
                 : "New-recording alerts are off.",
             );
           },
@@ -485,7 +485,7 @@
             .then(function (next) {
               if (!next.enabled) {
                 call("callRecorderOpen", { what: "accessibility" });
-                toast("Open Sales Xray call recorder and turn it on, then come back.");
+                toast("Open Sales X-Ray call recorder and turn it on, then come back.");
               }
               redraw();
             });
@@ -503,7 +503,7 @@
             if (result.outcome === "in_call")
               toast("Android doesn't let apps record during a phone call. Record after the call, or in person.");
             else if (result.outcome === "no_mic")
-              toast("Allow the microphone for Sales Xray to record conversations.");
+              toast("Allow the microphone for Sales X-Ray to record conversations.");
             else rec = { recording: true, startedMs: Date.now() };
             drawSheet(sheet);
             tick(sheet);
@@ -545,7 +545,7 @@
       allFiles.addEventListener("click", function () {
         call("openAllFiles");
         toast(
-          "Turn on “Allow access to manage all files” for Sales Xray, then come back.",
+          "Turn on “Allow access to manage all files” for Sales X-Ray, then come back.",
         );
       });
     Array.prototype.forEach.call(

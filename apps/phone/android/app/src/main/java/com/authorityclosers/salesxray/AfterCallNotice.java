@@ -36,7 +36,7 @@ final class AfterCallNotice {
         if (manager == null) return;
         if (Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(CHANNEL) == null) {
             NotificationChannel channel = new NotificationChannel(CHANNEL, "After a call", NotificationManager.IMPORTANCE_HIGH);
-            channel.setDescription("Reminds you to log how a call you placed from Sales Xray went.");
+            channel.setDescription("Reminds you to log how a call you placed from Sales X-Ray went.");
             manager.createNotificationChannel(channel);
         }
         Intent open = new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
@@ -45,7 +45,7 @@ final class AfterCallNotice {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_recording)
             .setContentTitle("How did the call with " + who + " go?")
-            .setContentText("Tap to log it in Sales Xray.")
+            .setContentText("Tap to log it in Sales X-Ray.")
             .setContentIntent(pending)
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)

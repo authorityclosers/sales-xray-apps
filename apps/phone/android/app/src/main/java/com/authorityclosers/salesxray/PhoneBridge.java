@@ -32,7 +32,7 @@ import org.json.JSONObject;
 
 /**
  * The page talks to the phone through one origin-restricted message channel
- * ("SXPhone"). Only Sales Xray's own sites can call it, and it works under the
+ * ("SXPhone"). Only Sales X-Ray's own sites can call it, and it works under the
  * site's content security policy. It places a lead's call and reports how the
  * call went, and it lists and reads the phone's own call recordings.
  */
@@ -123,7 +123,7 @@ final class PhoneBridge {
         });
     }
 
-    /** Adds the "Calls on this phone" panel to Sales Xray pages only. */
+    /** Adds the "Calls on this phone" panel to Sales X-Ray pages only. */
     void inject(WebView view, String url) {
         Uri uri = Uri.parse(url);
         if (!"https".equals(uri.getScheme()) || !HOSTS.contains(uri.getHost())) return;

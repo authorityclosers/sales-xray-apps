@@ -106,7 +106,7 @@ public class RecordingWatchWorker extends Worker {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
         String title = count == 1 ? "New call recording" : count + " new call recordings";
-        String text = count == 1 ? first.optString("title") + " · tap to analyse in Sales Xray" : "Tap to choose which to analyse in Sales Xray";
+        String text = count == 1 ? first.optString("title") + " · tap to analyse in Sales X-Ray" : "Tap to choose which to analyse in Sales X-Ray";
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_recording)
             .setContentTitle(title)
