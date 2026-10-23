@@ -29,6 +29,9 @@ cp -R "$platform/apps/sales-xray-web/out/." "$out/"
 # served from the app (BundledWebRules.NETWORK_ONLY), so they aren't carried either.
 rm -rf "$out/review-fixture" "$out/auth" "$out/organisation/invites" "$out/provider-review"
 find "$out" -name '*.map' -delete
+# The brand icon packs (public/brands/<letter>.json, about 1.7 MB) load on demand from the server, so the Play
+# bundle stays under the 10 MB the upload takes (orchestrator, 23 Oct 2026). Their index and colour logos stay in.
+find "$out/brands" -maxdepth 1 -name '?.json' -delete 2>/dev/null || true
 
 SX_OUT="$out" SX_SHA="$sha" SX_REF="$ref" SX_HOST="$host" node -e '
 const fs = require("fs");

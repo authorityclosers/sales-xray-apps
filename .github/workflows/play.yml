@@ -87,6 +87,13 @@ jobs:
           export SX_VERSION_CODE=$((100000 + GITHUB_RUN_NUMBER))
           export SX_VERSION_NAME="1.0.${GITHUB_RUN_NUMBER}"
           ./gradlew --no-daemon --stacktrace bundlePlayRelease
+          # The bundle's merged manifest has no advertising ID (Play Console: "No advertising ID").
+          manifest=$(find app/build/intermediates -path '*merged_manifest*playRelease*' -name AndroidManifest.xml | head -1)
+          if grep -q 'android:name="com.google.android.gms.permission.AD_ID"' "$manifest"; then echo "::error::AD_ID declared ($manifest)"; exit 1; fi
+          # The orchestrator's upload takes up to 10 MB; a bigger bundle is uploaded by the owner instead.
+          size=$(stat -c %s app/build/outputs/bundle/playRelease/app-play-release.aab)
+          echo "bundle: $size bytes"
+          if [ "$size" -gt 10000000 ]; then echo "::warning::The bundle is $size bytes, over 10 MB: the owner uploads it in Play Console."; fi
       - name: Keep the bundle (the very first release is uploaded by hand)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

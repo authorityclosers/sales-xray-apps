@@ -155,10 +155,16 @@ jobs:
           done
           # Backup off in the Play build (cloud backup would copy in-app meeting recordings to Google Drive).
           grep -q 'android:allowBackup="false"' "$play" || { echo "Play flavour still allows backup"; exit 1; }
+          # No advertising ID in either build (declared to Play as "No advertising ID").
+          for manifest in "$play" "$direct"; do
+            if grep -q 'android:name="com.google.android.gms.permission.AD_ID"' "$manifest"; then echo "AD_ID declared in $manifest"; exit 1; fi
+          done
           echo "Play flavour: none of them ($play); direct keeps all ($direct)"
       - name: The Play App Bundle builds (unsigned)
         working-directory: apps/phone/android
-        run: ./gradlew --no-daemon --stacktrace bundlePlayRelease
+        run: |
+          ./gradlew --no-daemon --stacktrace bundlePlayRelease
+          echo "bundle: $(stat -c %s app/build/outputs/bundle/playRelease/app-play-release.aab) bytes (the upload takes up to 10 MB)"
       - name: Build the on-phone tests for Sales Xray Dev
         working-directory: apps/phone/android
         env:
