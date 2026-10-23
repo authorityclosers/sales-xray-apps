@@ -245,15 +245,31 @@ jobs:
           # A QA run also signs the Play build as an APK, to install over the download-link app.
           SX_ALSO: ${{ inputs.signed_only && !inputs.publish && 'assemblePlayRelease' || '' }}
         run: ./gradlew --no-daemon --stacktrace assembleDirectRelease $SX_ALSO
-      - name: Keep Sales Xray, and drop the key
+      - name: Keep Sales Xray
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/direct/release/app-direct-release.apk "dist/sales-xray-android-0.3.${{ github.run_number }}.apk"
           if [ -f android/app/build/outputs/apk/play/release/app-play-release.apk ]; then
             cp android/app/build/outputs/apk/play/release/app-play-release.apk "dist/sales-xray-android-play-0.3.${{ github.run_number }}.apk"
           fi
+      # QA only, never published: Sales X-Ray Dev signed with the same durable key, so Google's
+      # and Facebook's in-app sign-in (NativeSignIn) know its signature. Test builds use a new
+      # throwaway key on every run, which no sign-in console can be told about.
+      - name: Build Sales X-Ray Dev with the durable key (QA run only)
+        if: ${{ inputs.signed_only && !inputs.publish }}
+        env:
+          SX_BUILD_NUMBER: ${{ github.run_number }}
+          SX_SIGNING_PASSWORD: ${{ secrets.SX_ANDROID_SIGNING_PASSWORD }}
+        run: |
+          node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const config = JSON.parse(fs.readFileSync(file, "utf8")); config.server.url = "https://salesxray-dev.authorityclosers.com"; fs.writeFileSync(file, JSON.stringify(config, null, 2));'
+          npx cap sync android
+          (cd android && ./gradlew --no-daemon --stacktrace assembleDirectRelease -PsxDev)
+          cp android/app/build/outputs/apk/direct/release/app-direct-release.apk "dist/sales-xray-dev-android-0.3.${{ github.run_number }}.apk"
+      - name: Drop the key
+        if: ${{ always() }}
+        run: |
           rm -f "$RUNNER_TEMP/sales-xray.keystore"
-          sha256sum dist/*.apk
+          sha256sum dist/*.apk || true
       - name: Keep the signed APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

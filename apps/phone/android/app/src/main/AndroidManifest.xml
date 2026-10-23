@@ -34,6 +34,28 @@
 
         </activity>
 
+        <!-- Facebook sign-in inside the app (NativeSignIn.java). The SDK starts with the app ID
+             Sales X-Ray's server sends for its environment; it logs no app events and collects no
+             advertising ID. Without the Facebook app installed, Facebook's sheet returns here
+             (fb + app ID: production and the dev test app). -->
+        <meta-data
+            android:name="com.facebook.sdk.AutoLogAppEventsEnabled"
+            android:value="false" />
+        <meta-data
+            android:name="com.facebook.sdk.AdvertiserIDCollectionEnabled"
+            android:value="false" />
+        <activity
+            android:name="com.facebook.CustomTabActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fb1448624290545887" />
+                <data android:scheme="fb1514054053884522" />
+            </intent-filter>
+        </activity>
+
         <!-- Lead alerts from Sales Xray (Firebase Cloud Messaging; LeadAlerts.java). -->
         <service
             android:name=".LeadAlertService"
@@ -78,9 +100,13 @@
 
     <!-- Permissions -->
 
+    <!-- No advertising ID, whatever a library adds (the Facebook SDK would add it): Sales X-Ray shows no
+         ads, and Play Console says "No advertising ID" (23 Oct 2026). CI checks both merged manifests. -->
+    <uses-permission
+        android:name="com.google.android.gms.permission.AD_ID"
+        tools:node="remove" />
+
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- No advertising ID, whatever a library adds (Play Console: "No advertising ID", 23 Oct 2026). -->
-    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
     <!-- Calls on this phone: list and read the phone's own call recordings. -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
@@ -118,5 +144,7 @@
         </intent>
         <!-- Truecaller's after-call screen covers "How did it go?": Phone setup says how to stop it (PhoneSetup). -->
         <package android:name="com.truecaller" />
+        <!-- Facebook sign-in switches to the Facebook app when it is installed (NativeSignIn). -->
+        <package android:name="com.facebook.katana" />
     </queries>
 </manifest>

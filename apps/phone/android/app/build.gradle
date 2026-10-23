@@ -98,6 +98,13 @@ dependencies {
     implementation "androidx.work:work-runtime:2.10.0"
     // Google sign-in opens in a Chrome Custom Tab: Google refuses web views.
     implementation "androidx.browser:browser:1.8.0"
+    // Sign-in inside the app (owner, 23 Oct 2026; NativeSignIn.java): Android's own Google
+    // account sheet through Credential Manager, and the Facebook SDK (the Facebook app, or
+    // Facebook's own sheet over this app). The Custom Tab above stays for Apple and older pages.
+    implementation "androidx.credentials:credentials:1.6.0"
+    implementation "androidx.credentials:credentials-play-services-auth:1.6.0"
+    implementation "com.google.android.libraries.identity.googleid:googleid:1.1.1"
+    implementation "com.facebook.android:facebook-login:18.3.0"
     // Lead alerts. Firebase starts with settings Sales Xray sends at run time
     // (LeadAlerts.java), so no google-services.json is needed or kept here.
     implementation "com.google.firebase:firebase-messaging:24.1.2"
