@@ -53,9 +53,14 @@ public class TelemetryRulesTest {
     public void deviceLabelsCarryNothingPersonal() {
         assertEquals("xiaomi", TelemetryRules.maker("Redmi"));
         assertEquals("samsung", TelemetryRules.maker("samsung"));
+        assertEquals("hmd_global", TelemetryRules.maker("HMD Global"));
         assertEquals("unknown", TelemetryRules.maker(null));
-        assertEquals("M1906G7G", TelemetryRules.modelLabel("M1906G7G"));
-        assertEquals("Pixel 8 5G", TelemetryRules.modelLabel("Pixel 8 (5G)!"));
+        assertEquals("unknown", TelemetryRules.maker("123"));
+        // The intake's label: lower case, [a-z0-9][a-z0-9._-]{0,31}.
+        assertEquals("m1906g7g", TelemetryRules.modelLabel("M1906G7G"));
+        assertEquals("pixel_8_5g", TelemetryRules.modelLabel("Pixel 8 (5G)!"));
+        assertEquals("0.3.116-dev", TelemetryRules.label("0.3.116-dev"));
+        assertTrue(TelemetryRules.label("A Very Long Model Name With Many Words Indeed").matches("[a-z0-9][a-z0-9._-]{0,31}"));
         assertEquals("141", TelemetryRules.major("141.0.7390.122"));
         assertEquals("unknown", TelemetryRules.major("dev-build"));
     }

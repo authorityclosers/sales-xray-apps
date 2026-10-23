@@ -121,19 +121,28 @@ final class TelemetryRules {
         }
     }
 
-    /** "Xiaomi" or "Redmi" is xiaomi; anything else lower-case letters only, at most 16. */
+    /**
+     * The maker as the telemetry intake's token ([a-z][a-z0-9_]{0,47}): "HMD Global" is hmd_global, and
+     * Redmi and Poco are xiaomi.
+     */
     static String maker(String manufacturer) {
-        String raw = manufacturer == null ? "" : manufacturer.toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+        String raw = manufacturer == null ? "" : manufacturer.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
+        raw = raw.replaceAll("^[^a-z]+", "").replaceAll("_+$", "");
         if (raw.isEmpty()) return "unknown";
         if (raw.equals("redmi") || raw.equals("poco")) return "xiaomi";
-        return raw.length() > 16 ? raw.substring(0, 16) : raw;
+        return raw.length() > 48 ? raw.substring(0, 48) : raw;
     }
 
-    /** The model as Android names it, letters, digits, spaces and dashes only, at most 32. */
-    static String modelLabel(String model) {
-        String raw = model == null ? "" : model.replaceAll("[^A-Za-z0-9 _-]", "").trim();
+    /** A model, WebView or app version as the intake's label ([a-z0-9][a-z0-9._-]{0,31}): "Pixel 8" is pixel_8. */
+    static String label(String value) {
+        String raw = value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "_");
+        raw = raw.replaceAll("^[^a-z0-9]+", "").replaceAll("_+$", "");
         if (raw.isEmpty()) return "unknown";
         return raw.length() > 32 ? raw.substring(0, 32) : raw;
+    }
+
+    static String modelLabel(String model) {
+        return label(model);
     }
 
     /** "141.0.7390.122" is "141": the WebView's major version. */

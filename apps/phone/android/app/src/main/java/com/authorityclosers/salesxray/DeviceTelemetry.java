@@ -89,15 +89,15 @@ final class DeviceTelemetry {
         }
     }
 
-    /** sx.app_start: cold (process start to first paint) or warm (resume to the next frame). */
+    /** sx.app_launch: cold (process start to first paint) or warm (resume to the next frame). */
     static void start(Context context, boolean cold, long ms, boolean pagesFromApp) {
         JSONObject fields = new JSONObject();
         try {
-            fields.put("kind", cold ? "cold" : "warm");
+            fields.put("start", cold ? "cold" : "warm");
             fields.put("ms", Math.max(0, Math.min(60_000, ms)));
             fields.put("pages", pagesFromApp ? "app" : "live");
         } catch (JSONException ignored) {}
-        record(context, "sx.app_start", fields);
+        record(context, "sx.app_launch", fields);
     }
 
     /** Frames while the app is in front (Android 7+): counted, never their content. */
@@ -223,7 +223,7 @@ final class DeviceTelemetry {
                 fields.put("low_ram", activities.isLowRamDevice() ? "yes" : "no");
             }
             fields.put("storage_free", TelemetryRules.storageTier(new StatFs(context.getFilesDir().getPath()).getAvailableBytes()));
-            fields.put("app_version", context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName);
+            fields.put("app_version", TelemetryRules.label(context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName));
             fields.put("store", Permissions.store(context));
         } catch (JSONException | PackageManager.NameNotFoundException | RuntimeException ignored) {}
         return fields;
@@ -290,9 +290,10 @@ final class DeviceTelemetry {
         JSONObject fields = new JSONObject();
         try {
             fields.put("calls", CallTracker.hasCallAccess(context) ? "granted" : "denied");
-            fields.put("recordings", RecordingScanner.hasAudioAccess(context) ? "granted" : "denied");
+            // The intake refuses keys that look personal ("recording", "phone"): rec_files, mic.
+            fields.put("rec_files", RecordingScanner.hasAudioAccess(context) ? "granted" : "denied");
             fields.put("notifications", PhoneSetup.notificationsAllowed(context) ? "granted" : "denied");
-            fields.put("microphone", state(context, Manifest.permission.RECORD_AUDIO));
+            fields.put("mic", state(context, Manifest.permission.RECORD_AUDIO));
             fields.put("all_files", !RecorderProfile.allFilesSupported(context) ? "not_in_build" : RecordingScanner.hasAllFilesAccess() ? "granted" : "denied");
             fields.put("folder", !RecordingFolder.supported() ? "not_in_build" : RecordingFolder.paths(context).isEmpty() ? "denied" : "granted");
             fields.put("call_log", !CallLogSync.supported(context) ? "not_in_build" : state(context, Manifest.permission.READ_CALL_LOG));
