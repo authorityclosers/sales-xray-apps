@@ -122,6 +122,11 @@ final class BundledWeb {
         }
     }
 
+    /** The platform commit the copy was built from. */
+    String sha() {
+        return sha;
+    }
+
     JSONObject status() {
         JSONObject status = new JSONObject();
         try {

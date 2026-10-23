@@ -206,6 +206,7 @@ public class MainActivity extends BridgeActivity {
         String site = LeadAlerts.serverUrl(this);
         if (bundled.on() && site != null) webView.loadUrl(site.replaceAll("/+$", "") + "/dashboard/");
         AppShortcuts.publish(this);
+        CrashReports.tag(this, bundled);
         google.take(getIntent());
         connect.take(getIntent());
         // After Capacitor's SystemBars has painted the theme's colours at start-up.

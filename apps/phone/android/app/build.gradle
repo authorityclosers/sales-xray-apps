@@ -1,4 +1,5 @@
 apply plugin: 'com.android.application'
+apply plugin: 'com.google.firebase.crashlytics'
 
 android {
     namespace = "com.authorityclosers.salesxray"
@@ -73,6 +74,10 @@ android {
                 signingConfig signingConfigs.durable
             }
             minifyEnabled false
+            // Nothing is shrunk, so there is no mapping file to send.
+            firebaseCrashlytics {
+                mappingFileUploadEnabled false
+            }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
@@ -96,6 +101,9 @@ dependencies {
     // Lead alerts. Firebase starts with settings Sales Xray sends at run time
     // (LeadAlerts.java), so no google-services.json is needed or kept here.
     implementation "com.google.firebase:firebase-messaging:24.1.2"
+    // Crash reports (S6, owner 23 Oct 2026) through the same Firebase project; the pair
+    // Firebase's own bill of materials 33.16.0 ships together.
+    implementation "com.google.firebase:firebase-crashlytics:19.4.4"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     // Plain-JVM tests read and write JSON (Android's own org.json is only a stub there).

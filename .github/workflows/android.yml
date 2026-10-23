@@ -116,6 +116,12 @@ jobs:
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
         run: ./gradlew --no-daemon --stacktrace assembleDirectRelease
+      - name: The release build carries Crashlytics' build stamp (S6; without it crash reports stop at start-up)
+        working-directory: apps/phone/android
+        run: |
+          aapt2=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2
+          apk=$(find app/build/outputs/apk/direct/release -name '*.apk' | head -1)
+          "$aapt2" dump resources "$apk" | grep -E 'crashlytics\.(mapping_file_id|android\.build_id)' || { echo "No Crashlytics build stamp in $apk"; exit 1; }
       - name: Keep Sales Xray
         run: |
           mkdir -p dist
