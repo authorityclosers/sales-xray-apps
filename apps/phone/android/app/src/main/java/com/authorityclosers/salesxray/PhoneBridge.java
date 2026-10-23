@@ -258,6 +258,18 @@ final class PhoneBridge {
                 case "pickRecordingsFolder":
                     pickRecordingsFolder(reply, id);
                     break;
+                case "telemetry": {
+                    // The app's own telemetry, for the page to send under consent B (DeviceTelemetry).
+                    String asked = id;
+                    io.execute(() -> reply(reply, asked, DeviceTelemetry.drain(activity)));
+                    break;
+                }
+                case "telemetryConsent": {
+                    boolean on = args.optBoolean("on", true);
+                    DeviceTelemetry.setConsent(activity, on);
+                    reply(reply, id, new JSONObject().put("on", on));
+                    break;
+                }
                 case "screenshot": {
                     // "Picture of this screen" for Report a problem: the app's window as the seller
                     // sees it, in memory only (Redmi bug #13). The page waits 2 s, then copies itself.
@@ -518,6 +530,8 @@ final class PhoneBridge {
             status.put("folderPickSupported", RecordingFolder.supported());
             // Google Play In-App Review: the Play build only.
             status.put("inAppReview", StoreReview.available());
+            // The app's own telemetry: "telemetry" and "telemetryConsent" (1.0.25).
+            status.put("telemetry", true);
             // "Picture of this screen" (Report a problem, Redmi bug #13).
             status.put("screenshot", true);
             status.put("folderPicked", !picked.isEmpty());

@@ -143,6 +143,7 @@ public class MainActivity extends BridgeActivity {
                         painted = true;
                         reportFullyDrawn();
                         Log.i(START_LOG, "first paint " + sinceStart() + " ms after the app started (" + (SystemClock.uptimeMillis() - createdAt) + " ms after the screen opened; " + (bundled.on() ? "pages from the app" : "pages from the server") + ")");
+                        DeviceTelemetry.start(MainActivity.this, true, sinceStart(), bundled.on());
                     }
 
                     @Override
@@ -246,12 +247,17 @@ public class MainActivity extends BridgeActivity {
         if (painted) {
             // Back from the background: how long until the next frame is on screen.
             long resumed = SystemClock.uptimeMillis();
-            Choreographer.getInstance().postFrameCallback(frame -> Log.i(START_LOG, "warm: frame " + (SystemClock.uptimeMillis() - resumed) + " ms after resume"));
+            Choreographer.getInstance().postFrameCallback(frame -> {
+                long warm = SystemClock.uptimeMillis() - resumed;
+                Log.i(START_LOG, "warm: frame " + warm + " ms after resume");
+                DeviceTelemetry.start(this, false, warm, bundled != null && bundled.on());
+            });
         }
         // Back in the app after a call: "How did it go?" is here, so its reminder goes (#48).
         AfterCallNotice.clear(this);
         if (phone != null) phone.onResume();
         if (google != null) google.onResume();
+        DeviceTelemetry.watchFrames(this);
         if (updates != null) updates.resume();
         // Work calls made since the last look reach their leads (UX study item 5).
         CallLogSync.soon(this);
@@ -261,6 +267,7 @@ public class MainActivity extends BridgeActivity {
     public void onPause() {
         super.onPause();
         inFront = false;
+        DeviceTelemetry.stopFrames(this);
     }
 
     @Override

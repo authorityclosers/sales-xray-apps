@@ -19,10 +19,20 @@ final class CrashReports {
         if (FirebaseApp.getApps(context).isEmpty()) return;
         try {
             FirebaseCrashlytics crashes = FirebaseCrashlytics.getInstance();
+            // The same switch as the page's telemetry (consent B, 1.0.25): off means no crash reports either.
+            crashes.setCrashlyticsCollectionEnabled(DeviceTelemetry.on(context));
             crashes.setCustomKey("store", Permissions.store(context));
             crashes.setCustomKey("web_shell", bundled != null && bundled.on() ? bundled.sha() : "live");
         } catch (RuntimeException ignored) {
             // Crash reports are a help, never a reason for the app to stop.
         }
+    }
+
+    /** The page said telemetry is on or off for this person (Settings → Privacy, or the workspace). */
+    static void setEnabled(Context context, boolean on) {
+        if (FirebaseApp.getApps(context).isEmpty()) return;
+        try {
+            FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(on);
+        } catch (RuntimeException ignored) {}
     }
 }
