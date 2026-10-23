@@ -1,6 +1,6 @@
 name: Google Play
 
-# The Play Store build of Sales Xray (-PsxPlay: no accessibility call recorder, no all-files
+# The Play Store build of Sales Xray (the play flavour: no call history, no accessibility call recorder, no all-files
 # access, no battery-exemption request), as a signed App Bundle on a Play track.
 #
 # Run by hand on main only. Its secrets live in the protected "play-release" environment
@@ -69,19 +69,19 @@ jobs:
           # Above every sideload build (1000 + Android run number).
           SX_VERSION_CODE: ${{ 100000 + github.run_number }}
           SX_VERSION_NAME: 1.0.${{ github.run_number }}
-        run: ./gradlew --no-daemon --stacktrace bundleRelease -PsxPlay
+        run: ./gradlew --no-daemon --stacktrace bundlePlayRelease
       - name: Keep the bundle (the very first release is uploaded by hand)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sales-xray-play-${{ github.run_number }}
-          path: apps/phone/android/app/build/outputs/bundle/release/app-release.aab
+          path: apps/phone/android/app/build/outputs/bundle/playRelease/app-play-release.aab
           retention-days: 14
-      - name: No accessibility recorder, all-files access or battery request in the bundle
+      - name: No call history, direct calling, accessibility recorder, all-files access or battery request in the bundle
         working-directory: apps/phone/android
         run: |
-          manifest=app/build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml
-          [ -f "$manifest" ] || manifest=$(find app/build/intermediates -path "*release*" -name AndroidManifest.xml | head -1)
-          ! grep -E "CallRecorderService|MANAGE_EXTERNAL_STORAGE|REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" "$manifest"
+          manifest=app/build/intermediates/merged_manifest/playRelease/processPlayReleaseMainManifest/AndroidManifest.xml
+          [ -f "$manifest" ] || manifest=$(find app/build/intermediates -path "*merged_manifest*playRelease*" -name AndroidManifest.xml | head -1)
+          ! grep -E "READ_CALL_LOG|CALL_PHONE|CallRecorderService|MANAGE_EXTERNAL_STORAGE|REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" "$manifest"
       - name: Upload to Play
         # The first release goes in by hand (Google needs one bundle before API uploads).
         continue-on-error: ${{ github.run_number == 1 }}
@@ -91,7 +91,7 @@ jobs:
           NOTES: ${{ inputs.notes }}
         run: |
           pip install --quiet google-api-python-client==2.151.0 google-auth==2.35.0
-          python ../../scripts/play-upload.py android/app/build/outputs/bundle/release/app-release.aab "$TRACK" "$NOTES"
+          python ../../scripts/play-upload.py android/app/build/outputs/bundle/playRelease/app-play-release.aab "$TRACK" "$NOTES"
       - name: Remove the key
         if: always()
         run: rm -f "$RUNNER_TEMP/upload.jks"

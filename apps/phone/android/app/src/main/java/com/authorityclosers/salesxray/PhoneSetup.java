@@ -93,6 +93,9 @@ final class PhoneSetup {
             status.put("recorderProfile", recorder);
             status.put("needsAllFiles", needsAllFiles);
             status.put("allFilesSupported", recorder.optBoolean("allFilesSupported"));
+            // The Play build has no call history: the checklist leaves out work-call logging.
+            status.put("callLogSupported", CallLogSync.supported(context));
+            status.put("store", Permissions.store(context));
             // Truecaller's after-call screen covers "How did it go?" (#48).
             status.put("truecaller", installed(context, TRUECALLER));
         } catch (JSONException ignored) {}

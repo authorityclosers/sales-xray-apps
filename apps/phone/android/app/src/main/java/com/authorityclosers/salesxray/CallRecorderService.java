@@ -41,7 +41,7 @@ import org.json.JSONObject;
  * the app AND turned this service on in Android's Accessibility settings. Mostly
  * the seller's side is heard; the other side clearly only on speaker. Files are
  * named "Sales Xray call recording …" so the way each was captured stays visible.
- * A Play Store build (-PsxPlay) removes this service from the manifest.
+ * The Play build (the play flavour) removes this service from the manifest.
  */
 public class CallRecorderService extends AccessibilityService {
 

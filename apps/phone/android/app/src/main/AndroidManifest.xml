@@ -50,7 +50,7 @@
             android:foregroundServiceType="microphone" />
 
         <!-- Optional call recorder (CEO 19 Oct): off until the seller switches it on in the app and
-             in Accessibility settings. Sideload builds only: a Play build (-PsxPlay) removes it. -->
+             in Accessibility settings. Direct-install builds only: the play flavour removes it. -->
         <service
             android:name=".CallRecorderService"
             android:exported="true"

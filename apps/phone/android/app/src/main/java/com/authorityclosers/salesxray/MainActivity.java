@@ -8,6 +8,10 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Message;
+import android.os.Process;
+import android.os.SystemClock;
+import android.util.Log;
+import android.view.Choreographer;
 import android.view.ViewGroup;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -17,9 +21,12 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
+import androidx.core.splashscreen.SplashScreen;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
@@ -46,6 +53,13 @@ public class MainActivity extends BridgeActivity {
     /** The app is the one in front (call logging tells the seller about new recordings otherwise). */
     static volatile boolean inFront;
 
+    /** The splash stays until the page paints, but never longer than this (a slow network). */
+    private static final long SPLASH_MAX_MS = 6_000;
+    private static final String START_LOG = "SXStart";
+    private long createdAt;
+    private boolean painted;
+    private boolean finishedOnce;
+
     private PhoneBridge phone;
     private GoogleSignIn google;
     /** The page's pending audio file pick (RecordingPicker), and the picker it waits on. */
@@ -58,6 +72,11 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // The splash (the app's ground and mark) stays up until the page has painted, so the
+        // seller never sees an empty screen between the two (23 Oct 2026: about 1 s on a Note 8 Pro).
+        createdAt = SystemClock.uptimeMillis();
+        SplashScreen splash = SplashScreen.installSplashScreen(this);
+        splash.setKeepOnScreenCondition(() -> !painted && SystemClock.uptimeMillis() - createdAt < SPLASH_MAX_MS);
         super.onCreate(savedInstanceState);
         SafeArea.apply(this);
         recordingPicker = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
@@ -70,6 +89,19 @@ public class MainActivity extends BridgeActivity {
             );
         });
         WebView webView = getBridge().getWebView();
+        // The page's ground before it paints follows the phone's light or dark mode.
+        webView.setBackgroundColor(ContextCompat.getColor(this, R.color.sx_ground));
+        // Back: through the page's history (it closes sheets and dialogs first); on the first page,
+        // the app goes to the background and stays ready, so opening it again is quick. Capacitor's
+        // own handler did nothing on the first page.
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                WebView page = getBridge().getWebView();
+                if (page.canGoBack()) page.goBack();
+                else moveTaskToBack(true);
+            }
+        });
         connect = new ConnectFlow(this, webView);
         phone = new PhoneBridge(this, webView, connect);
         google = new GoogleSignIn(this, webView);
@@ -86,8 +118,22 @@ public class MainActivity extends BridgeActivity {
                     }
 
                     @Override
+                    public void onPageCommitVisible(WebView view, String url) {
+                        super.onPageCommitVisible(view, url);
+                        if (painted) return;
+                        // The first page is on screen: the splash goes, and the start time is logged.
+                        painted = true;
+                        reportFullyDrawn();
+                        Log.i(START_LOG, "first paint " + sinceStart() + " ms after the app started (" + (SystemClock.uptimeMillis() - createdAt) + " ms after the screen opened)");
+                    }
+
+                    @Override
                     public void onPageFinished(WebView view, String url) {
                         super.onPageFinished(view, url);
+                        if (!finishedOnce) {
+                            finishedOnce = true;
+                            Log.i(START_LOG, "page loaded " + sinceStart() + " ms after the app started");
+                        }
                         phone.inject(view, url);
                         google.onPageFinished(view, url);
                         Uri page = Uri.parse(url);
@@ -173,6 +219,11 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         inFront = true;
+        if (painted) {
+            // Back from the background: how long until the next frame is on screen.
+            long resumed = SystemClock.uptimeMillis();
+            Choreographer.getInstance().postFrameCallback(frame -> Log.i(START_LOG, "warm: frame " + (SystemClock.uptimeMillis() - resumed) + " ms after resume"));
+        }
         // Back in the app after a call: "How did it go?" is here, so its reminder goes (#48).
         AfterCallNotice.clear(this);
         if (phone != null) phone.onResume();
@@ -197,6 +248,11 @@ public class MainActivity extends BridgeActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (phone != null) phone.onPermissionResult(requestCode);
+    }
+
+    /** Milliseconds since Android started this app's process. */
+    private static long sinceStart() {
+        return SystemClock.uptimeMillis() - Process.getStartUptimeMillis();
     }
 
     private void takeOpen(Intent intent) {

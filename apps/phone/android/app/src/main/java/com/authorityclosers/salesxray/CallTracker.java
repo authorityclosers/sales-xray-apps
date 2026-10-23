@@ -67,28 +67,35 @@ final class CallTracker {
         this.listener = listener;
     }
 
-    /** Calling, call history and the phone's recordings. */
-    static String[] wanted() {
+    /** Calling, call history and the phone's recordings: the ones this build declares. */
+    static String[] wanted(Context context) {
         List<String> list = new ArrayList<>();
-        list.add(Manifest.permission.CALL_PHONE);
-        list.add(Manifest.permission.READ_PHONE_STATE);
-        list.add(Manifest.permission.READ_CALL_LOG);
-        list.add(Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_AUDIO : Manifest.permission.READ_EXTERNAL_STORAGE);
+        String[] all = {
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CALL_LOG,
+            Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_AUDIO : Manifest.permission.READ_EXTERNAL_STORAGE,
+        };
+        for (String permission : all) if (Permissions.declared(context, permission)) list.add(permission);
         return list.toArray(new String[0]);
     }
 
     static String[] missing(Context context) {
         List<String> list = new ArrayList<>();
-        for (String permission : wanted()) if (!granted(context, permission)) list.add(permission);
+        for (String permission : wanted(context)) if (!granted(context, permission)) list.add(permission);
         return list.toArray(new String[0]);
     }
 
+    /** Placing and following calls: every one of these this build declares (the Play build: call state only). */
     static boolean hasCallAccess(Context context) {
-        return (
-            granted(context, Manifest.permission.CALL_PHONE) &&
-            granted(context, Manifest.permission.READ_PHONE_STATE) &&
-            granted(context, Manifest.permission.READ_CALL_LOG)
-        );
+        for (String permission : new String[] {
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CALL_LOG,
+        }) {
+            if (Permissions.declared(context, permission) && !granted(context, permission)) return false;
+        }
+        return true;
     }
 
     private static boolean granted(Context context, String permission) {

@@ -82,7 +82,12 @@ final class CallLogSync {
     }
 
     static boolean isOn(Context context) {
-        return prefs(context).getBoolean(ON, false);
+        return supported(context) && prefs(context).getBoolean(ON, false);
+    }
+
+    /** This build can read call history (the Play build can't: Play's call log policy). */
+    static boolean supported(Context context) {
+        return Permissions.declared(context, Manifest.permission.READ_CALL_LOG);
     }
 
     /** Call history, and the phone's SIMs (to tell the work SIM). */
@@ -107,6 +112,7 @@ final class CallLogSync {
     static boolean setOn(Context context, boolean on, String sim) {
         SharedPreferences prefs = prefs(context);
         String chosen = sim == null ? "" : sim;
+        if (on && !supported(context)) return false;
         if (on && chosen.isEmpty() && sims(context).length() > 1) return false;
         SharedPreferences.Editor edit = prefs.edit().putBoolean(ON, on);
         if (on) {
@@ -132,7 +138,9 @@ final class CallLogSync {
         SharedPreferences prefs = prefs(context);
         JSONObject status = new JSONObject();
         try {
-            status.put("on", prefs.getBoolean(ON, false));
+            status.put("on", isOn(context));
+            // The Play build has no call history: the page doesn't offer logging there.
+            status.put("supported", supported(context));
             status.put("access", hasAccess(context));
             status.put("sims", sims(context));
             status.put("sim", prefs.getString(SIM, ""));
@@ -264,7 +272,7 @@ final class CallLogSync {
 
     private static int sync(Context context) {
         SharedPreferences prefs = prefs(context);
-        if (!prefs.getBoolean(ON, false)) return 0;
+        if (!isOn(context)) return 0;
         if (!granted(context, Manifest.permission.READ_CALL_LOG)) return state(context, "no_access");
         String base = LeadAlerts.serverUrl(context);
         if (base == null) return state(context, "error");

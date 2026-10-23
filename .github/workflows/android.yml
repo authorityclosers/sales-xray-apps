@@ -92,21 +92,23 @@ jobs:
         run: npx cap sync android
       - name: Unit tests
         working-directory: apps/phone/android
-        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
-      - name: Build Sales Xray (test)
+        run: ./gradlew --no-daemon --stacktrace testDirectDebugUnitTest testPlayDebugUnitTest
+      - name: Build Sales Xray (test, both flavours)
         working-directory: apps/phone/android
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
-        run: ./gradlew --no-daemon --stacktrace assembleDebug
+        run: ./gradlew --no-daemon --stacktrace assembleDirectDebug assemblePlayDebug
       - name: Check the release build compiles (unsigned, not kept)
         working-directory: apps/phone/android
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
-        run: ./gradlew --no-daemon --stacktrace assembleRelease
+        run: ./gradlew --no-daemon --stacktrace assembleDirectRelease
       - name: Keep Sales Xray
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk "dist/sales-xray-android-0.3.${{ github.run_number }}-test.apk"
+          cp android/app/build/outputs/apk/direct/debug/app-direct-debug.apk "dist/sales-xray-android-0.3.${{ github.run_number }}-test.apk"
+          # The Play flavour as an installable test APK (same app id; the Play Store gets the bundle).
+          cp android/app/build/outputs/apk/play/debug/app-play-debug.apk "dist/sales-xray-android-play-0.3.${{ github.run_number }}-test.apk"
       - name: Point the shell at dev
         run: |
           node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const config = JSON.parse(fs.readFileSync(file, "utf8")); config.server.url = "https://salesxray-dev.authorityclosers.com"; fs.writeFileSync(file, JSON.stringify(config, null, 2));'
@@ -115,30 +117,31 @@ jobs:
         working-directory: apps/phone/android
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
-        run: ./gradlew --no-daemon --stacktrace assembleDebug -PsxDev
-      - name: A Play Store build carries no call recorder, all-files access or battery request
+        run: ./gradlew --no-daemon --stacktrace assembleDirectDebug -PsxDev
+      - name: The Play flavour carries no call history, direct calling, call recorder, all-files access or battery request
         working-directory: apps/phone/android
         run: |
-          ./gradlew --no-daemon --stacktrace :app:processDebugManifest -PsxPlay
-          merged=$(find app/build/intermediates -path '*merged_manifest*' -name AndroidManifest.xml | head -1)
-          for banned in CallRecorderService MANAGE_EXTERNAL_STORAGE REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; do
-            if grep -q "$banned" "$merged"; then echo "Play build still declares $banned"; exit 1; fi
+          ./gradlew --no-daemon --stacktrace :app:processPlayDebugManifest :app:processDirectDebugManifest
+          play=$(find app/build/intermediates -path '*merged_manifest*playDebug*' -name AndroidManifest.xml | head -1)
+          direct=$(find app/build/intermediates -path '*merged_manifest*directDebug*' -name AndroidManifest.xml | head -1)
+          for banned in READ_CALL_LOG CALL_PHONE CallRecorderService MANAGE_EXTERNAL_STORAGE REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; do
+            if grep -q "$banned" "$play"; then echo "Play flavour still declares $banned ($play)"; exit 1; fi
+            grep -q "$banned" "$direct" || { echo "Direct flavour lost $banned ($direct)"; exit 1; }
           done
-          grep -q READ_CALL_LOG "$merged"
-          echo "Play build: none of them; READ_CALL_LOG kept for the Call log declaration ($merged)"
+          echo "Play flavour: none of them ($play); direct keeps all ($direct)"
       - name: The Play App Bundle builds (unsigned)
         working-directory: apps/phone/android
-        run: ./gradlew --no-daemon --stacktrace bundleRelease -PsxPlay
+        run: ./gradlew --no-daemon --stacktrace bundlePlayRelease
       - name: Build the on-phone tests for Sales Xray Dev
         working-directory: apps/phone/android
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
-        run: ./gradlew --no-daemon --stacktrace :app:assembleDebugAndroidTest -PsxDev
+        run: ./gradlew --no-daemon --stacktrace :app:assembleDirectDebugAndroidTest -PsxDev
       - name: Keep Sales Xray Dev
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk "dist/sales-xray-dev-android-0.3.${{ github.run_number }}-test.apk"
+          cp android/app/build/outputs/apk/direct/debug/app-direct-debug.apk "dist/sales-xray-dev-android-0.3.${{ github.run_number }}-test.apk"
           # Run on a connected phone with adb (DeviceCaptureTest.java says how).
-          cp android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "dist/sales-xray-dev-android-0.3.${{ github.run_number }}-device-tests.apk"
+          cp android/app/build/outputs/apk/androidTest/direct/debug/app-direct-debug-androidTest.apk "dist/sales-xray-dev-android-0.3.${{ github.run_number }}-device-tests.apk"
           sha256sum dist/*.apk
       - name: Keep the test APKs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -197,11 +200,11 @@ jobs:
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
           SX_SIGNING_PASSWORD: ${{ secrets.SX_ANDROID_SIGNING_PASSWORD }}
-        run: ./gradlew --no-daemon --stacktrace assembleRelease
+        run: ./gradlew --no-daemon --stacktrace assembleDirectRelease
       - name: Keep Sales Xray, and drop the key
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/release/app-release.apk "dist/sales-xray-android-0.3.${{ github.run_number }}.apk"
+          cp android/app/build/outputs/apk/direct/release/app-direct-release.apk "dist/sales-xray-android-0.3.${{ github.run_number }}.apk"
           rm -f "$RUNNER_TEMP/sales-xray.keystore"
           sha256sum dist/*.apk
       - name: Keep the signed APK

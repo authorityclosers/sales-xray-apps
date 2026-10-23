@@ -417,7 +417,8 @@ final class PhoneBridge {
             status.put("calling", true);
             status.put("callAccess", CallTracker.hasCallAccess(activity));
             status.put("push", true);
-            status.put("callLog", true);
+            status.put("callLog", CallLogSync.supported(activity));
+            status.put("store", Permissions.store(activity));
             status.put("setup", true);
             status.put("connect", true);
             // Facebook and Apple sign-in also open in the phone's browser (GoogleSignIn).
@@ -582,7 +583,7 @@ final class PhoneBridge {
 
     /** Work calls logged by themselves (UX study item 5): call history access is asked for once. */
     private void callLogSetup(JavaScriptReplyProxy reply, String id, boolean on, String sim) {
-        if (on && !CallLogSync.hasAccess(activity)) {
+        if (on && CallLogSync.supported(activity) && !CallLogSync.hasAccess(activity)) {
             logReply = reply;
             logId = id;
             logSim = sim;

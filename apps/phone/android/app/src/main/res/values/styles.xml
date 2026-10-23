@@ -16,7 +16,11 @@
     </style>
 
 
+    <!-- The splash: the app's ground and mark, light or dark with the phone. MainActivity keeps it
+         up until the page has painted, so there is no blank screen in between. -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/sx_ground</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_mark</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

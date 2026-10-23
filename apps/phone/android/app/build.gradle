@@ -25,11 +25,27 @@ android {
             manifestPlaceholders = [appLabel: "Sales Xray Dev"]
             resValue "string", "sx_self_package", "com.authorityclosers.salesxray.dev"
         }
+        // Which store this build is for (the page and the setup checklist read it).
+        resValue "string", "sx_store", "direct"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    // Two builds of one app (owner, 23 Oct 2026): "direct" is the download-link app with
+    // everything; "play" is the Google Play app, whose manifest (src/play) leaves out what Play
+    // allows only for other kinds of app. The code checks what its build declares, so a
+    // feature the Play build lacks is simply not offered.
+    flavorDimensions = ["store"]
+    productFlavors {
+        direct {
+            dimension "store"
+        }
+        play {
+            dimension "store"
+            resValue "string", "sx_store", "play"
         }
     }
     signingConfigs {
@@ -60,13 +76,6 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-}
-
-// -PsxPlay: a Play Store build without the accessibility call recorder (CEO 19 Oct: sideload
-// builds only). Its manifest overlay removes the service; the app then reports it unavailable.
-if (project.hasProperty("sxPlay")) {
-    android.sourceSets.debug.manifest.srcFile "src/play/AndroidManifest.xml"
-    android.sourceSets.release.manifest.srcFile "src/play/AndroidManifest.xml"
 }
 
 repositories {

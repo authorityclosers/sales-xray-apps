@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app's ground and mark (Liquid Glass, 22 Oct 2026): the splash and the page before it paints. -->
+    <color name="sx_ground">#F2F3F7</color>
+    <color name="sx_mark">#07746B</color>
+</resources>
