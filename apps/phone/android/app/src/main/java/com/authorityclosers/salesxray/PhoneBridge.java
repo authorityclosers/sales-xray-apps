@@ -258,6 +258,20 @@ final class PhoneBridge {
                 case "pickRecordingsFolder":
                     pickRecordingsFolder(reply, id);
                     break;
+                case "review": {
+                    // Google Play's review card (Play build; the page asks after a "Great" rating).
+                    final String reviewId = id;
+                    main.post(() ->
+                        StoreReview.ask(activity, shown -> {
+                            JSONObject result = new JSONObject();
+                            try {
+                                result.put("shown", shown);
+                            } catch (JSONException ignored) {}
+                            reply(reply, reviewId, result);
+                        })
+                    );
+                    break;
+                }
                 case "pendingRecordings": {
                     // Lead calls the phone logged by itself, with the recording it found for each (owner, 22 Oct).
                     String asked = id;
@@ -471,6 +485,8 @@ final class PhoneBridge {
             List<String> picked = RecordingFolder.paths(activity);
             status.put("recordingsHidden", RecorderRules.needsAllFiles(RecorderProfile.profile(activity), Build.VERSION.SDK_INT, RecordingScanner.hasAllFilesAccess(), picked));
             status.put("folderPickSupported", RecordingFolder.supported());
+            // Google Play In-App Review: the Play build only.
+            status.put("inAppReview", StoreReview.available());
             status.put("folderPicked", !picked.isEmpty());
             status.put("notifications", notificationsAllowed());
             status.put("watching", RecordingWatchWorker.watching(activity));
