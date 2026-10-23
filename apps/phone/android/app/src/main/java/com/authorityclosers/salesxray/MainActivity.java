@@ -55,6 +55,8 @@ public class MainActivity extends BridgeActivity {
 
     /** The splash stays until the page paints, but never longer than this (a slow network). */
     private static final long SPLASH_MAX_MS = 6_000;
+    /** How long after the screen opens the Play build asks Play for a newer version. */
+    private static final long UPDATE_CHECK_DELAY_MS = 4000;
     private static final String START_LOG = "SXStart";
     private long createdAt;
     private boolean painted;
@@ -68,6 +70,8 @@ public class MainActivity extends BridgeActivity {
     private ValueCallback<Uri[]> pickCallback;
     private ActivityResultLauncher<Intent> recordingPicker;
     private ConnectFlow connect;
+    /** Google Play in-app updates in the Play build; nothing in the download-link build. */
+    private StoreUpdates updates;
     /** A lead or Report to open from an alert (a /leads or /review path), once the page is there. */
     private String pendingOpen;
     private boolean pageReady;
@@ -109,6 +113,9 @@ public class MainActivity extends BridgeActivity {
         phone = new PhoneBridge(this, webView, connect);
         phone.setBundledWeb(bundled);
         google = new GoogleSignIn(this, webView);
+        updates = new StoreUpdates(this);
+        // Asked once the first screen is up, so Play's sheet never covers the start.
+        webView.postDelayed(updates::start, UPDATE_CHECK_DELAY_MS);
         phone.attach();
         phone.takeLaunch(getIntent());
         takeOpen(getIntent());
@@ -245,6 +252,7 @@ public class MainActivity extends BridgeActivity {
         AfterCallNotice.clear(this);
         if (phone != null) phone.onResume();
         if (google != null) google.onResume();
+        if (updates != null) updates.resume();
         // Work calls made since the last look reach their leads (UX study item 5).
         CallLogSync.soon(this);
     }
@@ -253,6 +261,12 @@ public class MainActivity extends BridgeActivity {
     public void onPause() {
         super.onPause();
         inFront = false;
+    }
+
+    @Override
+    public void onDestroy() {
+        if (updates != null) updates.stop();
+        super.onDestroy();
     }
 
     @Override

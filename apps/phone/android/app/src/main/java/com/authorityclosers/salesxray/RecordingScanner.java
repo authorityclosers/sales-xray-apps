@@ -133,6 +133,8 @@ final class RecordingScanner {
         // Some phones hide the call folder from the media index (.nomedia), so
         // the maker's folders are also read by path where Android allows it.
         if (canReadFolders(context)) fromFolders(found, seen);
+        // Folders the seller picked (S8): read through Android's folder grant, no other access needed.
+        fromPickedFolders(context, found, seen);
         found.sort((a, b) -> Long.compare(b.optLong("addedMs"), a.optLong("addedMs")));
         return found.size() > limit ? new ArrayList<>(found.subList(0, limit)) : found;
     }
@@ -214,6 +216,15 @@ final class RecordingScanner {
                 if (!seen.add(file.getName().toLowerCase(Locale.ROOT) + ":" + file.length())) continue;
                 found.add(item("file:" + file.getAbsolutePath(), file.getName(), relative, file.lastModified(), 0, file.length(), null));
             }
+        }
+    }
+
+    private static void fromPickedFolders(Context context, List<JSONObject> found, Set<String> seen) {
+        for (RecordingFolder.Document file : RecordingFolder.files(context)) {
+            if (skip(file.folder) || !AUDIO.contains(extension(file.name))) continue;
+            if (!seen.add(file.name.toLowerCase(Locale.ROOT) + ":" + file.size)) continue;
+            String mime = file.mime == null || !file.mime.startsWith("audio/") ? null : file.mime;
+            found.add(item("tree:" + file.uri, file.name, file.folder, file.modifiedMs, 0, file.size, mime));
         }
     }
 
@@ -318,6 +329,11 @@ final class RecordingScanner {
             if (stream == null) throw new IOException("recording_unavailable");
             return stream;
         }
+        if (source.startsWith("tree:")) {
+            InputStream stream = context.getContentResolver().openInputStream(RecordingFolder.allowed(context, source));
+            if (stream == null) throw new IOException("recording_unavailable");
+            return stream;
+        }
         return new FileInputStream(allowedFile(context, source));
     }
 
@@ -325,6 +341,11 @@ final class RecordingScanner {
     static ParcelFileDescriptor descriptor(Context context, String source) throws IOException {
         if (source.startsWith("media:")) {
             ParcelFileDescriptor descriptor = context.getContentResolver().openFileDescriptor(mediaUri(source), "r");
+            if (descriptor == null) throw new IOException("recording_unavailable");
+            return descriptor;
+        }
+        if (source.startsWith("tree:")) {
+            ParcelFileDescriptor descriptor = context.getContentResolver().openFileDescriptor(RecordingFolder.allowed(context, source), "r");
             if (descriptor == null) throw new IOException("recording_unavailable");
             return descriptor;
         }

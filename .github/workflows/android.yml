@@ -153,6 +153,8 @@ jobs:
             if grep -q "android:name=\"$banned\"" "$play"; then echo "Play flavour still declares $banned ($play)"; exit 1; fi
             grep -q "android:name=\"$banned\"" "$direct" || { echo "Direct flavour lost $banned ($direct)"; exit 1; }
           done
+          # Backup off in the Play build (cloud backup would copy in-app meeting recordings to Google Drive).
+          grep -q 'android:allowBackup="false"' "$play" || { echo "Play flavour still allows backup"; exit 1; }
           echo "Play flavour: none of them ($play); direct keeps all ($direct)"
       - name: The Play App Bundle builds (unsigned)
         working-directory: apps/phone/android
@@ -234,11 +236,16 @@ jobs:
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
           SX_SIGNING_PASSWORD: ${{ secrets.SX_ANDROID_SIGNING_PASSWORD }}
-        run: ./gradlew --no-daemon --stacktrace assembleDirectRelease
+          # A QA run also signs the Play build as an APK, to install over the download-link app.
+          SX_ALSO: ${{ inputs.signed_only && !inputs.publish && 'assemblePlayRelease' || '' }}
+        run: ./gradlew --no-daemon --stacktrace assembleDirectRelease $SX_ALSO
       - name: Keep Sales Xray, and drop the key
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/direct/release/app-direct-release.apk "dist/sales-xray-android-0.3.${{ github.run_number }}.apk"
+          if [ -f android/app/build/outputs/apk/play/release/app-play-release.apk ]; then
+            cp android/app/build/outputs/apk/play/release/app-play-release.apk "dist/sales-xray-android-play-0.3.${{ github.run_number }}.apk"
+          fi
           rm -f "$RUNNER_TEMP/sales-xray.keystore"
           sha256sum dist/*.apk
       - name: Keep the signed APK

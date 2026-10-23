@@ -111,6 +111,11 @@ final class RecorderRules {
         return sdk >= 30 && !allFiles && hidesFromMediaIndex(profile.maker);
     }
 
+    /** The same, when a folder the seller picked (S8, RecordingFolder) already lets the app read them. */
+    static boolean needsAllFiles(Profile profile, int sdk, boolean allFiles, java.util.List<String> picked) {
+        return needsAllFiles(profile, sdk, allFiles) && !RecordingFolderRules.coversAny(picked, profile.folders);
+    }
+
     /** Dialer apps that save to a folder, for "switch to your phone's own dialer". */
     static boolean savesToFolder(String dialer, String family) {
         return "folder".equals(profile(dialer, family).kind);

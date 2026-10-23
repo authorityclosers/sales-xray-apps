@@ -104,6 +104,8 @@ dependencies {
     // Crash reports (S6, owner 23 Oct 2026) through the same Firebase project; the pair
     // Firebase's own bill of materials 33.16.0 ships together.
     implementation "com.google.firebase:firebase-crashlytics:19.4.4"
+    // Google Play in-app updates, in the Play build only (src/play/StoreUpdates.java).
+    playImplementation "com.google.android.play:app-update:2.1.0"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     // Plain-JVM tests read and write JSON (Android's own org.json is only a stub there).

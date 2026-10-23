@@ -67,7 +67,8 @@ final class PhoneSetup {
         JSONObject recorder = RecorderProfile.status(context);
         // On Xiaomi the recordings folder stays hidden until All files access is allowed (#49).
         boolean needsAllFiles = recorder.optBoolean("needsAllFiles");
-        boolean recordings = (RecordingScanner.hasAudioAccess(context) || RecordingScanner.hasAllFilesAccess()) && !needsAllFiles;
+        boolean picked = recorder.optJSONArray("pickedFolders") != null && recorder.optJSONArray("pickedFolders").length() > 0;
+        boolean recordings = (RecordingScanner.hasAudioAccess(context) || RecordingScanner.hasAllFilesAccess() || picked) && !needsAllFiles;
         String recording = recorder.optString("recording", "unknown");
         long newest = recorder.optLong("newestMs", 0);
         try {
@@ -93,6 +94,9 @@ final class PhoneSetup {
             status.put("recorderProfile", recorder);
             status.put("needsAllFiles", needsAllFiles);
             status.put("allFilesSupported", recorder.optBoolean("allFilesSupported"));
+            // Without All files access (the Play build), the seller picks the recordings folder (S8).
+            status.put("folderPickSupported", recorder.optBoolean("folderPickSupported"));
+            status.put("folderPicked", picked);
             // The Play build has no call history: the checklist leaves out work-call logging.
             status.put("callLogSupported", CallLogSync.supported(context));
             status.put("store", Permissions.store(context));

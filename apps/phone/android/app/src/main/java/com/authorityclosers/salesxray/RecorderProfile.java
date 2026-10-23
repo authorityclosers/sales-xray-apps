@@ -71,9 +71,12 @@ final class RecorderProfile {
         String dialer = defaultDialer(context);
         RecorderRules.Profile profile = RecorderRules.profile(dialer, family);
         boolean canRead = RecordingScanner.canReadFolders(context);
+        // The folders the seller picked (S8): their recordings are read through that grant.
+        List<String> picked = RecordingFolder.paths(context);
+        List<RecordingFolder.Document> pickedFiles = picked.isEmpty() ? java.util.Collections.emptyList() : RecordingFolder.files(context);
         // MIUI hides its recordings folder from the media index (#49): without All
-        // files access it only looks empty, so say it is hidden instead.
-        boolean hidden = RecorderRules.needsAllFiles(profile, Build.VERSION.SDK_INT, RecordingScanner.hasAllFilesAccess());
+        // files access (or a picked folder) it only looks empty, so say it is hidden instead.
+        boolean hidden = RecorderRules.needsAllFiles(profile, Build.VERSION.SDK_INT, RecordingScanner.hasAllFilesAccess(), picked);
         File root = Environment.getExternalStorageDirectory();
         long newest = 0;
         try {
@@ -82,7 +85,20 @@ final class RecorderProfile {
                 File folder = new File(root, relative);
                 JSONObject row = new JSONObject();
                 row.put("path", relative);
-                if (!canRead) {
+                if (coveredBy(picked, relative)) {
+                    int recordings = 0;
+                    long newestHere = 0;
+                    for (RecordingFolder.Document file : pickedFiles) {
+                        if (!file.folder.equalsIgnoreCase(relative)) continue;
+                        recordings++;
+                        newestHere = Math.max(newestHere, file.modifiedMs);
+                    }
+                    row.put("state", recordings > 0 ? "found" : "empty");
+                    row.put("picked", true);
+                    row.put("recordings", recordings);
+                    row.put("newestMs", newestHere > 0 ? newestHere : JSONObject.NULL);
+                    newest = Math.max(newest, newestHere);
+                } else if (!canRead) {
                     row.put("state", "no_access");
                 } else if (hidden) {
                     row.put("state", "hidden");
@@ -112,6 +128,8 @@ final class RecorderProfile {
             status.put("allFiles", RecordingScanner.hasAllFilesAccess());
             status.put("needsAllFiles", hidden);
             status.put("allFilesSupported", allFilesSupported(context));
+            status.put("folderPickSupported", RecordingFolder.supported());
+            status.put("pickedFolders", new JSONArray(picked));
             status.put("setting", setting == null ? JSONObject.NULL : setting != 0);
             status.put("recording", RecorderRules.recording(profile, setting, newest, System.currentTimeMillis()));
             status.put("newestMs", newest > 0 ? newest : JSONObject.NULL);
@@ -120,6 +138,11 @@ final class RecorderProfile {
             status.put("callRecorder", CallRecorderService.status(context));
         } catch (JSONException ignored) {}
         return status;
+    }
+
+    private static boolean coveredBy(List<String> picked, String folder) {
+        for (String one : picked) if (RecordingFolderRules.covers(one, folder)) return true;
+        return false;
     }
 
     /** This build may ask for All files access (download builds; a Play build leaves it out). */

@@ -11,6 +11,8 @@ import android.provider.Settings;
 import android.util.Base64;
 import android.view.HapticFeedbackConstants;
 import android.webkit.WebView;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -23,6 +25,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -76,12 +79,17 @@ final class PhoneBridge {
     private JavaScriptReplyProxy logReply;
     private String logId;
     private String logSim;
+    /** "Choose your recordings folder" (S8): Android's folder picker, and the page waiting on it. */
+    private final ActivityResultLauncher<Uri> folderPicker;
+    private JavaScriptReplyProxy folderReply;
+    private String folderId;
 
     PhoneBridge(AppCompatActivity activity, WebView webView, ConnectFlow connect) {
         this.activity = activity;
         this.webView = webView;
         this.calls = new CallTracker(activity, this::sendCall);
         this.connect = connect;
+        this.folderPicker = activity.registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), this::folderPicked);
     }
 
     void setBundledWeb(BundledWeb bundled) {
@@ -219,6 +227,9 @@ final class PhoneBridge {
                 case "openAllFiles":
                     openAllFilesSettings();
                     reply(reply, id, status());
+                    break;
+                case "pickRecordingsFolder":
+                    pickRecordingsFolder(reply, id);
                     break;
                 case "pendingRecordings": {
                     // Lead calls the phone logged by itself, with the recording it found for each (owner, 22 Oct).
@@ -429,6 +440,11 @@ final class PhoneBridge {
             status.put("allFiles", RecordingScanner.hasAllFilesAccess());
             // What this build declares: a Play build has no All files access to ask for.
             status.put("allFilesSupported", RecorderProfile.allFilesSupported(activity));
+            // MIUI's hidden recordings (#49) and the folder the seller picked instead (S8).
+            List<String> picked = RecordingFolder.paths(activity);
+            status.put("recordingsHidden", RecorderRules.needsAllFiles(RecorderProfile.profile(activity), Build.VERSION.SDK_INT, RecordingScanner.hasAllFilesAccess(), picked));
+            status.put("folderPickSupported", RecordingFolder.supported());
+            status.put("folderPicked", !picked.isEmpty());
             status.put("notifications", notificationsAllowed());
             status.put("watching", RecordingWatchWorker.watching(activity));
             status.put("calling", true);
@@ -621,6 +637,41 @@ final class PhoneBridge {
         }
         RecordingWatchWorker.setWatching(activity, on);
         reply(reply, id, status());
+    }
+
+    private void pickRecordingsFolder(JavaScriptReplyProxy reply, String id) {
+        if (!RecordingFolder.supported()) {
+            fail(reply, id, "unsupported");
+            return;
+        }
+        if (folderReply != null) fail(folderReply, folderId, "superseded");
+        folderReply = reply;
+        folderId = id;
+        try {
+            folderPicker.launch(RecordingFolder.initial(activity));
+        } catch (RuntimeException error) {
+            folderReply = null;
+            folderId = null;
+            fail(reply, id, "no_picker");
+        }
+    }
+
+    /** The seller picked a folder (or backed out): keep the grant, then send the new checklist. */
+    private void folderPicked(Uri tree) {
+        JavaScriptReplyProxy reply = folderReply;
+        String id = folderId;
+        folderReply = null;
+        folderId = null;
+        boolean kept = RecordingFolder.keep(activity, tree);
+        if (reply == null) return;
+        io.execute(() -> {
+            JSONObject result = setupStatus();
+            try {
+                result.put("picked", kept);
+                result.put("status", status());
+            } catch (JSONException ignored) {}
+            reply(reply, id, result);
+        });
     }
 
     private void openAllFilesSettings() {

@@ -158,7 +158,7 @@
     var calls = call("status")
       .then(function (status) {
         state = status;
-        if (!status.audio && !status.allFiles) {
+        if (!status.audio && !status.allFiles && !status.folderPicked) {
           items = [];
           return;
         }
@@ -367,7 +367,7 @@
       recorderCard() +
       callCard() +
       recordCard() +
-      (state && (state.audio || state.allFiles)
+      (state && (state.audio || state.allFiles || state.folderPicked)
         ? '<div class="sxp-watch"><span><b>Tell me about new recordings</b><small>Checks every 15 minutes, even when Sales X-Ray is closed</small></span>' +
           '<button type="button" class="sxp-switch" role="switch" aria-label="Tell me about new recordings" aria-checked="' +
           Boolean(watching) +
@@ -377,7 +377,7 @@
     var body;
     if (!state) {
       body = '<div class="sxp-empty">Looking for call recordings…</div>';
-    } else if (!state.audio && !state.allFiles) {
+    } else if (!state.audio && !state.allFiles && !state.folderPicked) {
       body =
         '<div class="sxp-empty"><b>Let Sales X-Ray see your call recordings</b>' +
         "Allow access to audio files so Sales X-Ray can list the calls your phone recorded. Only the call you pick is uploaded." +
@@ -390,7 +390,9 @@
           : "Turn on automatic call recording in your Phone app (see above). If it is already on, your phone may hide the folder.") +
         (state.allFilesSupported && !state.allFiles
           ? '<br><button type="button" class="sxp-action" data-act="allfiles">Let Sales X-Ray look in the call folder</button>'
-          : "") +
+          : !state.allFilesSupported && state.recordingsHidden && state.folderPickSupported
+            ? '<br><button type="button" class="sxp-action" data-act="pickfolder">Choose your recordings folder</button>'
+            : "") +
         "</div>";
     } else {
       body =
@@ -540,6 +542,19 @@
         });
       });
     });
+    var pickFolder = sheet.querySelector('[data-act="pickfolder"]');
+    if (pickFolder)
+      pickFolder.addEventListener("click", function () {
+        toast("Your phone's call recordings folder opens. Tap “Use this folder”, then “Allow”.");
+        call("pickRecordingsFolder")
+          .then(function () {
+            return refresh();
+          })
+          .then(function () {
+            drawSheet(sheet);
+          })
+          .catch(function () {});
+      });
     var allFiles = sheet.querySelector('[data-act="allfiles"]');
     if (allFiles)
       allFiles.addEventListener("click", function () {

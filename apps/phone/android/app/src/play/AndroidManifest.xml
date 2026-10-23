@@ -8,6 +8,9 @@
     (READ_MEDIA_AUDIO), and through a folder the seller picks where the phone hides them;
   - the accessibility call recorder (Play bans accessibility for call recording);
   - asking to skip battery optimisation: the setup screen opens Android's battery list instead.
+  Backup is off (23 Oct 2026): Android's cloud backup would copy the sign-in, the phone's id and
+  conversations recorded in the app (meeting audio) to the seller's Google Drive. A new phone signs
+  in again. Android 12+ still moves the app's data in a phone-to-phone transfer the seller starts.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
@@ -15,7 +18,9 @@
     <uses-permission android:name="android.permission.CALL_PHONE" tools:node="remove" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" tools:node="remove" />
-    <application>
+    <application
+        android:allowBackup="false"
+        tools:replace="android:allowBackup">
         <service
             android:name="com.authorityclosers.salesxray.CallRecorderService"
             tools:node="remove" />

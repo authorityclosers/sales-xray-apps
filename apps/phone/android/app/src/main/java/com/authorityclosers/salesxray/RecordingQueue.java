@@ -160,6 +160,7 @@ final class RecordingQueue {
         JSONObject recorder = RecorderProfile.status(context);
         put(result, "needsAllFiles", recorder.optBoolean("needsAllFiles"));
         put(result, "allFilesSupported", recorder.optBoolean("allFilesSupported"));
+        put(result, "folderPickSupported", recorder.optBoolean("folderPickSupported"));
         return result;
     }
 
