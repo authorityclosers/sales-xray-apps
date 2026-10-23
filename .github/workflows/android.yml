@@ -47,8 +47,9 @@ permissions:
 
 # A publish run is never cancelled, so a release update can't stop half way.
 concurrency:
-  group: android-${{ github.ref }}-${{ inputs.publish && 'publish' || 'build' }}
-  cancel-in-progress: ${{ !inputs.publish }}
+  # Signed runs (publish, or signed_only for QA) are never cancelled by a later push.
+  group: android-${{ github.ref }}-${{ (inputs.publish || inputs.signed_only) && 'publish' || 'build' }}
+  cancel-in-progress: ${{ !(inputs.publish || inputs.signed_only) }}
 
 jobs:
   # The accessibility call recorder on a real emulator with a real (emulated) SIM call:
