@@ -30,6 +30,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -73,6 +74,8 @@ final class PhoneBridge {
     private JavaScriptReplyProxy events;
     private final CallTracker calls;
     private final ConnectFlow connect;
+    /** Google and Facebook sign-in inside the app (NativeSignIn). */
+    private final NativeSignIn nativeSignIn;
     private BundledWeb bundled;
     private JavaScriptReplyProxy pushReply;
     private String pushId;
@@ -89,6 +92,7 @@ final class PhoneBridge {
         this.webView = webView;
         this.calls = new CallTracker(activity, this::sendCall);
         this.connect = connect;
+        this.nativeSignIn = new NativeSignIn(activity);
         this.folderPicker = activity.registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), this::folderPicked);
     }
 
@@ -208,6 +212,29 @@ final class PhoneBridge {
                 case "status":
                     reply(reply, id, status());
                     break;
+                case "nativeSignIn": {
+                    // Android's Google sheet or the Facebook app; the token goes back to this page only.
+                    final String signInId = id;
+                    nativeSignIn.start(
+                        args,
+                        new NativeSignIn.Done() {
+                            @Override
+                            public void token(String token) {
+                                JSONObject result = new JSONObject();
+                                try {
+                                    result.put("token", token);
+                                } catch (JSONException ignored) {}
+                                reply(reply, signInId, result);
+                            }
+
+                            @Override
+                            public void failed(String code) {
+                                fail(reply, signInId, code);
+                            }
+                        }
+                    );
+                    break;
+                }
                 case "requestAccess":
                     requestAccess(reply, id);
                     break;
@@ -456,6 +483,8 @@ final class PhoneBridge {
             status.put("connect", true);
             // Facebook and Apple sign-in also open in the phone's browser (GoogleSignIn).
             status.put("signIn", true);
+            // Google and Facebook sign in inside the app (NativeSignIn, 23 Oct 2026).
+            status.put("nativeSignIn", new JSONArray(NativeSignIn.providers()));
             // Logged lead calls wait here with their recording; recordings are checked for silence
             // (app 0.3.80+, owner 22 Oct).
             status.put("autoAttach", true);
