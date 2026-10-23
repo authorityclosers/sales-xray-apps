@@ -258,6 +258,33 @@ final class PhoneBridge {
                 case "pickRecordingsFolder":
                     pickRecordingsFolder(reply, id);
                     break;
+                case "screenshot": {
+                    // "Picture of this screen" for Report a problem: the app's window as the seller
+                    // sees it, in memory only (Redmi bug #13). The page waits 2 s, then copies itself.
+                    final String shotId = id;
+                    final int maxEdge = args.optInt("maxEdge", ScreenshotRules.DEFAULT_EDGE);
+                    final String format = args.optString("format", "jpeg");
+                    final int quality = args.optInt("quality", 82);
+                    main.post(() ->
+                        Screenshot.take(activity, maxEdge, format, quality, io, new Screenshot.Done() {
+                            @Override
+                            public void picture(String base64, String type) {
+                                JSONObject result = new JSONObject();
+                                try {
+                                    result.put("data", base64);
+                                    result.put("type", type);
+                                } catch (JSONException ignored) {}
+                                reply(reply, shotId, result);
+                            }
+
+                            @Override
+                            public void failed(String code) {
+                                fail(reply, shotId, code);
+                            }
+                        })
+                    );
+                    break;
+                }
                 case "review": {
                     // Google Play's review card (Play build; the page asks after a "Great" rating).
                     final String reviewId = id;
@@ -487,6 +514,8 @@ final class PhoneBridge {
             status.put("folderPickSupported", RecordingFolder.supported());
             // Google Play In-App Review: the Play build only.
             status.put("inAppReview", StoreReview.available());
+            // "Picture of this screen" (Report a problem, Redmi bug #13).
+            status.put("screenshot", true);
             status.put("folderPicked", !picked.isEmpty());
             status.put("notifications", notificationsAllowed());
             status.put("watching", RecordingWatchWorker.watching(activity));
