@@ -26,6 +26,10 @@ on:
         description: Build with the durable key and update the sales-xray-android-latest release (main only, owner approves)
         type: boolean
         default: false
+      signed_only:
+        description: Build with the durable key and keep the APK as this run's artifact for QA; the published release stays as it is (main only, owner approves)
+        type: boolean
+        default: false
       emulator:
         description: Also prove the call recorder on an emulator (adb emu gsm call, accept, cancel)
         type: boolean
@@ -172,7 +176,7 @@ jobs:
           if-no-files-found: error
 
   refuse-publish-off-main:
-    if: ${{ inputs.publish && github.ref != 'refs/heads/main' }}
+    if: ${{ (inputs.publish || inputs.signed_only) && github.ref != 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -182,7 +186,7 @@ jobs:
           exit 1
 
   signed-build:
-    if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
+    if: ${{ (inputs.publish || inputs.signed_only) && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: android-release
@@ -246,6 +250,8 @@ jobs:
 
   publish:
     needs: signed-build
+    # A signed_only run (QA before a release) stops at the kept APK.
+    if: ${{ inputs.publish }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

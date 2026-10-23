@@ -23,7 +23,7 @@ All builds run on GitHub's standard hosted runners. They are free while this rep
 
 | Workflow | Runs | Keeps | Publishes |
 | --- | --- | --- | --- |
-| [Android](.github/workflows/android.yml) | Push to `main` (`apps/phone`, not `ios/`), or by hand | Test APKs: Sales Xray (live) and a Dev test build (CI only) | Only by hand with "publish" on `main`: the live app alone, signed with the durable key |
+| [Android](.github/workflows/android.yml) | Push to `main` (`apps/phone`, not `ios/`), or by hand | Test APKs: Sales Xray (live) and a Dev test build (CI only) | Only by hand with "publish" on `main`: the live app alone, signed with the durable key. "signed_only" signs the same way for QA and keeps the APK as the run's artifact; the published release stays as it is |
 | [Chrome extension](.github/workflows/chrome.yml) | Push to `main` (`apps/chrome`), or by hand | The extension zip | Only by hand with "publish" on `main` |
 | [Mac and Windows](.github/workflows/desktop.yml) | By hand only | Windows `.exe` and `.msi`, Mac universal `.dmg`, live and dev, plus a screenshot | Never (unsigned) |
 | [iPhone](.github/workflows/iphone.yml) | By hand only | Simulator app and a screenshot | Never |
