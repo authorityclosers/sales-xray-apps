@@ -99,7 +99,7 @@ jobs:
       - name: The web copy is a production release with every Play gate (play-gates.txt)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/check-play-gates.sh "$GITHUB_WORKSPACE/platform" play-gates.txt
+        run: python3 scripts/check-play-gates.py "$GITHUB_WORKSPACE/platform" play-gates.txt
       - name: The web app inside the app (its static export, served from the phone; S9)
         run: bash scripts/build-web-shell.sh "$GITHUB_WORKSPACE/platform" android/app/src/main/assets/web salesxray.authorityclosers.com
       - name: Upload key

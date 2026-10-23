@@ -28,9 +28,11 @@ All secrets go into the GitHub environment `play-release` from the owner's lapto
 
 When a Sales X-Ray release is live on production, `play.yml` builds the Play bundle on that production commit and
 puts it on **internal testing**. Testers' phones then update from Play by themselves. Each run:
-1. checks the web copy (`scripts/check-play-gates.sh`). The commit must be on the platform repo's main, and it must
-   hold every commit in `play-gates.txt`. It may hold them directly, or through the release PR whose head has
-   exactly the same files (squashed releases).
+1. checks the web copy (`scripts/check-play-gates.py`). The commit must be on the platform repo's main, and every
+   commit in `play-gates.txt` must be in its history, in its release PR head's (squashed releases), or in the
+   workbench commit a "Hold for vX" head names (holds keep no history). As a last resort, 90% of a gate's added
+   lines must be in the files. Tested: v0.86 passes (aa4669f, through the hold's workbench a920c4a4); v0.85 and
+   v0.84 fail.
 2. builds the play flavour with versionCode 100000 + the run number, so no code is ever reused, and the version
    name 1.0.run. It then checks the merged manifest: no advertising ID, no microphone, no call history.
 3. checks the bundle is signed with the upload key Play knows: SHA-256 FF:1C:81:8F:…:32:D8:CF, the durable key,
