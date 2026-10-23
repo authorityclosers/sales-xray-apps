@@ -401,7 +401,10 @@ final class PhoneBridge {
                 }
                 case "setupOpen": {
                     JSONObject result = new JSONObject();
-                    result.put("opened", PhoneSetup.open(activity, args.optString("what")));
+                    // Which screen opened: the one asked for, "appSettings" instead, or none (no resume coming).
+                    String screen = PhoneSetup.screen(activity, args.optString("what"));
+                    result.put("opened", screen != null);
+                    result.put("screen", screen == null ? JSONObject.NULL : screen);
                     reply(reply, id, result);
                     break;
                 }
@@ -447,6 +450,7 @@ final class PhoneBridge {
                         micLead = lead;
                         pendingReply = reply;
                         pendingId = id;
+                        PermissionAsks.asked(activity, Manifest.permission.RECORD_AUDIO);
                         ActivityCompat.requestPermissions(activity, new String[] { Manifest.permission.RECORD_AUDIO }, REQUEST_MIC);
                         break;
                     }
@@ -589,7 +593,8 @@ final class PhoneBridge {
         }
         pendingReply = reply;
         pendingId = id;
-        String permission = Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_AUDIO : Manifest.permission.READ_EXTERNAL_STORAGE;
+        String permission = audioPermission();
+        PermissionAsks.asked(activity, permission);
         ActivityCompat.requestPermissions(activity, new String[] { permission }, REQUEST_AUDIO);
     }
 
@@ -601,6 +606,7 @@ final class PhoneBridge {
         }
         pendingReply = reply;
         pendingId = id;
+        PermissionAsks.asked(activity, missing);
         ActivityCompat.requestPermissions(activity, missing, REQUEST_CALL);
     }
 
@@ -611,7 +617,8 @@ final class PhoneBridge {
             fail(reply, id, "bad_call");
             return;
         }
-        main.post(() -> webView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY));
+        // The page's Vibration switch: it sends vibrate false when the seller turned buzzing off.
+        if (args.optBoolean("vibrate", true)) main.post(() -> webView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY));
         try {
             reply(reply, id, calls.call(leadId, number, args.optString("name")));
         } catch (RuntimeException error) {
@@ -693,8 +700,19 @@ final class PhoneBridge {
         JSONObject status = PhoneSetup.status(activity);
         try {
             status.put("version", versionName());
+            // Permissions Android won't ask about again: the page offers "Open settings" (setupOpen appSettings).
+            JSONObject blocked = new JSONObject();
+            blocked.put("calls", PermissionAsks.anyBlocked(activity, CallTracker.wanted(activity)));
+            blocked.put("notifications", Build.VERSION.SDK_INT >= 33 && PermissionAsks.blocked(activity, Manifest.permission.POST_NOTIFICATIONS));
+            blocked.put("recordings", PermissionAsks.blocked(activity, audioPermission()));
+            blocked.put("microphone", PermissionAsks.blocked(activity, Manifest.permission.RECORD_AUDIO));
+            status.put("blocked", blocked);
         } catch (JSONException ignored) {}
         return status;
+    }
+
+    private static String audioPermission() {
+        return Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_AUDIO : Manifest.permission.READ_EXTERNAL_STORAGE;
     }
 
     /** Notifications alone (lead alerts and new recordings use them); older Android opens the settings. */
@@ -709,6 +727,7 @@ final class PhoneBridge {
         ) {
             pendingReply = reply;
             pendingId = id;
+            PermissionAsks.asked(activity, Manifest.permission.POST_NOTIFICATIONS);
             ActivityCompat.requestPermissions(activity, new String[] { Manifest.permission.POST_NOTIFICATIONS }, REQUEST_ALERTS);
             return;
         }

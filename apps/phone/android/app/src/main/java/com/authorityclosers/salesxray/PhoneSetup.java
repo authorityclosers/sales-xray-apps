@@ -142,37 +142,55 @@ final class PhoneSetup {
 
     /** Opens the screen where the seller fixes a line; false when this phone has none. */
     static boolean open(Activity activity, String what) {
+        return screen(activity, what) != null;
+    }
+
+    /**
+     * Opens the screen for a line and says which one opened: the one asked for, "appSettings" when only
+     * the app's own settings could open instead, or null when nothing did (then no resume is coming).
+     */
+    static String screen(Activity activity, String what) {
         String app = activity.getPackageName();
         switch (what) {
             case "battery":
-                return start(activity, new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + app))) ||
-                    start(activity, new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) ||
-                    appDetails(activity);
+                if (start(activity, new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + app)))) return "battery";
+                if (start(activity, new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))) return "battery";
+                return appDetails(activity) ? "appSettings" : null;
             case "autostart":
                 for (String[] screen : AUTOSTART_SCREENS) {
                     Intent intent = new Intent().setComponent(new ComponentName(screen[0], screen[1]));
-                    if (start(activity, intent)) return true;
+                    if (start(activity, intent)) return "autostart";
                 }
-                return appDetails(activity);
+                return appDetails(activity) ? "appSettings" : null;
             case "recorder":
                 // The default dialer's call settings hold "Record calls automatically".
-                return RecorderProfile.open(activity, "settings");
+                return RecorderProfile.open(activity, "settings") ? "recorder" : null;
             case "allFiles":
                 // MIUI's hidden recordings folder (#49): Android's All files access screen for this app.
-                return RecorderProfile.open(activity, "allFiles");
+                return RecorderProfile.open(activity, "allFiles") ? "allFiles" : null;
             case "truecaller": {
                 // Truecaller's own settings hold its after-call screen (#48).
                 Intent launch = activity.getPackageManager().getLaunchIntentForPackage(TRUECALLER);
-                return launch != null && start(activity, launch);
+                return launch != null && start(activity, launch) ? "truecaller" : null;
             }
             case "notifications":
                 if (Build.VERSION.SDK_INT >= 26) {
                     Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, app);
-                    if (start(activity, intent)) return true;
+                    if (start(activity, intent)) return "notifications";
                 }
-                return appDetails(activity);
+                return appDetails(activity) ? "appSettings" : null;
+            case "appSettings":
+                // A permission Android won't ask about again ("blocked"): its switches. On Xiaomi,
+                // the app's permission list itself; elsewhere App info, one tap from Permissions.
+                if ("xiaomi".equals(family())) {
+                    Intent miui = new Intent("miui.intent.action.APP_PERM_EDITOR")
+                        .setClassName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity")
+                        .putExtra("extra_pkgname", app);
+                    if (start(activity, miui)) return "appSettings";
+                }
+                return appDetails(activity) ? "appSettings" : null;
             default:
-                return appDetails(activity);
+                return appDetails(activity) ? "appSettings" : null;
         }
     }
 
