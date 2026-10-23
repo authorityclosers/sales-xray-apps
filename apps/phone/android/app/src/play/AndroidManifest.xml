@@ -7,7 +7,11 @@
   - all-files access (Play's All files access policy): the dialer's recordings are read as audio
     (READ_MEDIA_AUDIO), and through a folder the seller picks where the phone hides them;
   - the accessibility call recorder (Play bans accessibility for call recording);
-  - asking to skip battery optimisation: the setup screen opens Android's battery list instead.
+  - asking to skip battery optimisation: the setup screen opens Android's battery list instead;
+  - in-app recording of a conversation, for the first Play version (owner, 24 Oct 2026: "Get clearance
+    faster record the audipo can be added in next version after that"): no AppRecorder, RECORD_AUDIO or
+    microphone foreground service, so no microphone declaration with Play. The code stays; deleting these
+    three lines turns it back on.
   Backup is off (23 Oct 2026): Android's cloud backup would copy the sign-in, the phone's id and
   conversations recorded in the app (meeting audio) to the seller's Google Drive. A new phone signs
   in again. Android 12+ still moves the app's data in a phone-to-phone transfer the seller starts.
@@ -18,11 +22,16 @@
     <uses-permission android:name="android.permission.CALL_PHONE" tools:node="remove" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" tools:node="remove" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" tools:node="remove" />
     <application
         android:allowBackup="false"
         tools:replace="android:allowBackup">
         <service
             android:name="com.authorityclosers.salesxray.CallRecorderService"
+            tools:node="remove" />
+        <service
+            android:name="com.authorityclosers.salesxray.AppRecorder"
             tools:node="remove" />
     </application>
 </manifest>

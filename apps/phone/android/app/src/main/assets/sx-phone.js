@@ -281,6 +281,8 @@
 
   /** Record a conversation in Sales X-Ray itself: a meeting, a walk-in, a talk on speaker. */
   function recordCard() {
+    // The first Play version has no in-app recorder (owner, 24 Oct 2026); older apps send no "available".
+    if (rec && rec.available === false) return "";
     if (rec && rec.recording) {
       return (
         '<div class="sxp-watch sxp-rec"><span><b>Recording · <span class="sxp-elapsed">' +

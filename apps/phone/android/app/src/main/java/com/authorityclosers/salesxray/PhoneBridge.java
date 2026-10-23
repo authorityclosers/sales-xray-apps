@@ -421,6 +421,10 @@ final class PhoneBridge {
                 }
                 case "recordStart": {
                     String lead = args.optString("leadId", "");
+                    if (!AppRecorder.available(activity)) {
+                        reply(reply, id, recordResult("unavailable"));
+                        break;
+                    }
                     if (!AppRecorder.hasMic(activity)) {
                         micLead = lead;
                         pendingReply = reply;

@@ -73,10 +73,16 @@ public class AppRecorder extends Service {
         return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION;
     }
 
+    /** This build records conversations (the first Play version doesn't: src/play/AndroidManifest.xml). */
+    static boolean available(Context context) {
+        return Permissions.declared(context, android.Manifest.permission.RECORD_AUDIO);
+    }
+
     static JSONObject state(Context context) {
         SharedPreferences prefs = prefs(context);
         JSONObject state = new JSONObject();
         try {
+            state.put("available", available(context));
             boolean on = prefs.getBoolean(ON, false);
             state.put("recording", on);
             state.put("startedMs", on ? prefs.getLong(STARTED, 0) : JSONObject.NULL);
@@ -91,6 +97,7 @@ public class AppRecorder extends Service {
 
     /** "started", "no_mic", "in_call" or "busy". */
     static String start(Context context, String leadId) {
+        if (!available(context)) return "unavailable";
         if (!hasMic(context)) return "no_mic";
         if (inCall(context)) return "in_call";
         if (prefs(context).getBoolean(ON, false)) return "busy";

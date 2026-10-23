@@ -36,7 +36,7 @@ All secrets go into the GitHub environment `play-release` from the owner's lapto
 | News app / Government / Financial features / Health | No |
 | Data safety | See below |
 | **Call log permission declaration** | Core purpose: business and enterprise CRM. A seller calls leads from the app; the app reads the call log only to log calls with those leads (when, how long, connected). Other numbers never leave the phone. Covered by the "Enterprise archive, business and enterprise CRM" exception; Google decides on review. |
-| **Foreground service (microphone)** | The in-app recorder records a meeting or an in-person sales talk that the seller starts. Notification while recording; stops when they stop. |
+| **Foreground service (microphone)** | Not in the first Play version (owner, 24 Oct 2026: M5 = drop): the Play build has no RECORD_AUDIO and no microphone service, so no declaration or video. For a later version: The in-app recorder records a meeting or an in-person sales talk that the seller starts. Notification while recording; stops when they stop. |
 | Phone (`CALL_PHONE`) | No declaration needed |
 
 If Google refuses the Call log declaration, the Play build drops `READ_CALL_LOG` and logs only calls placed from the app (start/end from the app's own call tracking). The sideload build keeps full logging.
