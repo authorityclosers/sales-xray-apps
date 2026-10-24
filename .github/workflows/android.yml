@@ -161,6 +161,11 @@ jobs:
             if grep -q "android:name=\"$banned\"" "$play"; then echo "Play flavour still declares $banned"; exit 1; fi
           done
           if grep -q 'foregroundServiceType="microphone"' "$play"; then echo "Play flavour still has a microphone foreground service"; exit 1; fi
+          if grep -q 'android:name="android.permission.FOREGROUND_SERVICE"' "$play"; then echo "Play flavour still declares FOREGROUND_SERVICE"; exit 1; fi
+          # No Privacy Sandbox ad permissions in either build (Play Console: "No advertising ID").
+          for manifest in "$play" "$direct"; do
+            if grep -q 'android:name="android.permission.ACCESS_ADSERVICES_' "$manifest"; then echo "AdServices permission declared in $manifest"; exit 1; fi
+          done
           for needed in android.permission.RECORD_AUDIO android.permission.MODIFY_AUDIO_SETTINGS com.authorityclosers.salesxray.AppRecorder; do
             grep -q "android:name=\"$needed\"" "$direct" || { echo "Direct flavour lacks $needed"; exit 1; }
           done
