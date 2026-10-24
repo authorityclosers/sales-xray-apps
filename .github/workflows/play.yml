@@ -29,6 +29,10 @@ on:
         description: What's new (testers see it)
         type: string
         default: ""
+      app_ref:
+        description: Apps repo branch or commit to build (a release branch for a rebuild); the workflow itself runs from main
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -50,7 +54,11 @@ jobs:
       - name: Check out
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          # A rebuild of an earlier release takes its own branch (e.g. release/1.0.25); otherwise main.
+          ref: ${{ inputs.app_ref || github.sha }}
           persist-credentials: false
+      - name: Which app is built
+        run: echo "Apps repo $(git rev-parse HEAD) (${{ inputs.app_ref || 'main' }})"
       - name: Node 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
