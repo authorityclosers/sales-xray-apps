@@ -203,7 +203,7 @@ final class LeadAlerts {
             connection.setInstanceFollowRedirects(false);
             connection.setRequestProperty("Accept", "application/json");
             SessionCookies.attach(connection, cookies);
-            connection.setRequestProperty("User-Agent", "SalesXrayApp/0.3 (alerts)");
+            connection.setRequestProperty("User-Agent", AppUserAgent.current() + " (alerts)");
             if (connection.getResponseCode() != 200) return null;
             try (InputStream stream = connection.getInputStream()) {
                 ByteArrayOutputStream out = new ByteArrayOutputStream();

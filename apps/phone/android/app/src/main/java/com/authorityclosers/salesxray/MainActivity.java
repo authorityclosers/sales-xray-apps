@@ -85,6 +85,9 @@ public class MainActivity extends BridgeActivity {
         createdAt = SystemClock.uptimeMillis();
         SplashScreen splash = SplashScreen.installSplashScreen(this);
         splash.setKeepOnScreenCondition(() -> !painted && SystemClock.uptimeMillis() - createdAt < SPLASH_MAX_MS);
+        // Capacitor's config with this build's version in the user agent ("SalesXrayApp/1.0.26"), read
+        // before the WebView exists; null keeps Capacitor's own config.
+        config = AppUserAgent.capConfig(this);
         super.onCreate(savedInstanceState);
         SafeArea.apply(this);
         recordingPicker = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
