@@ -89,6 +89,17 @@ jobs:
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npx cap sync android
+      - name: The train's own tools, from this workflow's commit (a release-branch rebuild has older copies)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          path: train
+          persist-credentials: false
+          sparse-checkout: |
+            apps/phone/play-gates.txt
+            apps/phone/scripts/check-play-gates.py
+            scripts/play-upload.py
+          sparse-checkout-cone-mode: false
       - name: Check out the web app (platform repo)
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -99,7 +110,7 @@ jobs:
       - name: The web copy is a production release with every Play gate (play-gates.txt)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/check-play-gates.py "$GITHUB_WORKSPACE/platform" play-gates.txt
+        run: python3 "$GITHUB_WORKSPACE/train/apps/phone/scripts/check-play-gates.py" "$GITHUB_WORKSPACE/platform" "$GITHUB_WORKSPACE/train/apps/phone/play-gates.txt"
       - name: The web app inside the app (its static export, served from the phone; S9)
         run: bash scripts/build-web-shell.sh "$GITHUB_WORKSPACE/platform" android/app/src/main/assets/web salesxray.authorityclosers.com
       - name: Upload key
@@ -174,7 +185,7 @@ jobs:
             exit 0
           fi
           pip install --quiet google-api-python-client==2.151.0 google-auth==2.35.0
-          python ../../scripts/play-upload.py android/app/build/outputs/bundle/playRelease/app-play-release.aab "$TRACK" "$NOTES"
+          python "$GITHUB_WORKSPACE/train/scripts/play-upload.py" android/app/build/outputs/bundle/playRelease/app-play-release.aab "$TRACK" "$NOTES"
       - name: Remove the key
         if: always()
         run: rm -f "$RUNNER_TEMP/upload.jks"
