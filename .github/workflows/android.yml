@@ -34,6 +34,13 @@ on:
         description: Also prove the call recorder on an emulator (adb emu gsm call, accept, cancel)
         type: boolean
         default: false
+      dev_site:
+        description: The site Sales X-Ray Dev opens (staging for phone checks with a staging test account)
+        type: choice
+        options:
+          - dev
+          - staging
+        default: dev
   push:
     branches:
       - main
@@ -133,9 +140,11 @@ jobs:
           cp android/app/build/outputs/apk/direct/debug/app-direct-debug.apk "dist/sales-xray-android-0.3.${{ github.run_number }}-test.apk"
           # The Play flavour as an installable test APK (same app id; the Play Store gets the bundle).
           cp android/app/build/outputs/apk/play/debug/app-play-debug.apk "dist/sales-xray-android-play-0.3.${{ github.run_number }}-test.apk"
-      - name: Point the shell at dev
+      - name: Point the shell at dev (or staging)
+        env:
+          SX_DEV_SITE: ${{ inputs.dev_site == 'staging' && 'https://salesxray-staging.authorityclosers.com' || 'https://salesxray-dev.authorityclosers.com' }}
         run: |
-          node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const config = JSON.parse(fs.readFileSync(file, "utf8")); config.server.url = "https://salesxray-dev.authorityclosers.com"; fs.writeFileSync(file, JSON.stringify(config, null, 2));'
+          node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const config = JSON.parse(fs.readFileSync(file, "utf8")); config.server.url = process.env.SX_DEV_SITE; fs.writeFileSync(file, JSON.stringify(config, null, 2));'
           npx cap sync android
       - name: Build Sales Xray Dev (test)
         working-directory: apps/phone/android
@@ -274,8 +283,9 @@ jobs:
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
           SX_SIGNING_PASSWORD: ${{ secrets.SX_ANDROID_SIGNING_PASSWORD }}
+          SX_DEV_SITE: ${{ inputs.dev_site == 'staging' && 'https://salesxray-staging.authorityclosers.com' || 'https://salesxray-dev.authorityclosers.com' }}
         run: |
-          node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const config = JSON.parse(fs.readFileSync(file, "utf8")); config.server.url = "https://salesxray-dev.authorityclosers.com"; fs.writeFileSync(file, JSON.stringify(config, null, 2));'
+          node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const config = JSON.parse(fs.readFileSync(file, "utf8")); config.server.url = process.env.SX_DEV_SITE; fs.writeFileSync(file, JSON.stringify(config, null, 2));'
           npx cap sync android
           (cd android && ./gradlew --no-daemon --stacktrace assembleDirectRelease -PsxDev)
           cp android/app/build/outputs/apk/direct/release/app-direct-release.apk "dist/sales-xray-dev-android-0.3.${{ github.run_number }}.apk"
