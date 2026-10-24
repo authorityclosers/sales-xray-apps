@@ -33,6 +33,11 @@ on:
         description: Apps repo branch or commit to build (a release branch for a rebuild); the workflow itself runs from main
         type: string
         default: ""
+      update_priority:
+        description: In-app update priority (0-3 Update available with Later; 4-5 forces the update). Only an API upload can set it
+        type: choice
+        options: ["0", "1", "2", "3", "4", "5"]
+        default: "0"
 
 permissions:
   contents: read
@@ -127,9 +132,13 @@ jobs:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.SX_PLAY_SERVICE_ACCOUNT_JSON }}
           TRACK: ${{ inputs.track }}
           NOTES: ${{ inputs.notes }}
+          PLAY_UPDATE_PRIORITY: ${{ inputs.update_priority || '0' }}
         run: |
+          echo "In-app update priority: $PLAY_UPDATE_PRIORITY (4-5 forces the update)" >> "$GITHUB_STEP_SUMMARY"
           if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
             echo "No Play service account yet: download the sales-xray-play-${{ github.run_number }} artifact and upload it in Play Console."
+            # Google takes a release's update priority from the Play Developer API only, never from Play Console.
+            if [ "$PLAY_UPDATE_PRIORITY" != "0" ]; then echo "::warning::Update priority $PLAY_UPDATE_PRIORITY needs the API upload (SX_PLAY_SERVICE_ACCOUNT_JSON); an upload in Play Console goes out at priority 0."; fi
             exit 0
           fi
           pip install --quiet google-api-python-client==2.151.0 google-auth==2.35.0

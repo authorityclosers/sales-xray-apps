@@ -4,6 +4,8 @@
     play-upload.py <bundle.aab> <track: internal|alpha|beta|production> [release notes]
 
 Reads the Play service account's JSON key from the environment (PLAY_SERVICE_ACCOUNT_JSON),
+and the release's in-app update priority from PLAY_UPDATE_PRIORITY (0-5; 4-5 makes the app force
+the update, StoreUpdateRules). Only the API can set a priority; Play Console can't.
 never from a file in the repo, and never prints it. Uses the Play Developer API's edits:
 insert, upload the bundle, put it on the track, commit. Internal testing releases go out
 "completed" (testers get it at once); every other track is left as a draft for the owner
@@ -20,6 +22,15 @@ from googleapiclient.http import MediaFileUpload
 
 PACKAGE = "com.authorityclosers.salesxray"
 TRACKS = {"internal", "alpha", "beta", "production"}
+
+
+def update_priority(raw: str) -> int:
+    """Play's in-app update priority, 0 to 5; anything else is 0."""
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    return value if 0 <= value <= 5 else 0
 
 
 def main() -> int:
@@ -48,13 +59,16 @@ def main() -> int:
         "versionCodes": [str(code)],
         "status": "completed" if track == "internal" else "draft",
     }
+    priority = update_priority(os.environ.get("PLAY_UPDATE_PRIORITY", "0"))
+    if priority:
+        release["inAppUpdatePriority"] = priority
     if notes:
         release["releaseNotes"] = [{"language": "en-US", "text": notes[:500]}]
     edits.tracks().update(
         packageName=PACKAGE, editId=edit, track=track, body={"track": track, "releases": [release]}
     ).execute()
     edits.commit(packageName=PACKAGE, editId=edit).execute()
-    print(f"uploaded version code {code} to the {track} track ({release['status']})")
+    print(f"uploaded version code {code} to the {track} track ({release['status']}, update priority {priority})")
     return 0
 
 
