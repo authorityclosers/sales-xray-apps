@@ -49,7 +49,8 @@ def main() -> int:
         "status": "completed" if track == "internal" else "draft",
     }
     if notes:
-        release["releaseNotes"] = [{"language": "en-US", "text": notes[:500]}]
+        # Play takes notes only in a listing language: the app's default is English (India).
+        release["releaseNotes"] = [{"language": os.environ.get("PLAY_NOTES_LANGUAGE") or "en-IN", "text": notes[:500]}]
     edits.tracks().update(
         packageName=PACKAGE, editId=edit, track=track, body={"track": track, "releases": [release]}
     ).execute()
