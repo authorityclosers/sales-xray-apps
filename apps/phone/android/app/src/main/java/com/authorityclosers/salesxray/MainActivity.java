@@ -108,8 +108,8 @@ public class MainActivity extends BridgeActivity {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
             WebSettingsCompat.setAlgorithmicDarkeningAllowed(webView.getSettings(), false);
         }
-        // The phone's font size goes to the page, which scales its whole layout with it (clamped), instead
-        // of the WebView enlarging only the text (owner's OnePlus Nord, 24 Oct 2026: overflow at Default).
+        // The phone's font size, within limits the layout holds: the WebView's text zoom stays within
+        // 85-115% (owner's OnePlus Nord, 24 Oct 2026: large sizes overflowed). See FontScale.
         FontScale.apply(webView, getResources().getConfiguration().fontScale, PhoneBridge.HOSTS);
         // Back: through the page's history (it closes sheets and dialogs first); on the first page,
         // the app goes to the background and stays ready, so opening it again is quick. Capacitor's

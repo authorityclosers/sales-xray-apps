@@ -28,6 +28,27 @@ public class FontScaleRulesTest {
     }
 
     @Test
+    public void textZoomStaysWithin85And115() {
+        assertEquals(85, FontScaleRules.textZoom(0.85f));
+        assertEquals(100, FontScaleRules.textZoom(1.0f));
+        assertEquals(110, FontScaleRules.textZoom(1.1f));
+        assertEquals(115, FontScaleRules.textZoom(1.15f));
+        // Large and Largest no longer overflow; Android 14's 2x neither.
+        assertEquals(115, FontScaleRules.textZoom(1.3f));
+        assertEquals(115, FontScaleRules.textZoom(2.0f));
+        // Smaller than Android's Small never goes tinier.
+        assertEquals(85, FontScaleRules.textZoom(0.5f));
+        assertEquals(100, FontScaleRules.textZoom(Float.NaN));
+        assertEquals(100, FontScaleRules.textZoom(0f));
+    }
+
+    @Test
+    public void pageZoomWaitsForTheWebThatDoesIt() {
+        // The v0.88 web zooms whenever window.SXFontScale is there; with text zoom as well, both would add up.
+        assertEquals(false, FontScale.PAGE_ZOOM);
+    }
+
+    @Test
     public void theScriptOnlySetsTheNumber() {
         assertEquals("window.SXFontScale=1.15;", FontScaleRules.script("1.15"));
     }
