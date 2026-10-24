@@ -567,6 +567,8 @@ final class PhoneBridge {
             status.put("audioCheck", true);
             status.put("webShell", bundled != null && bundled.on());
             status.put("version", versionName());
+            // The phone's font size, as window.SXFontScale has it (FontScale).
+            status.put("fontScale", FontScaleRules.number(activity.getResources().getConfiguration().fontScale));
         } catch (JSONException ignored) {}
         return status;
     }
