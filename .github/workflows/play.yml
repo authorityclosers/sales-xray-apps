@@ -90,6 +90,8 @@ jobs:
           # The bundle's merged manifest has no advertising ID (Play Console: "No advertising ID").
           manifest=$(find app/build/intermediates -path '*merged_manifest*playRelease*' -name AndroidManifest.xml | head -1)
           if grep -q 'android:name="com.google.android.gms.permission.AD_ID"' "$manifest"; then echo "::error::AD_ID declared ($manifest)"; exit 1; fi
+          if grep -q 'android:name="android.permission.ACCESS_ADSERVICES_' "$manifest"; then echo "::error::AdServices ad permissions declared ($manifest)"; exit 1; fi
+          if grep -q -e 'android:name="android.permission.FOREGROUND_SERVICE' -e 'foregroundServiceType=' "$manifest"; then echo "::error::A foreground service in the Play bundle ($manifest): Play wants a declaration for it"; exit 1; fi
           # No microphone in the first Play version (owner, 24 Oct 2026): no permission, no microphone service.
           if grep -q -e 'android:name="android.permission.RECORD_AUDIO"' -e 'android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"' -e 'foregroundServiceType="microphone"' "$manifest"; then echo "::error::The Play bundle still has the microphone ($manifest)"; exit 1; fi
           # The orchestrator's upload takes up to 10 MB; a bigger bundle is uploaded by the owner instead.
