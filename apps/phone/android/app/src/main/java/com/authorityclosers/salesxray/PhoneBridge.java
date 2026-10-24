@@ -360,6 +360,10 @@ final class PhoneBridge {
                     haptic(args.optString("kind"));
                     reply(reply, id, new JSONObject());
                     break;
+                case "alertSample":
+                    // How a lead alert, or an urgent one (its own sound), sounds on this phone.
+                    reply(reply, id, new JSONObject().put("shown", LeadAlerts.sample(activity, args.optBoolean("urgent"))));
+                    break;
                 case "pushStatus":
                     reply(reply, id, pushState());
                     break;
@@ -571,6 +575,8 @@ final class PhoneBridge {
             status.put("version", versionName());
             // window.SXHaptics's tokens (owner, 25 Oct 2026).
             status.put("haptics", new JSONArray(Arrays.asList(HapticRules.TOKENS)));
+            // Pushes with urgency "urgent" go to the Urgent work channel, with its own sound (AlertRules).
+            status.put("urgentAlerts", true);
             // The phone's font size, as window.SXFontScale has it (FontScale).
             status.put("fontScale", FontScaleRules.number(activity.getResources().getConfiguration().fontScale));
         } catch (JSONException ignored) {}

@@ -17,7 +17,8 @@ public class LeadAlertService extends FirebaseMessagingService {
             return;
         }
         if (!"lead_desk".equals(type)) return;
-        LeadAlerts.show(getApplicationContext(), data.get("kind"), data.get("lead"), count(data));
+        // urgency "urgent": a nudge back to work or an urgent alert (Lead OS), on the Urgent work channel.
+        LeadAlerts.show(getApplicationContext(), data.get("kind"), data.get("lead"), count(data), data.get("urgency"));
     }
 
     private static int count(Map<String, String> data) {
