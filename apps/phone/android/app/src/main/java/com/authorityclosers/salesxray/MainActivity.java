@@ -111,6 +111,8 @@ public class MainActivity extends BridgeActivity {
         // Text at its designed size whatever the phone's font size: a text zoom grows the px type but not
         // the icons (owner's OnePlus Nord, 24 Oct 2026: overflow and odd icons). See FontScale.
         FontScale.apply(webView, getResources().getConfiguration().fontScale, PhoneBridge.HOSTS);
+        // window.SXHaptics: one haptics engine for the whole app (owner, 25 Oct 2026). See Haptics.
+        Haptics.install(webView, PhoneBridge.HOSTS);
         // Back: through the page's history (it closes sheets and dialogs first); on the first page,
         // the app goes to the background and stays ready, so opening it again is quick. Capacitor's
         // own handler did nothing on the first page.

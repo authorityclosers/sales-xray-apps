@@ -144,6 +144,8 @@ final class PhoneBridge {
     void inject(WebView view, String url) {
         Uri uri = Uri.parse(url);
         if (!"https".equals(uri.getScheme()) || !HOSTS.contains(uri.getHost())) return;
+        // window.SXHaptics for a WebView that couldn't add it before the page's own scripts (Haptics.install).
+        view.evaluateJavascript(HapticRules.script(), null);
         if (script == null) script = asset("sx-phone.js");
         if (script != null) view.evaluateJavascript(script, null);
     }
@@ -567,6 +569,8 @@ final class PhoneBridge {
             status.put("audioCheck", true);
             status.put("webShell", bundled != null && bundled.on());
             status.put("version", versionName());
+            // window.SXHaptics's tokens (owner, 25 Oct 2026).
+            status.put("haptics", new JSONArray(Arrays.asList(HapticRules.TOKENS)));
             // The phone's font size, as window.SXFontScale has it (FontScale).
             status.put("fontScale", FontScaleRules.number(activity.getResources().getConfiguration().fontScale));
         } catch (JSONException ignored) {}
@@ -628,13 +632,9 @@ final class PhoneBridge {
         }
     }
 
-    /** A light buzz: a tick on a swipe, a press on a long hold, done on a save. */
+    /** One of the app's haptic tokens (HapticRules): tap, success, warning, error, urgent. */
     private void haptic(String kind) {
-        int effect = HapticFeedbackConstants.KEYBOARD_TAP;
-        if ("press".equals(kind)) effect = HapticFeedbackConstants.LONG_PRESS;
-        else if ("done".equals(kind)) effect = Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.VIRTUAL_KEY;
-        final int chosen = effect;
-        main.post(() -> webView.performHapticFeedback(chosen));
+        main.post(() -> Haptics.play(activity, webView, kind));
     }
 
     private JSONObject pushState() {

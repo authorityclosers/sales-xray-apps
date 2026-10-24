@@ -136,6 +136,8 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- "Tell me about new recordings", and lead alerts. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The urgent haptic token's three pulses (Haptics); touch feedback needs no permission. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- In-app recording (AppRecorder): the microphone, in a foreground service with a Stop button. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
