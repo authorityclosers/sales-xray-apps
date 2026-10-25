@@ -49,7 +49,8 @@ final class LeadAlerts {
     private static final String TOKEN = "token";
     private static final Pattern ID = Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
     private static final int SUMMARY_ID = 7300;
-    private static final int SAMPLE_ID = 7301;
+    /** Not 7301: that's the in-app recorder's notification. */
+    private static final int SAMPLE_ID = 7303;
 
     private LeadAlerts() {}
 

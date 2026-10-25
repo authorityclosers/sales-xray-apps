@@ -123,6 +123,17 @@ final class PhoneBridge {
         });
     }
 
+    /** The recordings folder picker, for the "no recording" prompt's one tap (RecordingReason). */
+    static void pickActiveRecordingsFolder() {
+        PhoneBridge bridge = active;
+        if (bridge == null || !RecordingFolder.supported()) return;
+        try {
+            bridge.folderPicker.launch(RecordingFolder.initial(bridge.activity));
+        } catch (RuntimeException ignored) {
+            // No document picker on this phone: setup still offers it.
+        }
+    }
+
     static void signalActive(String event) {
         PhoneBridge bridge = active;
         if (bridge != null) bridge.signal(event);
@@ -791,7 +802,11 @@ final class PhoneBridge {
         folderReply = null;
         folderId = null;
         boolean kept = RecordingFolder.keep(activity, tree);
-        if (reply == null) return;
+        if (reply == null) {
+            // Picked from the "no recording" prompt: the page hears so and reads the checklist again.
+            if (kept) signal("recordings");
+            return;
+        }
         io.execute(() -> {
             JSONObject result = setupStatus();
             try {

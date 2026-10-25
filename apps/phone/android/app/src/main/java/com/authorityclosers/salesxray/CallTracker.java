@@ -194,12 +194,16 @@ final class CallTracker {
             PhoneSetup.testCallRecorded(activity, check.optString("verdict"));
         }
         put(call, "recording", recording == null ? JSONObject.NULL : recording);
+        // No recording: why, and the one tap that fixes it (demo P1, 25 Oct 2026: 2 of 46 calls had one).
+        JSONObject missing = recording == null ? RecordingReason.check(activity, call) : null;
+        put(call, "recordingMissing", missing == null ? JSONObject.NULL : missing);
         put(call, "final", true);
         if (!keep(call)) return;
         synchronized (this) {
             finishing = false;
         }
         listener.onCall(copy(call));
+        if (missing != null) main.post(() -> RecordingReason.prompt(activity, missing, PhoneBridge::pickActiveRecordingsFolder));
     }
 
     /** Saves the call unless the page has already forgotten it or a newer call started. */

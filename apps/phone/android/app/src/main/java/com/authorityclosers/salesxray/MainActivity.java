@@ -134,6 +134,7 @@ public class MainActivity extends BridgeActivity {
         phone.attach();
         phone.takeLaunch(getIntent());
         takeOpen(getIntent());
+        takeFix(getIntent());
         getBridge()
             .setWebViewClient(
                 new BridgeWebViewClient(getBridge()) {
@@ -258,6 +259,15 @@ public class MainActivity extends BridgeActivity {
         connect.take(intent);
         takeOpen(intent);
         deliverOpen();
+        takeFix(intent);
+    }
+
+    /** The "no recording" notification's tap: open its fix (RecordingReason). */
+    private void takeFix(Intent intent) {
+        if (intent == null) return;
+        String fix = intent.getStringExtra(RecordingReason.EXTRA_FIX);
+        intent.removeExtra(RecordingReason.EXTRA_FIX);
+        if (fix != null) getBridge().getWebView().post(() -> RecordingReason.fix(this, fix, PhoneBridge::pickActiveRecordingsFolder));
     }
 
     @Override
