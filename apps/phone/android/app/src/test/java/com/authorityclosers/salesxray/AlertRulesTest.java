@@ -32,7 +32,10 @@ public class AlertRulesTest {
     }
 
     @Test
-    public void aNudgeHasOfflineWords() {
+    public void aNudgeHasOfflineWordsAndOpensLeadsWithItsCard() {
         assertEquals(2, AlertRules.nudgeWords().length);
+        assertEquals("/leads?nudge=1", AlertRules.NUDGE_PATH);
+        // The app opens it: Leads with a query is one of its own pages.
+        assertTrue(AlertRules.NUDGE_PATH.startsWith("/leads?"));
     }
 }

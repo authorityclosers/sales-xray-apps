@@ -136,7 +136,7 @@ final class LeadAlerts {
             String[] nudge = AlertRules.nudgeWords();
             title = nudge[0];
             body = nudge[1];
-            path = "/leads";
+            path = AlertRules.NUDGE_PATH;
         } else if (one) {
             title = "new".equals(kind) ? "New lead waiting" : "A call is due now";
             body = "Tap to open it in Sales X-Ray.";

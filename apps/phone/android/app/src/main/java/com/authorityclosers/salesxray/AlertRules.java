@@ -10,6 +10,8 @@ import java.util.Locale;
 final class AlertRules {
 
     static final String URGENT = "urgent";
+    /** Leads with the urgent card on top (the words' url says the same once they arrive; Lead OS, 25 Oct 2026). */
+    static final String NUDGE_PATH = "/leads?nudge=1";
 
     private AlertRules() {}
 
