@@ -10,9 +10,10 @@ name: Google Play
 #   SX_PLAY_UPLOAD_STORE_BASE64   a separate upload keystore (base64), never committed
 #   SX_PLAY_UPLOAD_PASSWORD       its store and key password
 #   SX_PLAY_UPLOAD_ALIAS          its key alias
-#   SX_PLAY_SERVICE_ACCOUNT_JSON  the Play Console service account key (Release manager on this app);
-#                                 without it the bundle stays in the run's artifacts to upload by hand
-# Internal testing goes out to testers at once; other tracks stay drafts in Play Console.
+# Upload: keyless (owner, 25 Oct 2026). google-github-actions/auth trades the run's GitHub OIDC token, through
+# Workload Identity Federation (pool "github", provider "sales-xray-apps", this repository only), for
+# play-publisher@ac-sales-xray-ads.iam.gserviceaccount.com, which Play Console lets release to testing tracks
+# only; no key exists anywhere. Internal testing goes out to testers at once; other tracks stay drafts.
 on:
   workflow_dispatch:
     inputs:
@@ -41,6 +42,8 @@ on:
 
 permissions:
   contents: read
+  # GitHub's OIDC token, for the keyless Google sign-in before the upload.
+  id-token: write
 
 concurrency:
   group: play
@@ -107,11 +110,9 @@ jobs:
           if grep -q -e 'android:name="android.permission.FOREGROUND_SERVICE' -e 'foregroundServiceType=' "$manifest"; then echo "::error::A foreground service in the Play bundle ($manifest): Play wants a declaration for it"; exit 1; fi
           # No microphone in the first Play version (owner, 24 Oct 2026): no permission, no microphone service.
           if grep -q -e 'android:name="android.permission.RECORD_AUDIO"' -e 'android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"' -e 'foregroundServiceType="microphone"' "$manifest"; then echo "::error::The Play bundle still has the microphone ($manifest)"; exit 1; fi
-          # The orchestrator's upload takes up to 10 MB; a bigger bundle is uploaded by the owner instead.
           size=$(stat -c %s app/build/outputs/bundle/playRelease/app-play-release.aab)
           echo "bundle: $size bytes"
-          if [ "$size" -gt 10000000 ]; then echo "::warning::The bundle is $size bytes, over 10 MB: the owner uploads it in Play Console."; fi
-      - name: Keep the bundle (the very first release is uploaded by hand)
+      - name: Keep the bundle (14 days, for a rebuild check or a hand upload)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sales-xray-play-${{ github.run_number }}
@@ -125,24 +126,22 @@ jobs:
           test -n "$manifest"
           ! grep -E 'android:name="(android\.permission\.(READ_CALL_LOG|CALL_PHONE|MANAGE_EXTERNAL_STORAGE|REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)|[a-z.]*CallRecorderService)"' "$manifest"
           echo "Play bundle declares none of them ($manifest)"
+      - name: Sign in to Google, keyless (GitHub OIDC through Workload Identity Federation)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/501399142248/locations/global/workloadIdentityPools/github/providers/sales-xray-apps
+          service_account: play-publisher@ac-sales-xray-ads.iam.gserviceaccount.com
       - name: Upload to Play
-        # The first release goes in by hand (Google needs one bundle before API uploads), and so does
-        # every one until the service account is set.
+        # The auth step left short-lived credentials in GOOGLE_APPLICATION_CREDENTIALS (removed after the run).
         env:
-          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.SX_PLAY_SERVICE_ACCOUNT_JSON }}
           TRACK: ${{ inputs.track }}
           NOTES: ${{ inputs.notes }}
           PLAY_UPDATE_PRIORITY: ${{ inputs.update_priority || '0' }}
+          PLAY_NOTES_LANGUAGE: en-IN
         run: |
           echo "In-app update priority: $PLAY_UPDATE_PRIORITY (4-5 forces the update)" >> "$GITHUB_STEP_SUMMARY"
-          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
-            echo "No Play service account yet: download the sales-xray-play-${{ github.run_number }} artifact and upload it in Play Console."
-            # Google takes a release's update priority from the Play Developer API only, never from Play Console.
-            if [ "$PLAY_UPDATE_PRIORITY" != "0" ]; then echo "::warning::Update priority $PLAY_UPDATE_PRIORITY needs the API upload (SX_PLAY_SERVICE_ACCOUNT_JSON); an upload in Play Console goes out at priority 0."; fi
-            exit 0
-          fi
           pip install --quiet google-api-python-client==2.151.0 google-auth==2.35.0
-          python ../../scripts/play-upload.py android/app/build/outputs/bundle/playRelease/app-play-release.aab "$TRACK" "$NOTES"
+          python ../../scripts/play-upload.py android/app/build/outputs/bundle/playRelease/app-play-release.aab "$TRACK" "$NOTES" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Remove the key
         if: always()
         run: rm -f "$RUNNER_TEMP/upload.jks"

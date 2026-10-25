@@ -3,25 +3,29 @@
 
     play-upload.py <bundle.aab> <track: internal|alpha|beta|production> [release notes]
 
-Reads the Play service account's JSON key from the environment (PLAY_SERVICE_ACCOUNT_JSON),
-and the release's in-app update priority from PLAY_UPDATE_PRIORITY (0-5; 4-5 makes the app force
-the update, StoreUpdateRules). Only the API can set a priority; Play Console can't.
-never from a file in the repo, and never prints it. Uses the Play Developer API's edits:
-insert, upload the bundle, put it on the track, commit. Internal testing releases go out
-"completed" (testers get it at once); every other track is left as a draft for the owner
-to roll out in Play Console.
+Signs in keyless: play.yml's google-github-actions/auth step trades the run's GitHub OIDC token
+(Workload Identity Federation) for play-publisher@ac-sales-xray-ads.iam.gserviceaccount.com and leaves
+its credentials in GOOGLE_APPLICATION_CREDENTIALS, which Application Default Credentials read here. No
+key exists anywhere (owner, 25 Oct 2026). The account may release to testing tracks only.
+
+Reads the release's in-app update priority from PLAY_UPDATE_PRIORITY (0-5; 4-5 makes the app force
+the update, StoreUpdateRules); only the API can set one, Play Console can't. Release notes are in
+PLAY_NOTES_LANGUAGE (en-IN, the listing's language). Uses the Play Developer API's edits: insert,
+upload the bundle, put it on the track, commit. Internal testing releases go out "completed" (testers
+get it at once); every other track is left as a draft for the owner to roll out in Play Console.
 """
 
-import json
 import os
 import sys
 
-from google.oauth2 import service_account
+import google.auth
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 PACKAGE = "com.authorityclosers.salesxray"
 TRACKS = {"internal", "alpha", "beta", "production"}
+SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 
 
 def update_priority(raw: str) -> int:
@@ -33,19 +37,28 @@ def update_priority(raw: str) -> int:
     return value if 0 <= value <= 5 else 0
 
 
+def commit(edits, edit: str) -> None:
+    """Commits the edit. When other changes in Play Console wait to be sent for review, Play refuses an
+    automatic send; the release then goes out without sending those (they stay for the owner)."""
+    try:
+        edits.commit(packageName=PACKAGE, editId=edit).execute()
+    except HttpError as error:
+        if "changesNotSentForReview" not in str(error):
+            raise
+        edits.commit(packageName=PACKAGE, editId=edit, changesNotSentForReview=True).execute()
+        print("committed without sending Play Console's other pending changes for review")
+
+
 def main() -> int:
     if len(sys.argv) < 3 or sys.argv[2] not in TRACKS:
         print(__doc__)
         return 2
     bundle, track = sys.argv[1], sys.argv[2]
     notes = sys.argv[3] if len(sys.argv) > 3 else ""
-    raw = os.environ.get("PLAY_SERVICE_ACCOUNT_JSON", "")
-    if not raw:
-        print("PLAY_SERVICE_ACCOUNT_JSON is not set")
+    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        print("No Google credentials: play.yml's google-github-actions/auth step signs in first")
         return 2
-    credentials = service_account.Credentials.from_service_account_info(
-        json.loads(raw), scopes=["https://www.googleapis.com/auth/androidpublisher"]
-    )
+    credentials, _ = google.auth.default(scopes=[SCOPE])
     api = build("androidpublisher", "v3", credentials=credentials, cache_discovery=False)
     edits = api.edits()
     edit = edits.insert(packageName=PACKAGE, body={}).execute()["id"]
@@ -63,11 +76,11 @@ def main() -> int:
     if priority:
         release["inAppUpdatePriority"] = priority
     if notes:
-        release["releaseNotes"] = [{"language": "en-US", "text": notes[:500]}]
+        release["releaseNotes"] = [{"language": os.environ.get("PLAY_NOTES_LANGUAGE", "en-IN"), "text": notes[:500]}]
     edits.tracks().update(
         packageName=PACKAGE, editId=edit, track=track, body={"track": track, "releases": [release]}
     ).execute()
-    edits.commit(packageName=PACKAGE, editId=edit).execute()
+    commit(edits, edit)
     print(f"uploaded version code {code} to the {track} track ({release['status']}, update priority {priority})")
     return 0
 
