@@ -10,10 +10,11 @@ name: Google Play
 #   SX_PLAY_UPLOAD_STORE_BASE64   a separate upload keystore (base64), never committed
 #   SX_PLAY_UPLOAD_PASSWORD       its store and key password
 #   SX_PLAY_UPLOAD_ALIAS          its key alias
-# Upload: keyless (owner, 25 Oct 2026). google-github-actions/auth trades the run's GitHub OIDC token, through
+# Upload: keyless (owner, 25 Oct 2026). scripts/play-upload.py trades the run's GitHub OIDC token, through
 # Workload Identity Federation (pool "github", provider "sales-xray-apps", this repository only), for
 # play-publisher@ac-sales-xray-ads.iam.gserviceaccount.com, which Play Console lets release to testing tracks
-# only; no key exists anywhere. Internal testing goes out to testers at once; other tracks stay drafts.
+# only; no key exists anywhere, and no third-party action (this repository allows GitHub's own actions only).
+# Internal testing goes out to testers at once; other tracks stay drafts.
 on:
   workflow_dispatch:
     inputs:
@@ -126,14 +127,10 @@ jobs:
           test -n "$manifest"
           ! grep -E 'android:name="(android\.permission\.(READ_CALL_LOG|CALL_PHONE|MANAGE_EXTERNAL_STORAGE|REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)|[a-z.]*CallRecorderService)"' "$manifest"
           echo "Play bundle declares none of them ($manifest)"
-      - name: Sign in to Google, keyless (GitHub OIDC through Workload Identity Federation)
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
-        with:
-          workload_identity_provider: projects/501399142248/locations/global/workloadIdentityPools/github/providers/sales-xray-apps
-          service_account: play-publisher@ac-sales-xray-ads.iam.gserviceaccount.com
-      - name: Upload to Play
-        # The auth step left short-lived credentials in GOOGLE_APPLICATION_CREDENTIALS (removed after the run).
+      - name: Upload to Play (keyless sign-in with the run's GitHub OIDC token)
         env:
+          PLAY_WIF_PROVIDER: projects/501399142248/locations/global/workloadIdentityPools/github/providers/sales-xray-apps
+          PLAY_SERVICE_ACCOUNT: play-publisher@ac-sales-xray-ads.iam.gserviceaccount.com
           TRACK: ${{ inputs.track }}
           NOTES: ${{ inputs.notes }}
           PLAY_UPDATE_PRIORITY: ${{ inputs.update_priority || '0' }}

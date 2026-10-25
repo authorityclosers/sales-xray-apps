@@ -3,10 +3,10 @@
 
     play-upload.py <bundle.aab> <track: internal|alpha|beta|production> [release notes]
 
-Signs in keyless: play.yml's google-github-actions/auth step trades the run's GitHub OIDC token
-(Workload Identity Federation) for play-publisher@ac-sales-xray-ads.iam.gserviceaccount.com and leaves
-its credentials in GOOGLE_APPLICATION_CREDENTIALS, which Application Default Credentials read here. No
-key exists anywhere (owner, 25 Oct 2026). The account may release to testing tracks only.
+Signs in keyless (owner, 25 Oct 2026): the run's GitHub OIDC token (play.yml has id-token: write) goes
+through Workload Identity Federation (PLAY_WIF_PROVIDER) to impersonate PLAY_SERVICE_ACCOUNT, all inside
+google-auth's identity-pool credentials, the same exchange google-github-actions/auth makes. No key and
+no credentials file exist anywhere. The account may release to testing tracks only.
 
 Reads the release's in-app update priority from PLAY_UPDATE_PRIORITY (0-5; 4-5 makes the app force
 the update, StoreUpdateRules); only the API can set one, Play Console can't. Release notes are in
@@ -17,8 +17,9 @@ get it at once); every other track is left as a draft for the owner to roll out 
 
 import os
 import sys
+from urllib.parse import quote
 
-import google.auth
+from google.auth import identity_pool
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
@@ -35,6 +36,34 @@ def update_priority(raw: str) -> int:
     except (TypeError, ValueError):
         return 0
     return value if 0 <= value <= 5 else 0
+
+
+def credentials():
+    """Short-lived Google credentials from the run's GitHub OIDC token (Workload Identity Federation)."""
+    provider = os.environ.get("PLAY_WIF_PROVIDER", "")
+    account = os.environ.get("PLAY_SERVICE_ACCOUNT", "")
+    request_url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL", "")
+    request_token = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")
+    if not (provider and account and request_url and request_token):
+        raise SystemExit("Keyless sign-in needs play.yml's id-token: write, PLAY_WIF_PROVIDER and PLAY_SERVICE_ACCOUNT")
+    audience = "https://iam.googleapis.com/" + provider
+    return identity_pool.Credentials.from_info(
+        {
+            "type": "external_account",
+            "audience": "//iam.googleapis.com/" + provider,
+            "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+            "token_url": "https://sts.googleapis.com/v1/token",
+            "service_account_impersonation_url": (
+                "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/" + account + ":generateAccessToken"
+            ),
+            "credential_source": {
+                "url": request_url + "&audience=" + quote(audience, safe=""),
+                "headers": {"Authorization": "Bearer " + request_token},
+                "format": {"type": "json", "subject_token_field_name": "value"},
+            },
+        },
+        scopes=[SCOPE],
+    )
 
 
 def commit(edits, edit: str) -> None:
@@ -55,11 +84,7 @@ def main() -> int:
         return 2
     bundle, track = sys.argv[1], sys.argv[2]
     notes = sys.argv[3] if len(sys.argv) > 3 else ""
-    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
-        print("No Google credentials: play.yml's google-github-actions/auth step signs in first")
-        return 2
-    credentials, _ = google.auth.default(scopes=[SCOPE])
-    api = build("androidpublisher", "v3", credentials=credentials, cache_discovery=False)
+    api = build("androidpublisher", "v3", credentials=credentials(), cache_discovery=False)
     edits = api.edits()
     edit = edits.insert(packageName=PACKAGE, body={}).execute()["id"]
     uploaded = edits.bundles().upload(
