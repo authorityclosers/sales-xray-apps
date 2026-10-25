@@ -1,7 +1,6 @@
 package com.authorityclosers.salesxray;
 
 import java.util.Locale;
-import java.util.regex.Pattern;
 
 /**
  * Alerts by urgency (owner, 25 Oct 2026): a push that says urgency "urgent" (a nudge back to work, or an
@@ -11,8 +10,6 @@ import java.util.regex.Pattern;
 final class AlertRules {
 
     static final String URGENT = "urgent";
-    /** A push's kind, as Sales X-Ray sends it: lowercase letters and underscores. */
-    private static final Pattern KIND = Pattern.compile("^[a-z_]{1,24}$");
 
     private AlertRules() {}
 
@@ -25,10 +22,13 @@ final class AlertRules {
         return urgency != null && URGENT.equals(urgency.trim().toLowerCase(Locale.ROOT));
     }
 
-    /** Where the words for an alert come from: the lead's own, or Lead Desk's for its kind. */
+    /**
+     * Where the words for an alert come from: the lead's own, a nudge's, or Lead Desk's. Only "nudge" goes
+     * in the address: the alert route refuses a query it doesn't know (Lead OS, 25 Oct 2026).
+     */
     static String wordsPath(boolean one, String leadId, String kind) {
         if (one) return "/v1/lead-desk/leads/" + leadId + "/alert";
-        if (kind != null && !"many".equals(kind) && KIND.matcher(kind).matches()) return "/v1/lead-desk/alert?kind=" + kind;
+        if ("nudge".equals(kind)) return "/v1/lead-desk/alert?kind=nudge";
         return "/v1/lead-desk/alert";
     }
 

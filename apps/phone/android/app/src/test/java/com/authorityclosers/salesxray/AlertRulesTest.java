@@ -25,7 +25,8 @@ public class AlertRulesTest {
         assertEquals("/v1/lead-desk/leads/" + LEAD + "/alert", AlertRules.wordsPath(true, LEAD, "new"));
         assertEquals("/v1/lead-desk/alert", AlertRules.wordsPath(false, null, "many"));
         assertEquals("/v1/lead-desk/alert?kind=nudge", AlertRules.wordsPath(false, null, "nudge"));
-        // Only a plain kind goes into the address.
+        // Only nudge goes into the address: the route refuses a query it doesn't know.
+        assertEquals("/v1/lead-desk/alert", AlertRules.wordsPath(false, null, "new"));
         assertEquals("/v1/lead-desk/alert", AlertRules.wordsPath(false, null, "nudge&x=1"));
         assertEquals("/v1/lead-desk/alert", AlertRules.wordsPath(false, null, null));
     }
