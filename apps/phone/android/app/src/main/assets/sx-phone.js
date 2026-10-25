@@ -36,6 +36,8 @@
   }
 
   var SENT_KEY = "sx.phone.sent";
+  // Added to New analysis but not uploaded yet: {source: {at, name, size}}.
+  var ADDED_KEY = "sx.phone.added";
   var SEEN_KEY = "sx.phone.seen";
   var PICK_KEY = "sx.phone.pick";
   function load(key, fallback) {
@@ -49,6 +51,50 @@
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (error) {}
+  }
+
+  // "Sent" only once the page's own upload of that recording went through (demo matrix,
+  // 25 Oct 2026: the tag said Sent when the recording was only added, and its upload had
+  // stopped at the terms box). The page uploads with PUT .../submissions/<id>/source and
+  // the file as the body; the call passes through untouched.
+  var SOURCE_PUT = /\/v1\/conversation\/acquisition\/submissions\/[^/?#]+\/source(?:[?#]|$)/;
+  if (typeof window.fetch === "function") {
+    var pageFetch = window.fetch;
+    window.fetch = function (input, init) {
+      var result = pageFetch.apply(window, arguments);
+      try {
+        var url = typeof input === "string" ? input : input && input.url;
+        var method = (init && init.method) || (input && input.method) || "GET";
+        var body = init && init.body;
+        if (
+          String(method).toUpperCase() === "PUT" &&
+          SOURCE_PUT.test(String(url)) &&
+          body &&
+          typeof body.name === "string"
+        ) {
+          result.then(
+            function (response) {
+              if (response && response.ok) uploaded(body.name, body.size);
+            },
+            function () {},
+          );
+        }
+      } catch (error) {}
+      return result;
+    };
+  }
+  function uploaded(name, size) {
+    var added = load(ADDED_KEY, {});
+    var sent = load(SENT_KEY, {});
+    Object.keys(added).forEach(function (source) {
+      var entry = added[source];
+      if (entry && entry.name === name && entry.size === size) {
+        sent[source] = Date.now();
+        delete added[source];
+      }
+    });
+    save(SENT_KEY, sent);
+    save(ADDED_KEY, added);
   }
 
   var css =
@@ -360,6 +406,7 @@
 
   function drawSheet(sheet) {
     var sent = load(SENT_KEY, {});
+    var added = load(ADDED_KEY, {});
     var seen = load(SEEN_KEY, 0);
     var watching = state && state.watching;
     var head =
@@ -403,7 +450,9 @@
           .map(function (item, index) {
             var tag = sent[item.source]
               ? '<span class="sxp-tag">Sent</span>'
-              : item.addedMs > seen
+              : added[item.source]
+                ? '<span class="sxp-tag">Ready to analyse</span>'
+                : item.addedMs > seen
                 ? '<span class="sxp-tag sxp-new">New</span>'
                 : "";
             var meta = [
@@ -648,11 +697,14 @@
           // Right after a page load the upload area is drawn before React listens
           // to it, and an early drop is lost (Redmi, 19 Oct). Drop, then check the
           // file is listed; try again for a few seconds.
-          return dropUntilAdded(file);
-        }).then(function () {
-          var sent = load(SENT_KEY, {});
-          sent[item.source] = Date.now();
-          save(SENT_KEY, sent);
+          return dropUntilAdded(file).then(function () {
+            return file;
+          });
+        }).then(function (file) {
+          // "Ready to analyse" until the page uploads it; then "Sent" (the upload watch above).
+          var added = load(ADDED_KEY, {});
+          added[item.source] = { at: Date.now(), name: file.name, size: file.size };
+          save(ADDED_KEY, added);
           toast("Recording added. Check the details and start the analysis.");
         });
       })
