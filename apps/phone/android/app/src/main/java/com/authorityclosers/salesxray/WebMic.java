@@ -30,11 +30,17 @@ final class WebMic {
     WebMic(AppCompatActivity activity) {
         this.activity = activity;
         prompt = activity.registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+            PermissionAsks.answered(activity, Manifest.permission.RECORD_AUDIO, granted);
             PermissionRequest request = pending;
             pending = null;
             if (request == null) return;
-            if (granted) request.grant(new String[] { PermissionRequest.RESOURCE_AUDIO_CAPTURE });
-            else request.deny();
+            if (granted) {
+                request.grant(new String[] { PermissionRequest.RESOURCE_AUDIO_CAPTURE });
+                return;
+            }
+            request.deny();
+            // Android said no without asking: its settings are the only way now.
+            if (PermissionAsks.blocked(activity, Manifest.permission.RECORD_AUDIO)) offerSettings();
         });
     }
 

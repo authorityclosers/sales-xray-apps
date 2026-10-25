@@ -333,6 +333,8 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        // What Android answered, before the page reads the setup status again (PermissionAsks).
+        PermissionAsks.answered(this, permissions, grantResults);
         if (phone != null) phone.onPermissionResult(requestCode);
     }
 
