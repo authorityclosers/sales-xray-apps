@@ -13,6 +13,7 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.view.Choreographer;
 import android.view.ViewGroup;
+import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -71,6 +72,8 @@ public class MainActivity extends BridgeActivity {
     /** The page's pending audio file pick (RecordingPicker), and the picker it waits on. */
     private ValueCallback<Uri[]> pickCallback;
     private ActivityResultLauncher<Intent> recordingPicker;
+    /** The page's microphone, for voice notes only (WebMic). */
+    private WebMic mic;
     private ConnectFlow connect;
     /** Google Play in-app updates in the Play build; nothing in the download-link build. */
     private StoreUpdates updates;
@@ -99,6 +102,7 @@ public class MainActivity extends BridgeActivity {
                 result.getResultCode() == RESULT_OK && data != null ? WebChromeClient.FileChooserParams.parseResult(result.getResultCode(), data) : null
             );
         });
+        mic = new WebMic(this);
         WebView webView = getBridge().getWebView();
         bundled = BundledWeb.load(this, LeadAlerts.serverUrl(this));
         // The page's ground before it paints follows the phone's light or dark mode.
@@ -113,6 +117,8 @@ public class MainActivity extends BridgeActivity {
         FontScale.apply(webView, getResources().getConfiguration().fontScale, PhoneBridge.HOSTS);
         // window.SXHaptics: one haptics engine for the whole app (owner, 25 Oct 2026). See Haptics.
         Haptics.install(webView, PhoneBridge.HOSTS);
+        // A voice note being recorded stops when the app goes to the background (owner, 26 Oct 2026). See WebMic.
+        WebMic.install(webView, PhoneBridge.HOSTS);
         // Back: through the page's history (it closes sheets and dialogs first); on the first page,
         // the app goes to the background and stays ready, so opening it again is quick. Capacitor's
         // own handler did nothing on the first page.
@@ -207,6 +213,17 @@ public class MainActivity extends BridgeActivity {
                 @Override
                 public void onCloseWindow(WebView window) {
                     closeSignInWindow(window);
+                }
+
+                @Override
+                public void onPermissionRequest(PermissionRequest request) {
+                    // The microphone for our pages' voice notes, asked in context; nothing else (WebMic).
+                    mic.onPermissionRequest(request);
+                }
+
+                @Override
+                public void onPermissionRequestCanceled(PermissionRequest request) {
+                    mic.onPermissionRequestCanceled(request);
                 }
 
                 @Override
@@ -310,6 +327,7 @@ public class MainActivity extends BridgeActivity {
     public void onStop() {
         super.onStop();
         if (google != null) google.onStop();
+        if (mic != null) mic.stop(getBridge().getWebView());
     }
 
     @Override

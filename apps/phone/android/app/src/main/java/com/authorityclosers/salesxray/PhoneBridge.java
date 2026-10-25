@@ -157,6 +157,8 @@ final class PhoneBridge {
         if (!"https".equals(uri.getScheme()) || !HOSTS.contains(uri.getHost())) return;
         // window.SXHaptics for a WebView that couldn't add it before the page's own scripts (Haptics.install).
         view.evaluateJavascript(HapticRules.script(), null);
+        // The voice note's stop-in-the-background hook, likewise (WebMic.install).
+        view.evaluateJavascript(MicRules.script(), null);
         if (script == null) script = asset("sx-phone.js");
         if (script != null) view.evaluateJavascript(script, null);
     }

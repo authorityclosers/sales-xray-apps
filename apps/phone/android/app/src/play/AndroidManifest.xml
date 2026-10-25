@@ -8,10 +8,12 @@
     (READ_MEDIA_AUDIO), and through a folder the seller picks where the phone hides them;
   - the accessibility call recorder (Play bans accessibility for call recording);
   - asking to skip battery optimisation: the setup screen opens Android's battery list instead;
-  - in-app recording of a conversation, for the first Play version (owner, 24 Oct 2026: "Get clearance
-    faster record the audipo can be added in next version after that"): no AppRecorder, RECORD_AUDIO or
-    microphone foreground service, so no microphone declaration with Play. The code stays; deleting these
-    three lines turns it back on.
+  - in-app recording of a conversation, for now (owner, 24 Oct 2026: "Get clearance faster record the
+    audipo can be added in next version after that"): no AppRecorder and no microphone foreground
+    service. The code stays; deleting those lines turns it back on.
+  The microphone itself (RECORD_AUDIO) is kept from 1.0.35 (owner, 26 Oct 2026), for voice notes in
+  Report a problem: asked when the seller taps record, only for our own pages, stopped when the app goes
+  to the background, never in a service and never on a call (WebMic, MicRules).
   Backup is off (23 Oct 2026): Android's cloud backup would copy the sign-in, the phone's id and
   conversations recorded in the app (meeting audio) to the seller's Google Drive. A new phone signs
   in again. Android 12+ still moves the app's data in a phone-to-phone transfer the seller starts.
@@ -22,7 +24,6 @@
     <uses-permission android:name="android.permission.CALL_PHONE" tools:node="remove" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" tools:node="remove" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" tools:node="remove" />
     <!-- Nothing in the Play build runs in the foreground (no recorder), so not even the general permission. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />

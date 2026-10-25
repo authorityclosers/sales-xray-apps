@@ -139,11 +139,12 @@
     <!-- The urgent haptic token's three pulses (Haptics); touch feedback needs no permission. -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- In-app recording (AppRecorder): the microphone, in a foreground service with a Stop button. -->
+    <!-- The microphone: voice notes in Report a problem, asked when the seller taps record (WebMic; the
+         Play build too), and in-app recording (AppRecorder, download builds), in a foreground service
+         with a Stop button. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- Capacitor's WebView client grants the page's microphone (voice notes in Report a problem)
-         only when RECORD_AUDIO and MODIFY_AUDIO_SETTINGS are both granted. A normal permission:
-         Android grants it at install, with no prompt. -->
+    <!-- The WebView's audio capture for those voice notes. A normal permission: Android grants it at
+         install, with no prompt. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />

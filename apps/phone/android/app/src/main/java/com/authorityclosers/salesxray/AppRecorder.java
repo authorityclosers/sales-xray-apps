@@ -6,6 +6,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -73,9 +74,17 @@ public class AppRecorder extends Service {
         return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION;
     }
 
-    /** This build records conversations (the first Play version doesn't: src/play/AndroidManifest.xml). */
+    /**
+     * This build records conversations: the service is in its manifest. The Play build has the microphone
+     * for voice notes (1.0.35) but not this service (src/play/AndroidManifest.xml).
+     */
     static boolean available(Context context) {
-        return Permissions.declared(context, android.Manifest.permission.RECORD_AUDIO);
+        try {
+            context.getPackageManager().getServiceInfo(new ComponentName(context, AppRecorder.class), 0);
+            return Permissions.declared(context, android.Manifest.permission.RECORD_AUDIO);
+        } catch (PackageManager.NameNotFoundException error) {
+            return false;
+        }
     }
 
     static JSONObject state(Context context) {

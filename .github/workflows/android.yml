@@ -155,9 +155,11 @@ jobs:
           done
           # Backup off in the Play build (cloud backup would copy in-app meeting recordings to Google Drive).
           grep -q 'android:allowBackup="false"' "$play" || { echo "Play flavour still allows backup"; exit 1; }
-          # No microphone in the first Play version (owner, 24 Oct 2026); the download-link app keeps the
-          # recorder, and the page's microphone needs both permissions there (BridgeWebChromeClient).
-          for banned in android.permission.RECORD_AUDIO android.permission.FOREGROUND_SERVICE_MICROPHONE com.authorityclosers.salesxray.AppRecorder; do
+          # From 1.0.35 the Play build has the microphone for voice notes, asked when the seller taps record
+          # (owner, 26 Oct 2026; WebMic), but no microphone service, no in-app recorder and no camera. The
+          # download-link app keeps the recorder.
+          grep -q 'android:name="android.permission.RECORD_AUDIO"' "$play" || { echo "Play flavour lost RECORD_AUDIO (voice notes)"; exit 1; }
+          for banned in android.permission.FOREGROUND_SERVICE_MICROPHONE com.authorityclosers.salesxray.AppRecorder android.permission.CAMERA; do
             if grep -q "android:name=\"$banned\"" "$play"; then echo "Play flavour still declares $banned"; exit 1; fi
           done
           if grep -q 'foregroundServiceType="microphone"' "$play"; then echo "Play flavour still has a microphone foreground service"; exit 1; fi
