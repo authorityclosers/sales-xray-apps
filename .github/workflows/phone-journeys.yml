@@ -4,8 +4,12 @@ name: Phone journeys
 # before the testing Redmis walk them every night from the laptop (orchestrator for the owner, 28 Oct 2026), and a lane
 # of its own. The journeys and the report come from the platform repository at platform_ref; its review fixtures run
 # on this runner, and the Dev app's requests to its site are answered from them, so nothing reaches dev or production
-# and no account is used. Dispatch only for now.
+# and no account is used. It runs on pull requests that change the runner, and by hand.
 on:
+  pull_request:
+    paths:
+      - tests/phone-journeys/**
+      - .github/workflows/phone-journeys.yml
   workflow_dispatch:
     inputs:
       platform_ref:
@@ -40,7 +44,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: authorityclosers/authority-closers-platform
-          ref: ${{ inputs.platform_ref }}
+          ref: ${{ inputs.platform_ref || 'main' }}
           path: platform
           persist-credentials: false
       - name: Node 24
@@ -82,8 +86,8 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: The journeys in the Dev app, Android ${{ inputs.api }}
-        run: bash tests/phone-journeys/emulator.sh "${{ inputs.api }}" "$APK" platform phone-run
+      - name: The journeys in the Dev app, Android ${{ inputs.api || '34' }}
+        run: bash tests/phone-journeys/emulator.sh "${{ inputs.api || '34' }}" "$APK" platform phone-run
       - name: The report, as the radar's
         if: always()
         run: |
@@ -95,7 +99,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: phone-journeys-${{ inputs.api }}
+          name: phone-journeys-${{ inputs.api || '34' }}
           path: |
             phone-run
             emulator.log

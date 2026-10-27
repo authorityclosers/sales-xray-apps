@@ -17,7 +17,8 @@ on a real phone or an emulator.
     account is used.
   - Reads the fixtures don't answer get a 404 at once, as on the radar.
 - **`.github/workflows/phone-journeys.yml`:** an emulator lane (Android 34, a budget phone's 3 GB). It runs the
-  platform's fixtures on the runner; dispatch only. This was the dry run before any real phone.
+  platform's fixtures on the runner, on pull requests that change the runner and by hand. This was the dry run before
+  any real phone.
 - **`nightly.ps1`:** the laptop's nightly on a testing Redmi.
   - It takes the journeys and the report's code from the workbench head on ac.
   - It tunnels the fixtures from dev-live (port 3026 on ac) for the run.
