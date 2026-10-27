@@ -13,9 +13,10 @@ name: Mac and Windows
 #  - Mac: universal .dmg. Signed with Developer ID and notarised by Apple when the Apple secrets are
 #    set (SX_APPLE_DEVELOPER_ID_P12_BASE64, SX_APPLE_DEVELOPER_ID_P12_PASSWORD, the App Store Connect
 #    key SX_ASC_*; variable SX_APPLE_DEVELOPER_ID_IDENTITY); otherwise ad-hoc signed.
-#  - publish (main only): puts the signed installers on the sales-xray-desktop-latest release. It
-#    refuses unless Windows is code-signed and the Mac app is notarised, so nobody downloads an app
-#    that Windows or macOS warns about.
+#  - publish (main only): puts the run's live installers on the sales-xray-desktop-latest release,
+#    for the computers it built. It refuses a Windows build that isn't code-signed or a Mac build
+#    that isn't notarised, so nobody downloads an app that Windows or macOS warns about. Windows can
+#    wait for its certificate (the Store route needs none) while the Mac app is published.
 on:
   workflow_dispatch:
     inputs:
@@ -28,7 +29,7 @@ on:
           - both
         default: windows
       publish:
-        description: Publish the signed installers on the sales-xray-desktop-latest release (main only, both computers, signed only)
+        description: Publish this run's signed installers on the sales-xray-desktop-latest release (main only; Windows code-signed, Mac notarised)
         type: boolean
         default: false
 
@@ -44,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: ${{ fromJSON((inputs.platform == 'both' || inputs.publish) && '["windows","macos"]' || format('["{0}"]', inputs.platform)) }}
+        platform: ${{ fromJSON(inputs.platform == 'both' && '["windows","macos"]' || format('["{0}"]', inputs.platform)) }}
     runs-on: ${{ matrix.platform == 'macos' && 'macos-26' || 'windows-2025' }}
     timeout-minutes: 75
     defaults:
@@ -227,8 +228,11 @@ jobs:
         run: |
           find src-tauri/target -path '*/release/bundle/*' \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \) -exec mv {} dist/ \;
           ls -l dist
-          if command -v sha256sum > /dev/null; then (cd dist && sha256sum *.exe *.msi *.msix 2> /dev/null) > dist/SHA256SUMS-windows.txt || true; else (cd dist && shasum -a 256 *.dmg) > dist/SHA256SUMS-macos.txt; fi
-          cat dist/SHA256SUMS-*.txt
+          cd dist
+          shopt -s nullglob
+          installers=(*.exe *.msi *.msix *.dmg)
+          if command -v sha256sum > /dev/null; then sha256sum "${installers[@]}"; else shasum -a 256 "${installers[@]}"; fi > "SHA256SUMS-${{ matrix.platform }}.txt"
+          cat "SHA256SUMS-${{ matrix.platform }}.txt"
       - name: Forget the Apple key
         if: always() && steps.signing.outputs.mode == 'notarised'
         run: rm -f "$RUNNER_TEMP/asc-key.p8"
@@ -262,17 +266,26 @@ jobs:
           VERSION: 0.1.${{ github.run_number }}
         run: |
           cd dist
-          test "$(cat windows-signing.txt)" = signed
-          test "$(cat macos-signing.txt)" = notarised
-          # Live builds only: the Dev builds and the Store copies stay in the run's artifact.
-          ls -l Sales\ Xray_*.exe Sales\ Xray_*.msi Sales\ Xray_*.dmg
-          sha256sum Sales\ Xray_* > SHA256SUMS.txt
-          title="Sales X-Ray for Windows and Mac $VERSION"
-          notes="Signed Sales X-Ray installers for Windows (.exe, .msi) and Mac (.dmg, notarised by Apple). Built from $GITHUB_SHA by run $GITHUB_RUN_ID."
+          # Live builds only: the Dev builds and the Store copies stay in the run's artifact. The build
+          # job already refused unsigned ones; check again before anything goes out.
+          files=()
+          if [ -f windows-signing.txt ]; then
+            test "$(cat windows-signing.txt)" = signed
+            files+=(Sales\ Xray_*.exe Sales\ Xray_*.msi)
+          fi
+          if [ -f macos-signing.txt ]; then
+            test "$(cat macos-signing.txt)" = notarised
+            files+=(Sales\ Xray_*.dmg)
+          fi
+          test "${#files[@]}" -gt 0
+          ls -l "${files[@]}"
+          sha256sum "${files[@]}" > SHA256SUMS-$VERSION.txt
+          title="Sales X-Ray for Windows and Mac"
+          notes="Signed Sales X-Ray installers ($VERSION): Windows (.exe, .msi; code-signed) and Mac (.dmg; notarised by Apple), whichever this run built. Built from $GITHUB_SHA by run $GITHUB_RUN_ID."
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber Sales\ Xray_* SHA256SUMS.txt
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}" SHA256SUMS-$VERSION.txt
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$title" --notes "$notes"
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false \
-              --title "$title" --notes "$notes" Sales\ Xray_* SHA256SUMS.txt
+              --title "$title" --notes "$notes" "${files[@]}" SHA256SUMS-$VERSION.txt
           fi
