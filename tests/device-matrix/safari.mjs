@@ -8,7 +8,7 @@ const OUT = process.env.OUT || "shots";
 const BOT_CHECK = /Performing security verification|Verify you are human/i;
 const PAGES = [
   { path: "/dashboard", name: "sign-in", words: /sign in|email|continue/i },
-  { path: "/apps", name: "apps", words: /Download for Android/ },
+  { path: "/apps", name: "apps", words: /on your phone|Download for Android/i },
   { path: "/privacy", name: "privacy", words: /privacy/i },
 ];
 
@@ -36,6 +36,8 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       text = await call("POST", `/session/${id}/execute/sync`, { script: "return document.body ? document.body.innerText : ''", args: [] });
     }
+    // Pages fade in: the words are there a moment before they are drawn.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     const png = await call("GET", `/session/${id}/screenshot`);
     writeFileSync(`${OUT}/safari-macos-${target.name}.png`, Buffer.from(png, "base64"));
     if (BOT_CHECK.test(text)) {

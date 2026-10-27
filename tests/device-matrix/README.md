@@ -4,14 +4,15 @@
 
 | Job | Where | What |
 | --- | --- | --- |
+| web-export | Ubuntu | The release's public pages: the platform repository at `web_ref` (`main` by default, what production runs) built as the web app's static export, for the browser jobs to serve on the runner (`serve.mjs`) |
 | browsers-linux | Ubuntu | Chromium, Firefox and WebKit (Playwright) on five screens: 320, 390, 673 (foldable), 820 (tablet) and 1440 px |
 | browsers-windows | Windows | Chrome and Edge (the runner's own), same five screens |
 | safari-macos | macOS | Real Safari through safaridriver |
 | ios-simulator | macOS | Safari on iPhone SE (3rd gen), 13 mini, 15 and 16 Pro Max, whichever the runner's Xcode has |
-| android-emulators | Ubuntu | The published Android app on Android 10 (small phone; big fonts, 3-button navigation), 13 (Pixel 6; punch-hole, notch, big fonts), 15 (Pixel 7; punch-hole, dark mode, gesture and 3-button navigation) and 15 (Pixel Tablet; dark). Each variant gets a screenshot and a check that the page starts below the status bar and cut-out |
+| android-emulators | Ubuntu | The published Android app on 12 emulators: Android 10 to 15 on small and medium phones, Pixels and a tablet. Five of them have budget memory (2-3 GB, like a Redmi A, Samsung A0x or Realme C). Between them they cover punch-holes, notches, big fonts, dark mode and both navigation styles. Each variant gets a screenshot and a check that the page starts below the status bar and cut-out |
 | call-recorder | Ubuntu | Starts `android.yml` with `emulator=true`: an emulated SIM call and an internet call, each must make one tagged recording |
 
-Today it covers production's public, signed-out pages:
+Today it covers the release's public, signed-out pages:
 
 - the sign-in screen
 - `/apps`
@@ -21,7 +22,16 @@ On each page it checks that the key words render and that nothing is wider than 
 
 ## Cloudflare's bot check (needs the owner)
 
-Production sits behind Cloudflare's bot check. The first run (19 Oct, run 39206406136) showed it to GitHub's Linux and Windows runners and to the Android emulators instead of Sales Xray; only the macOS runners got through. Each job now fails with "Cloudflare's bot check stopped the page" rather than passing on the challenge page. Tests never try to solve the check. Letting the runners through is a Cloudflare setting for the owner, for example a WAF skip rule for a header carrying a secret token that the workflow sends from a GitHub secret.
+Production sits behind Cloudflare's bot check. The first run (19 Oct, run 39206406136) showed it to GitHub's Linux and Windows runners and to the Android emulators instead of Sales Xray; only the macOS runners got through. Tests never try to solve the check.
+
+Since 27 Oct (the matrix was red every night until then), the browsers don't open production:
+- the `web-export` job builds the same code that production runs;
+- each browser job serves it on its own runner and opens that, so the check never comes up;
+- there is no API there, so `serve.mjs` answers it as it would a signed-out visitor: every `/v1` read is 401, so `/dashboard` shows its sign-in, and the sign-in settings offer an email code only. Nothing is sent anywhere.
+
+The emulators still open the real app. When the check holds it back, the job prints `CHALLENGED` and adds a line to the run's summary, but it doesn't fail; the layout checks still run.
+
+Letting the runners through production is a Cloudflare setting for the owner. For example, a WAF skip rule for a header carrying a secret token, which the workflow sends from a GitHub secret.
 
 ## Not yet (needs the owner)
 

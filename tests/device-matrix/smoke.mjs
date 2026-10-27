@@ -1,6 +1,7 @@
 // Sales Xray on every kind of browser and screen (owner order, 19 Oct): the public,
-// signed-out pages of production, with a screenshot of each. Signed-in flows need a
-// test account the owner approves (see README.md).
+// signed-out pages, with a screenshot of each. SX_BASE_URL is where: the release's own
+// build served on the runner (device-matrix.yml, since 27 Oct), else production. Signed-in
+// flows need a test account the owner approves (see README.md).
 //
 //   BROWSER=chromium|firefox|webkit|chrome|msedge node tests/device-matrix/smoke.mjs
 //
@@ -14,10 +15,11 @@ const BOT_CHECK = /Performing security verification|Verify you are human/i;
 const BROWSER = process.env.BROWSER || "chromium";
 const OUT = process.env.OUT || "shots";
 
-// Key words each page must show once it has rendered.
+// Key words each page must show once it has rendered. Since the Play launch (24 Oct), the apps
+// page folds its download link under "No Play invite?", so its headline is the key words.
 const PAGES = [
   { path: "/dashboard", name: "sign-in", words: /sign in|email|continue/i },
-  { path: "/apps", name: "apps", words: /Download for Android/ },
+  { path: "/apps", name: "apps", words: /on your phone|Download for Android/i },
   { path: "/privacy", name: "privacy", words: /privacy/i },
   { path: "/pricing", name: "pricing", words: /pricing|plan/i },
   { path: "/terms", name: "terms", words: /terms/i },
@@ -49,9 +51,11 @@ for (const screen of SCREENS) {
   });
   const page = await context.newPage();
   const errors = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  let current = "";
+  page.on("pageerror", (error) => errors.push(`${current}: ${error.message}`));
   for (const target of PAGES) {
     const label = `${BROWSER}/${screen.name}/${target.name}`;
+    current = target.name;
     try {
       const response = await page.goto(BASE + target.path, { waitUntil: "domcontentloaded", timeout: 45000 });
       // Read the text through the locator: production's CSP forbids eval, which
@@ -64,6 +68,8 @@ for (const screen of SCREENS) {
       }
       if (BOT_CHECK.test(text)) throw new Error("Cloudflare's bot check stopped the page (see README.md)");
       if (!target.words.test(text)) throw new Error("the page's key words never appeared");
+      // Pages fade in: the words are there a moment before they are drawn.
+      await page.waitForTimeout(1000);
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth > window.innerWidth + 1,
       );
