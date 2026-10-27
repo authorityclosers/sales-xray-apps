@@ -34,6 +34,10 @@ on:
         description: Also prove the call recorder on an emulator (adb emu gsm call, accept, cancel)
         type: boolean
         default: false
+      emulator_web:
+        description: Also run the web self-test inside the app on an emulator (bundled web app, API, SXPhone, haptics)
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -76,6 +80,43 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Ring, answer and hang up on an emulator; check the recording
         run: bash scripts/emulator-call-recorder.sh ${{ github.run_number }}
+
+  # The web app inside the app on an emulator: the same self-test the iPhone app runs on itself
+  # (iphone.yml), here through the debug build's WebView DevTools.
+  emulator-web:
+    if: ${{ inputs.emulator_web && !inputs.publish }}
+    needs: test-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+      - name: Get the test APKs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sales-xray-android-${{ github.run_number }}-test
+          path: dist
+      - name: Let the emulator use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Open the app on an emulator and run the web self-test inside it
+        run: bash scripts/emulator-web-selftest.sh ${{ github.run_number }}
+      - name: Keep the report and screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sales-xray-android-web-selftest-${{ github.run_number }}
+          path: selftest/
+          retention-days: 14
+          if-no-files-found: warn
 
   test-build:
     if: ${{ !inputs.publish }}
