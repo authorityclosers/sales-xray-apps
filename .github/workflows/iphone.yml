@@ -1,29 +1,40 @@
 name: iPhone
 
-# Builds Sales Xray for the iPhone Simulator (apps/phone/ios, Capacitor 8) on a
-# GitHub-hosted Mac. Manual only. No Apple account and no signing: real iPhones
-# (TestFlight, then the App Store) need the Apple Developer Program, the owner's
-# decision D2. Opens the app in a simulator as a smoke check and keeps the
-# simulator app and a screenshot as a 14-day artifact. Nothing is published.
+# Builds Sales X-Ray for the iPhone (apps/phone/ios, Capacitor 8) on GitHub-hosted Macs. Manual only,
+# because Mac minutes are the dear ones.
+#  - simulator: a Simulator build, opened in a simulator as a smoke check, with screenshots.
+#  - device: a Release archive for real iPhones. Without the Apple account it is unsigned: it proves the
+#    App Store build compiles, with its privacy manifest, but installs nowhere. With the App Store Connect
+#    API key (secrets SX_ASC_KEY_ID, SX_ASC_ISSUER_ID, SX_ASC_KEY_P8_BASE64; variable SX_APPLE_TEAM_ID),
+#    Xcode signs it with the team's cloud-managed certificates and exports an .ipa for the App Store.
+#  - testflight (tick it; main only): uploads that signed build to App Store Connect, where TestFlight
+#    picks it up. Nothing reaches testers or the App Store from here without the owner in App Store Connect.
 on:
   workflow_dispatch:
+    inputs:
+      testflight:
+        description: Sign with the Apple account and upload to App Store Connect for TestFlight (main only)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: iphone-${{ github.ref }}
-  cancel-in-progress: true
+  group: iphone-${{ github.ref }}-${{ inputs.testflight && 'testflight' || 'build' }}
+  cancel-in-progress: ${{ !inputs.testflight }}
+
+env:
+  VERSION: 1.0.${{ github.run_number }}
 
 jobs:
   simulator:
+    if: ${{ !inputs.testflight }}
     runs-on: macos-26
     timeout-minutes: 45
     defaults:
       run:
         working-directory: apps/phone
-    env:
-      VERSION: 0.3.${{ github.run_number }}
     steps:
       - name: Check out
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -68,6 +79,112 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sales-xray-iphone-simulator-${{ github.run_number }}
+          path: apps/phone/dist/
+          retention-days: 14
+          if-no-files-found: error
+
+  device:
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/phone
+    steps:
+      - name: Uploads go from main only
+        if: ${{ inputs.testflight && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::TestFlight uploads run only on main. Nothing was built or uploaded."
+          exit 1
+      - name: Check out
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Install Capacitor
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Sync the web shell into iOS (live site)
+        run: npx cap sync ios
+      - name: Check the plists
+        run: plutil -lint ios/App/App/Info.plist ios/App/App/PrivacyInfo.xcprivacy
+      - name: Is the Apple account set up here?
+        id: apple
+        env:
+          ASC_KEY_ID: ${{ secrets.SX_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.SX_ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.SX_ASC_KEY_P8_BASE64 }}
+          TEAM_ID: ${{ vars.SX_APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8_BASE64" ] && [ -n "$TEAM_ID" ]; then
+            echo "signing=apple" >> "$GITHUB_OUTPUT"
+            echo "Signing with the Apple team's App Store Connect key."
+          else
+            echo "signing=none" >> "$GITHUB_OUTPUT"
+            echo "No Apple account here yet (SX_ASC_* secrets, SX_APPLE_TEAM_ID variable): unsigned archive only."
+            if [ "${{ inputs.testflight }}" = true ]; then
+              echo "::error::TestFlight needs the Apple account's App Store Connect key on this repo. Nothing was uploaded."
+              exit 1
+            fi
+          fi
+      - name: Archive for iPhone (unsigned)
+        if: steps.apple.outputs.signing == 'none'
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/SalesXRay.xcarchive" \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            CODE_SIGNING_ALLOWED=NO archive
+      - name: Archive and sign with the Apple account
+        if: steps.apple.outputs.signing == 'apple'
+        env:
+          ASC_KEY_ID: ${{ secrets.SX_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.SX_ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.SX_ASC_KEY_P8_BASE64 }}
+          TEAM_ID: ${{ vars.SX_APPLE_TEAM_ID }}
+          DESTINATION: ${{ inputs.testflight && 'upload' || 'export' }}
+        run: |
+          umask 077
+          key="$RUNNER_TEMP/asc-key.p8"
+          printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > "$key"
+          auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/SalesXRay.xcarchive" \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic "${auth[@]}" archive
+          cat > "$RUNNER_TEMP/export.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>$DESTINATION</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          PLIST
+          mkdir -p dist
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/SalesXRay.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/export.plist" -exportPath dist "${auth[@]}"
+          rm -f "$key"
+          if [ "$DESTINATION" = upload ]; then
+            echo "Uploaded $VERSION (${{ github.run_number }}) to App Store Connect. It shows in TestFlight once Apple has processed it."
+          fi
+      - name: Check the archive
+        run: |
+          app="$RUNNER_TEMP/SalesXRay.xcarchive/Products/Applications/App.app"
+          test -f "$app/PrivacyInfo.xcprivacy"
+          plutil -p "$app/Info.plist" | grep -E 'CFBundleIdentifier|CFBundleShortVersionString|CFBundleVersion|ITSAppUsesNonExemptEncryption|MinimumOSVersion|UIDeviceFamily' -A1
+          lipo -archs "$app/App"
+          mkdir -p dist
+          ditto -c -k --keepParent "$RUNNER_TEMP/SalesXRay.xcarchive" "dist/sales-xray-iphone-${{ steps.apple.outputs.signing == 'apple' && 'signed' || 'unsigned' }}-$VERSION.xcarchive.zip"
+          echo "${{ steps.apple.outputs.signing }}" > dist/signing.txt
+      - name: Keep the iPhone build
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sales-xray-iphone-device-${{ github.run_number }}
           path: apps/phone/dist/
           retention-days: 14
           if-no-files-found: error
