@@ -17,3 +17,6 @@ target/
 .env.*
 google-services.json
 GoogleService-Info.plist
+
+# Python bytecode from running the script tests
+__pycache__/
