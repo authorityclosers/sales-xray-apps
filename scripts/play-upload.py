@@ -11,18 +11,19 @@ no credentials file exist anywhere. The account may release to testing tracks on
 Reads the release's in-app update priority from PLAY_UPDATE_PRIORITY (0-5; 4-5 makes the app force
 the update, StoreUpdateRules); only the API can set one, Play Console can't. Release notes are in
 PLAY_NOTES_LANGUAGE (en-IN, the listing's language). Uses the Play Developer API's edits: insert,
-upload the bundle, put it on the track, commit. Internal testing releases go out "completed" (testers
-get it at once); every other track is left as a draft for the owner to roll out in Play Console.
+upload the bundle, put it on the track, commit.
+
+Internal testing and closed testing (alpha) releases go out "completed": testers get them at once, and
+every alpha upload is a fresh closed-track release, so Play makes its pre-launch report for it and,
+with managed publishing off, sends it to review without Console clicks (orchestrator, 27 Oct 2026:
+no report had ever run while alpha uploads were drafts). PLAY_DRAFT=true leaves an alpha release as a
+draft instead; open testing (beta) and production are always drafts for the owner to roll out.
+Google's libraries load inside the functions that use them, so the release rules run in tests alone.
 """
 
 import os
 import sys
 from urllib.parse import quote
-
-from google.auth import identity_pool
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaFileUpload
 
 PACKAGE = "com.authorityclosers.salesxray"
 TRACKS = {"internal", "alpha", "beta", "production"}
@@ -38,8 +39,23 @@ def update_priority(raw: str) -> int:
     return value if 0 <= value <= 5 else 0
 
 
+def release_status(track: str, draft: bool = False) -> str:
+    """"completed" for internal testing, and for closed testing (alpha) unless a draft is asked for;
+    "draft" for open testing and production."""
+    if track == "internal" or (track == "alpha" and not draft):
+        return "completed"
+    return "draft"
+
+
+def draft_requested(raw: str | None) -> bool:
+    """play.yml's draft input as it reaches the script ("true" or "false")."""
+    return str(raw or "").strip().lower() in {"true", "1", "yes"}
+
+
 def credentials():
     """Short-lived Google credentials from the run's GitHub OIDC token (Workload Identity Federation)."""
+    from google.auth import identity_pool
+
     provider = os.environ.get("PLAY_WIF_PROVIDER", "")
     account = os.environ.get("PLAY_SERVICE_ACCOUNT", "")
     request_url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL", "")
@@ -66,22 +82,30 @@ def credentials():
     )
 
 
-def commit(edits, edit: str) -> None:
-    """Commits the edit. When other changes in Play Console wait to be sent for review, Play refuses an
-    automatic send; the release then goes out without sending those (they stay for the owner)."""
+def commit(edits, edit: str) -> bool:
+    """Commits the edit; False when it went in without being sent for review. When other changes in
+    Play Console wait to be sent for review, Play refuses an automatic send; the release then goes in
+    without sending those (they stay for the owner)."""
+    from googleapiclient.errors import HttpError
+
     try:
         edits.commit(packageName=PACKAGE, editId=edit).execute()
+        return True
     except HttpError as error:
         if "changesNotSentForReview" not in str(error):
             raise
         edits.commit(packageName=PACKAGE, editId=edit, changesNotSentForReview=True).execute()
         print("committed without sending Play Console's other pending changes for review")
+        return False
 
 
 def main() -> int:
     if len(sys.argv) < 3 or sys.argv[2] not in TRACKS:
         print(__doc__)
         return 2
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
+
     bundle, track = sys.argv[1], sys.argv[2]
     notes = sys.argv[3] if len(sys.argv) > 3 else ""
     api = build("androidpublisher", "v3", credentials=credentials(), cache_discovery=False)
@@ -95,7 +119,7 @@ def main() -> int:
     code = uploaded["versionCode"]
     release = {
         "versionCodes": [str(code)],
-        "status": "completed" if track == "internal" else "draft",
+        "status": release_status(track, draft_requested(os.environ.get("PLAY_DRAFT"))),
     }
     priority = update_priority(os.environ.get("PLAY_UPDATE_PRIORITY", "0"))
     if priority:
@@ -105,8 +129,10 @@ def main() -> int:
     edits.tracks().update(
         packageName=PACKAGE, editId=edit, track=track, body={"track": track, "releases": [release]}
     ).execute()
-    commit(edits, edit)
+    sent = commit(edits, edit)
     print(f"uploaded version code {code} to the {track} track ({release['status']}, update priority {priority})")
+    if release["status"] == "completed" and track != "internal" and not sent:
+        print("it waits in Play Console: send the pending changes for review there to release it")
     return 0
 
 

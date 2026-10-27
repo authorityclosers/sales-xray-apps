@@ -14,7 +14,9 @@ name: Google Play
 # Workload Identity Federation (pool "github", provider "sales-xray-apps", this repository only), for
 # play-publisher@ac-sales-xray-ads.iam.gserviceaccount.com, which Play Console lets release to testing tracks
 # only; no key exists anywhere, and no third-party action (this repository allows GitHub's own actions only).
-# Internal testing goes out to testers at once; other tracks stay drafts.
+# Internal testing and closed testing (alpha) go out to testers at once: each alpha upload is a fresh closed-track
+# release, so Play makes its pre-launch report and sends it to review (orchestrator, 27 Oct 2026). The draft input
+# keeps an alpha release a draft for Play Console instead; open testing (beta) and production always stay drafts.
 on:
   workflow_dispatch:
     inputs:
@@ -40,6 +42,10 @@ on:
         type: choice
         options: ["0", "1", "2", "3", "4", "5"]
         default: "0"
+      draft:
+        description: Leave an alpha release as a draft in Play Console (alpha otherwise goes out to closed testing at once; beta and production are always drafts)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -134,6 +140,7 @@ jobs:
           TRACK: ${{ inputs.track }}
           NOTES: ${{ inputs.notes }}
           PLAY_UPDATE_PRIORITY: ${{ inputs.update_priority || '0' }}
+          PLAY_DRAFT: ${{ inputs.draft && 'true' || 'false' }}
           PLAY_NOTES_LANGUAGE: en-IN
         run: |
           echo "In-app update priority: $PLAY_UPDATE_PRIORITY (4-5 forces the update)" >> "$GITHUB_STEP_SUMMARY"

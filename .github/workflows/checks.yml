@@ -1,0 +1,28 @@
+name: Checks
+
+# The repository's scripts on every pull request and push to main: they compile, and their tests pass
+# (tests/play: which Play releases go out at once and which stay drafts). GitHub's own actions only.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Python scripts compile
+        run: python3 -m py_compile scripts/*.py
+      - name: Script tests
+        run: python3 -m unittest discover -s tests/play -v
