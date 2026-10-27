@@ -17,6 +17,8 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		5A1C0DE12F0A000100000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE12F0A000100000002 /* PrivacyInfo.xcprivacy */; };
+		5A1C0DE12F0A000100000003 /* SXBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE12F0A000100000004 /* SXBridgeViewController.swift */; };
+		5A1C0DE12F0A000100000005 /* SXSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE12F0A000100000006 /* SXSelfTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +34,8 @@
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		5A1C0DE12F0A000100000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		5A1C0DE12F0A000100000004 /* SXBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SXBridgeViewController.swift; sourceTree = "<group>"; };
+		5A1C0DE12F0A000100000006 /* SXSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SXSelfTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -69,6 +73,8 @@
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				5A1C0DE12F0A000100000006 /* SXSelfTest.swift */,
+				5A1C0DE12F0A000100000004 /* SXBridgeViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -164,6 +170,8 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				5A1C0DE12F0A000100000005 /* SXSelfTest.swift in Sources */,
+				5A1C0DE12F0A000100000003 /* SXBridgeViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

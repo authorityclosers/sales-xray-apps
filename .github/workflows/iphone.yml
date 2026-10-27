@@ -1,8 +1,11 @@
 name: iPhone
 
 # Builds Sales X-Ray for the iPhone (apps/phone/ios, Capacitor 8) on GitHub-hosted Macs. Manual only,
-# because Mac minutes are the dear ones.
-#  - simulator: a Simulator build, opened in a simulator as a smoke check, with screenshots.
+# because Mac minutes are the dear ones. The web app is inside the app: its static export (the same one
+# the Android app carries) is built once on Linux and served by the app at capacitor://localhost, with
+# the API at the server (scripts/ios-bundle-web.mjs, SXBridgeViewController.swift).
+#  - simulator: a Simulator build, opened in a simulator with its self-test (-SXSelfTest): the bundled
+#    page, the API through the native path, the phone channel, haptics and the share sheet, with screenshots.
 #  - device: a Release archive for real iPhones. Without the Apple account it is unsigned: it proves the
 #    App Store build compiles, with its privacy manifest, but installs nowhere. With the App Store Connect
 #    API key (secrets SX_ASC_KEY_ID, SX_ASC_ISSUER_ID, SX_ASC_KEY_P8_BASE64; variable SX_APPLE_TEAM_ID),
@@ -12,6 +15,10 @@ name: iPhone
 on:
   workflow_dispatch:
     inputs:
+      web_ref:
+        description: Platform repo ref whose web app goes inside the app; production's commit for a release
+        type: string
+        default: main
       testflight:
         description: Sign with the Apple account and upload to App Store Connect for TestFlight (main only)
         type: boolean
@@ -28,8 +35,44 @@ env:
   VERSION: 1.0.${{ github.run_number }}
 
 jobs:
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/phone
+    steps:
+      - name: Check out
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Check out the web app (platform repo)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: authorityclosers/authority-closers-platform
+          ref: ${{ inputs.web_ref || 'main' }}
+          path: platform
+          persist-credentials: false
+      - name: The web app's static export (the same build the Android app carries)
+        run: |
+          bash scripts/build-web-shell.sh "$GITHUB_WORKSPACE/platform" "$RUNNER_TEMP/web" salesxray.authorityclosers.com
+          # The iPhone has no 10 MB bundle limit: keep the brand icon packs Android loads from the server.
+          cp "$GITHUB_WORKSPACE"/platform/apps/sales-xray-web/out/brands/?.json "$RUNNER_TEMP/web/brands/" 2> /dev/null || true
+      - name: Keep the web bundle for the Mac jobs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sales-xray-web-bundle-${{ github.run_number }}
+          path: ${{ runner.temp }}/web/
+          retention-days: 3
+          if-no-files-found: error
+
   simulator:
     if: ${{ !inputs.testflight }}
+    needs: web
     runs-on: macos-26
     timeout-minutes: 45
     defaults:
@@ -46,8 +89,15 @@ jobs:
           node-version: 22
       - name: Install Capacitor
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Sync the web shell into iOS (live site)
-        run: npx cap sync ios
+      - name: Fetch the web bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sales-xray-web-bundle-${{ github.run_number }}
+          path: ${{ runner.temp }}/web
+      - name: Sync iOS, with the web app inside
+        run: |
+          npx cap sync ios
+          node scripts/ios-bundle-web.mjs "$RUNNER_TEMP/web"
       - name: Build for the simulator
         run: |
           xcodebuild -version
@@ -58,22 +108,43 @@ jobs:
             CODE_SIGNING_ALLOWED=NO build
           mkdir -p dist
           ditto -c -k --keepParent "$RUNNER_TEMP/derived/Build/Products/Debug-iphonesimulator/App.app" "dist/sales-xray-iphone-simulator-$VERSION.zip"
-      - name: Open it in a simulator (smoke check)
+      - name: Open it in a simulator and run its self-test
         run: |
           device=$(xcrun simctl list devices available -j | node -e 'const d = JSON.parse(require("fs").readFileSync(0, "utf8")).devices; const phone = Object.entries(d).filter(([runtime]) => runtime.includes("iOS")).flatMap(([, list]) => list).find((x) => x.name.startsWith("iPhone")); if (!phone) process.exit(1); console.log(phone.udid);')
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$RUNNER_TEMP/derived/Build/Products/Debug-iphonesimulator/App.app"
-          xcrun simctl launch "$device" com.authorityclosers.salesxray
-          # A fresh simulator's first web page can take a while; look twice and keep the app's log.
-          sleep 25
-          xcrun simctl io "$device" screenshot dist/iphone-simulator-25s.png
-          sleep 50
-          xcrun simctl io "$device" screenshot dist/iphone-simulator-75s.png
-          xcrun simctl spawn "$device" log show --last 3m --style compact \
-            --predicate 'process == "App" OR subsystem CONTAINS "WebKit" OR subsystem CONTAINS "capacitor"' > dist/iphone-simulator.log 2>&1 || true
-          tail -40 dist/iphone-simulator.log
-          xcrun simctl spawn "$device" launchctl list | grep -q com.authorityclosers.salesxray
+          xcrun simctl launch "$device" com.authorityclosers.salesxray -SXSelfTest
+          sleep 15
+          xcrun simctl io "$device" screenshot dist/iphone-bundled-15s.png
+          # The self-test runs 20 s after start, then opens the share sheet.
+          report=""
+          for second in $(seq 1 40); do
+            sleep 1
+            container=$(xcrun simctl get_app_container "$device" com.authorityclosers.salesxray data)
+            if [ -f "$container/Documents/sx-selftest.json" ]; then report="$container/Documents/sx-selftest.json"; break; fi
+          done
+          sleep 3
+          xcrun simctl io "$device" screenshot dist/iphone-share-sheet.png
+          xcrun simctl spawn "$device" log show --last 3m --style compact             --predicate 'process == "App" OR subsystem CONTAINS "WebKit" OR subsystem CONTAINS "capacitor"' > dist/iphone-simulator.log 2>&1 || true
+          test -n "$report" || { echo "::error::The self-test wrote no report"; tail -60 dist/iphone-simulator.log; exit 1; }
+          cp "$report" dist/sx-selftest.json
+          cat dist/sx-selftest.json
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("dist/sx-selftest.json", "utf8"));
+            const p = r.page || {};
+            const checks = [
+              ["the page came from the app (capacitor://localhost)", p.bundled === true],
+              ["a second screen (/leads/) is in the bundle", p.leadsScreen === 200 && p.leadsBytes > 1000],
+              ["the API answered through the native path", p.apiStatus === 200],
+              ["the page sees the phone app (data-sx-app)", p.inApp === true],
+              ["SXPhone status says ios", p.phoneStatus && p.phoneStatus.platform === "ios"],
+              ["SXHaptics reached the native side", r.hapticsPlayed >= 1],
+            ];
+            let failed = 0;
+            for (const [what, ok] of checks) { console.log(`${ok ? "ok  " : "FAIL"} ${what}`); if (!ok) failed += 1; }
+            if (failed) process.exit(1);
+          '
       - name: Keep the simulator app
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -84,6 +155,7 @@ jobs:
           if-no-files-found: error
 
   device:
+    needs: web
     runs-on: macos-26
     timeout-minutes: 45
     defaults:
@@ -105,8 +177,15 @@ jobs:
           node-version: 22
       - name: Install Capacitor
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Sync the web shell into iOS (live site)
-        run: npx cap sync ios
+      - name: Fetch the web bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sales-xray-web-bundle-${{ github.run_number }}
+          path: ${{ runner.temp }}/web
+      - name: Sync iOS, with the web app inside
+        run: |
+          npx cap sync ios
+          node scripts/ios-bundle-web.mjs "$RUNNER_TEMP/web"
       - name: Check the plists
         run: plutil -lint ios/App/App/Info.plist ios/App/App/PrivacyInfo.xcprivacy
       - name: Is the Apple account set up here?
