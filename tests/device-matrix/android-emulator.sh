@@ -2,14 +2,18 @@
 # The Sales Xray Android app (the published APK, which opens production) on an
 # emulator of a given Android version and screen: start it, let the page load, keep
 # screenshots of the app, the signed-out page and /apps (owner order, 19 Oct).
-#   android-emulator.sh <api level> <device id, e.g. pixel_6 | pixel_tablet | small_phone> [variants]
+#   android-emulator.sh <api level> <device id, e.g. pixel_6 | pixel_tablet | small_phone> [variants] [ram MB]
 # variants (comma-separated, owner's phone test 19 Oct): punch-hole, notch, font-large,
 # dark, gesture, buttons. Each is applied in turn after the first launch, and the app gets
 # a screenshot and a safe-area check (the page must sit below the status bar / cut-out).
+# ram (MB) gives the emulator a budget phone's memory, 2048 or 3072; empty keeps the device's.
+# Cloudflare's bot check on production can hold the app back (README.md): that is reported
+# as CHALLENGED, in the log and the run's summary, and fails nothing; layout checks still run.
 set -euo pipefail
 api=$1
 device=$2
 variants=${3:-}
+ram=${4:-}
 OUT=${OUT:-shots}
 mkdir -p "$OUT"
 sdk=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
@@ -25,6 +29,13 @@ case "$device" in
   *) profile=$device ;;
 esac
 echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n m -k "$image" -d "$profile" --force -p "$ANDROID_AVD_HOME/m.avd" >/dev/null
+if [ -n "$ram" ]; then
+  config="$ANDROID_AVD_HOME/m.avd/config.ini"
+  grep -v '^hw.ramSize=' "$config" > "$config.new" || true
+  echo "hw.ramSize=$ram" >> "$config.new"
+  mv "$config.new" "$config"
+  echo "memory: $ram MB"
+fi
 "$sdk/emulator/emulator" -avd m -no-window -no-snapshot -no-boot-anim -gpu swiftshader_indirect -no-audio >emulator.log 2>&1 &
 export PATH="$sdk/platform-tools:$PATH"
 for _ in $(seq 1 120); do
@@ -38,7 +49,7 @@ curl -sSfL -o app.apk https://github.com/authorityclosers/sales-xray-apps/releas
 adb install app.apk
 adb shell monkey -p com.authorityclosers.salesxray -c android.intent.category.LAUNCHER 1 >/dev/null
 sleep 25
-tag="android-${api}-${device}"
+tag="android-${api}-${device}${ram:+-${ram}}"
 adb exec-out screencap -p > "$OUT/$tag-app.png"
 sleep 10
 adb exec-out screencap -p > "$OUT/$tag-app-later.png"
@@ -51,10 +62,11 @@ echo "$front" | grep -q "com.authorityclosers.salesxray"
 adb shell uiautomator dump /sdcard/ui.xml >/dev/null
 adb exec-out cat /sdcard/ui.xml > "$OUT/$tag-screen.xml"
 if grep -qiE "Performing security verification|Verify you are human" "$OUT/$tag-screen.xml"; then
-  echo "FAIL $tag: Cloudflare's bot check stopped the app (see README.md); layout checks still run"
-  blocked=1
+  echo "CHALLENGED $tag: Cloudflare's bot check held the app back (see README.md); layout checks still run"
+  [ -z "${GITHUB_STEP_SUMMARY:-}" ] || echo "- $tag: Cloudflare challenged (not a failure)" >> "$GITHUB_STEP_SUMMARY"
+else
+  echo "ok $tag"
 fi
-echo "ok $tag"
 
 # The page's web view must start below the status bar and any cut-out (SafeArea.java).
 check_safe_area() {
@@ -76,7 +88,7 @@ relaunch() {
   adb shell monkey -p com.authorityclosers.salesxray -c android.intent.category.LAUNCHER 1 >/dev/null
   sleep 20
 }
-failed=${blocked:-0}
+failed=0
 check_safe_area base || failed=1
 IFS=, read -ra list <<< "$variants"
 for variant in "${list[@]}"; do

@@ -1,6 +1,7 @@
 // Sales Xray on every kind of browser and screen (owner order, 19 Oct): the public,
-// signed-out pages of production, with a screenshot of each. Signed-in flows need a
-// test account the owner approves (see README.md).
+// signed-out pages, with a screenshot of each. SX_BASE_URL is where: the release's own
+// build served on the runner (device-matrix.yml, since 27 Oct), else production. Signed-in
+// flows need a test account the owner approves (see README.md).
 //
 //   BROWSER=chromium|firefox|webkit|chrome|msedge node tests/device-matrix/smoke.mjs
 //

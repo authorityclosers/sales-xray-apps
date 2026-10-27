@@ -1,12 +1,17 @@
 name: Device matrix
 
 # Sales Xray on every kind of device (owner order, 19 Oct), separate from the merge
-# gate: production's public pages in Chromium, Firefox and WebKit, Chrome and Edge on
+# gate: the release's public pages in Chromium, Firefox and WebKit, Chrome and Edge on
 # Windows, Safari on macOS and iOS Simulator (old, small and large iPhones), the
-# Android app on emulators of several Android versions and screens, and the call
-# recorder's emulator proof. Screenshots are kept as artifacts. Nightly at 02:00 IST,
-# on every Android release, and by hand. Signed-in flows wait for an approved test
+# Android app on emulators of 12 Android versions, screens and memory sizes, and the
+# call recorder's emulator proof. Screenshots are kept as artifacts. Nightly at 02:00
+# IST, on every Android release, and by hand. Signed-in flows wait for an approved test
 # account (tests/device-matrix/README.md).
+#
+# The browsers open the release's own build (web-export: the platform repository at
+# web_ref, main by default, which is what production runs), served on the runner:
+# Cloudflare's bot check holds GitHub's runners back from production (27 Oct 2026). The
+# emulators still open the real app; a challenge there is reported as such, not red.
 
 on:
   schedule:
@@ -14,6 +19,11 @@ on:
   release:
     types: [published, released, edited]
   workflow_dispatch:
+    inputs:
+      web_ref:
+        description: Platform repo ref whose public pages the browsers open (main is what production runs)
+        type: string
+        default: main
 
 permissions:
   contents: read
@@ -23,7 +33,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  web-export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Platform repository at ${{ inputs.web_ref || 'main' }}
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: authorityclosers/authority-closers-platform
+          ref: ${{ inputs.web_ref || 'main' }}
+          persist-credentials: false
+      - name: Node (the platform's own version)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: The web app's locked dependencies (the platform's own pnpm)
+        run: corepack enable && pnpm install --frozen-lockfile --filter @ac/sales-xray-web...
+      - name: Static export of the web app
+        env:
+          AC_SALES_XRAY_STATIC_PREVIEW: "1"
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: pnpm --filter @ac/sales-xray-web build
+      - name: Keep it for the browsers
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: web-export
+          path: apps/sales-xray-web/out
+          retention-days: 1
+          if-no-files-found: error
+
   browsers-linux:
+    needs: web-export
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -35,6 +75,11 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+      - name: The release's pages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: web-export
+          path: site
       - name: Node 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -47,7 +92,11 @@ jobs:
         env:
           BROWSER: ${{ matrix.browser }}
           OUT: shots
-        run: node tests/device-matrix/smoke.mjs
+          SX_BASE_URL: http://127.0.0.1:8080
+        run: |
+          node tests/device-matrix/serve.mjs site 8080 > serve.log 2>&1 &
+          sleep 2
+          node tests/device-matrix/smoke.mjs
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -57,6 +106,7 @@ jobs:
           retention-days: 14
 
   browsers-windows:
+    needs: web-export
     runs-on: windows-2022
     timeout-minutes: 30
     strategy:
@@ -71,6 +121,11 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+      - name: The release's pages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: web-export
+          path: site
       - name: Node 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -81,7 +136,11 @@ jobs:
         env:
           BROWSER: ${{ matrix.browser }}
           OUT: shots
-        run: node tests/device-matrix/smoke.mjs
+          SX_BASE_URL: http://127.0.0.1:8080
+        run: |
+          node tests/device-matrix/serve.mjs site 8080 > serve.log 2>&1 &
+          sleep 2
+          node tests/device-matrix/smoke.mjs
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -91,6 +150,7 @@ jobs:
           retention-days: 14
 
   safari-macos:
+    needs: web-export
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -98,6 +158,11 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+      - name: The release's pages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: web-export
+          path: site
       - name: Node 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -110,7 +175,11 @@ jobs:
       - name: Public pages in Safari
         env:
           OUT: shots
-        run: node tests/device-matrix/safari.mjs
+          SX_BASE_URL: http://127.0.0.1:8080
+        run: |
+          node tests/device-matrix/serve.mjs site 8080 > serve.log 2>&1 &
+          sleep 2
+          node tests/device-matrix/safari.mjs
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -120,6 +189,7 @@ jobs:
           retention-days: 14
 
   ios-simulator:
+    needs: web-export
     runs-on: macos-15
     timeout-minutes: 45
     steps:
@@ -127,10 +197,23 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+      - name: The release's pages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: web-export
+          path: site
+      - name: Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
       - name: Safari on iPhone SE, 13 mini, 15 and 16 Pro Max
         env:
           OUT: shots
-        run: bash tests/device-matrix/ios-simulator.sh
+          SX_BASE_URL: http://127.0.0.1:8080
+        run: |
+          node tests/device-matrix/serve.mjs site 8080 > serve.log 2>&1 &
+          sleep 2
+          bash tests/device-matrix/ios-simulator.sh
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -146,12 +229,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Old and small; current with punch-hole, notch and big fonts; newest (always
-          # edge-to-edge) with dark mode and both navigation styles; a tablet.
-          - { api: 29, device: small_phone, variants: "font-large,buttons" }
-          - { api: 33, device: pixel_6, variants: "punch-hole,notch,font-large" }
-          - { api: 35, device: pixel_7, variants: "punch-hole,dark,gesture,buttons" }
-          - { api: 35, device: pixel_tablet, variants: "dark" }
+          # Android 10 to 15 (orchestrator for the owner, 27 Oct 2026: the testing plan, Indian budget
+          # phones): small and medium phones, budget memory (2-3 GB, as a Redmi A, Samsung A0x
+          # or Realme C has), punch-holes, notches, big fonts, dark mode, both navigation styles,
+          # and a tablet. ram is the emulator's memory in MB; empty keeps the device's own.
+          - { api: 29, device: small_phone, variants: "font-large,buttons", ram: "" }
+          - { api: 29, device: medium_phone, variants: "dark", ram: "2048" }
+          - { api: 30, device: pixel_3a, variants: "font-large", ram: "" }
+          - { api: 30, device: small_phone, variants: "dark,buttons", ram: "2048" }
+          - { api: 31, device: medium_phone, variants: "notch,buttons", ram: "3072" }
+          - { api: 31, device: pixel_4a, variants: "font-large,dark", ram: "" }
+          - { api: 33, device: pixel_6, variants: "punch-hole,notch,font-large", ram: "" }
+          - { api: 33, device: small_phone, variants: "font-large,buttons", ram: "3072" }
+          - { api: 34, device: medium_phone, variants: "punch-hole,gesture", ram: "3072" }
+          - { api: 34, device: pixel_7a, variants: "dark,font-large", ram: "" }
+          - { api: 35, device: pixel_7, variants: "punch-hole,dark,gesture,buttons", ram: "" }
+          - { api: 35, device: pixel_tablet, variants: "dark", ram: "" }
     steps:
       - name: Check out
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -162,15 +255,15 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: The app on Android ${{ matrix.api }}, ${{ matrix.device }}
+      - name: The app on Android ${{ matrix.api }}, ${{ matrix.device }}${{ matrix.ram && format(', {0} MB', matrix.ram) || '' }}
         env:
           OUT: shots
-        run: bash tests/device-matrix/android-emulator.sh ${{ matrix.api }} ${{ matrix.device }} "${{ matrix.variants }}"
+        run: bash tests/device-matrix/android-emulator.sh ${{ matrix.api }} ${{ matrix.device }} "${{ matrix.variants }}" "${{ matrix.ram }}"
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: shots-android-${{ matrix.api }}-${{ matrix.device }}
+          name: shots-android-${{ matrix.api }}-${{ matrix.device }}${{ matrix.ram && format('-{0}', matrix.ram) || '' }}
           path: shots
           retention-days: 14
 
