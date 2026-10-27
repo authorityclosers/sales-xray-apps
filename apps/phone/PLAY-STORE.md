@@ -36,10 +36,36 @@ All secrets go into the GitHub environment `play-release` from the owner's lapto
 | News app / Government / Financial features / Health | No |
 | Data safety | See below |
 | **Call log permission declaration** | Core purpose: business and enterprise CRM. A seller calls leads from the app; the app reads the call log only to log calls with those leads (when, how long, connected). Other numbers never leave the phone. Covered by the "Enterprise archive, business and enterprise CRM" exception; Google decides on review. |
-| **Foreground service (microphone)** | Not in the first Play version (owner, 24 Oct 2026: M5 = drop): the Play build has no RECORD_AUDIO and no microphone service, so no declaration or video. For a later version: The in-app recorder records a meeting or an in-person sales talk that the seller starts. Notification while recording; stops when they stop. |
+| **Foreground service (microphone)** | Needed from the second Play version, which brings the in-app recorder back (owner, 27 Oct 2026; the first version left it out). Filed before the bundle goes to any track: see "Microphone declaration" below. |
 | Phone (`CALL_PHONE`) | No declaration needed |
 
 If Google refuses the Call log declaration, the Play build drops `READ_CALL_LOG` and logs only calls placed from the app (start/end from the app's own call tracking). The sideload build keeps full logging.
+
+### Microphone declaration (second Play version)
+
+**Order:** the owner records the video and uploads it to YouTube as Unlisted; then the declaration is filed with the link; only then does `play.yml` put a bundle with the recorder on a track. Play rejects a bundle whose foreground-service type has no declaration.
+
+Play Console → App content → Foreground service permissions → **Microphone**:
+
+| Field | Text |
+| --- | --- |
+| Use case | User-initiated audio recording (if Play only offers presets: "Background audio access", then describe the recording below) |
+| Description | Sales X-Ray lets a seller record an in-person sales conversation (a meeting or a walk-in) so it can be analysed later. The seller taps "Record a conversation", reads what is recorded and agrees, then Android asks for the microphone. Recording runs as a foreground service with an ongoing notification and a Stop button, so it continues while the seller switches apps or the screen turns off. It never starts by itself or from the background, never runs during a phone call, and the recording stays on the phone until the seller chooses to analyse it. |
+| Impact if deferred or interrupted | The conversation would be lost or cut off part-way: a live meeting can't be repeated, so recording must continue until the seller taps Stop. |
+| Video link | The unlisted YouTube link |
+
+**Video** (about 30 s, screen recording on a test phone signed in as the reviewer account):
+1. 0–5 s: open Sales X-Ray → the You menu (your initial, at the top) → **Calls on this phone**.
+2. 5–12 s: tap **Record a conversation → Record**. Sales X-Ray's explanation appears; tap OK. Android's microphone prompt appears; tap **While using the app**.
+3. 12–18 s: recording starts and the timer runs. Pull down the notification shade: the ongoing **Recording** notification with Stop.
+4. 18–24 s: press Home (the notification stays), then come back to the app.
+5. 24–30 s: tap **Stop**. The recording is at the top of the list, with **Analyse**.
+
+**Prominent disclosure:** the explanation in step 2 (`MIC_DISCLOSURE` in `sx-phone.js`) shows before Android's prompt until the microphone is allowed, and recording goes on only on the seller's OK.
+
+**Reviewer note (App access):** add "To record a conversation: You menu → Calls on this phone → Record a conversation → Record."
+
+**Data safety:** already declared (Audio → Voice or sound recordings: collected, optional, app functionality). Check it in the Console when filing; nothing new is collected.
 
 ### Data safety (draft)
 
