@@ -1,12 +1,22 @@
 name: Mac and Windows
 
-# Builds Sales Xray for Windows (.exe installer and .msi) and Mac (universal
-# .dmg) with Tauri 2 (apps/desktop) on GitHub-hosted runners. Manual only: the
-# builds are unsigned until the store launch (owner decisions D2 and D3), and
-# Mac minutes would count 10x if this repo ever turned private. Each run builds
-# "Sales Xray" (live site) and "Sales Xray Dev" (dev site, installs beside it),
-# starts the live app on the runner as a smoke check, and keeps the installers
-# and a screenshot as a 14-day artifact. Nothing is published from here.
+# Builds Sales X-Ray for Windows and Mac with Tauri 2 (apps/desktop) on GitHub-hosted runners.
+# Manual only: Mac minutes are the dear ones. Each run builds "Sales Xray" (live site) and
+# "Sales Xray Dev" (dev site, installs beside it), starts the live app on the runner as a smoke
+# check, and keeps the installers and screenshots as a 14-day artifact.
+#  - Windows: NSIS .exe and .msi, plus an MSIX for the Microsoft Store (apps/desktop/msix). The
+#    Store upload copy carries the Partner Center identity (variables SX_MSSTORE_IDENTITY_NAME,
+#    SX_MSSTORE_PUBLISHER, SX_MSSTORE_PUBLISHER_DISPLAY_NAME) and is left unsigned: the Store signs
+#    it. A test copy is signed with a throwaway certificate made on the runner, installed and opened.
+#    On publish runs the live .exe and .msi are code-signed with SSL.com eSigner (sign-windows.ps1;
+#    secrets SX_WINDOWS_SIGN_*). Other runs stay unsigned: each signature counts against the quota.
+#  - Mac: universal .dmg. Signed with Developer ID and notarised by Apple when the Apple secrets are
+#    set (SX_APPLE_DEVELOPER_ID_P12_BASE64, SX_APPLE_DEVELOPER_ID_P12_PASSWORD, the App Store Connect
+#    key SX_ASC_*; variable SX_APPLE_DEVELOPER_ID_IDENTITY); otherwise ad-hoc signed.
+#  - publish (main only): puts the run's live installers on the sales-xray-desktop-latest release,
+#    for the computers it built. It refuses a Windows build that isn't code-signed or a Mac build
+#    that isn't notarised, so nobody downloads an app that Windows or macOS warns about. Windows can
+#    wait for its certificate (the Store route needs none) while the Mac app is published.
 on:
   workflow_dispatch:
     inputs:
@@ -18,13 +28,17 @@ on:
           - macos
           - both
         default: windows
+      publish:
+        description: Publish this run's signed installers on the sales-xray-desktop-latest release (main only; Windows code-signed, Mac notarised)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: desktop-${{ github.ref }}
-  cancel-in-progress: true
+  group: desktop-${{ github.ref }}-${{ inputs.publish && 'publish' || 'build' }}
+  cancel-in-progress: ${{ !inputs.publish }}
 
 jobs:
   build:
@@ -33,7 +47,7 @@ jobs:
       matrix:
         platform: ${{ fromJSON(inputs.platform == 'both' && '["windows","macos"]' || format('["{0}"]', inputs.platform)) }}
     runs-on: ${{ matrix.platform == 'macos' && 'macos-26' || 'windows-2025' }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     defaults:
       run:
         shell: bash
@@ -57,11 +71,68 @@ jobs:
           cargo --version
       - name: Install the Tauri CLI
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Build Sales Xray
-        run: npx tauri build --ci $BUNDLE_ARGS --config "{\"version\":\"$VERSION\"}"
-      - name: Keep Sales Xray
+      - name: Which signing is set up here?
+        id: signing
+        env:
+          WIN_SIGN: ${{ secrets.SX_WINDOWS_SIGN_USERNAME }}
+          MAC_P12: ${{ secrets.SX_APPLE_DEVELOPER_ID_P12_BASE64 }}
+          MAC_IDENTITY: ${{ vars.SX_APPLE_DEVELOPER_ID_IDENTITY }}
+          ASC_KEY_ID: ${{ secrets.SX_ASC_KEY_ID }}
         run: |
           mkdir -p dist
+          if [ "${{ matrix.platform }}" = windows ]; then
+            if [ -n "$WIN_SIGN" ] && [ "${{ inputs.publish }}" = true ]; then mode=signed; else mode=unsigned; fi
+          else
+            if [ -n "$MAC_P12" ] && [ -n "$MAC_IDENTITY" ] && [ -n "$ASC_KEY_ID" ]; then mode=notarised; else mode=adhoc; fi
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "$mode" > "dist/${{ matrix.platform }}-signing.txt"
+          echo "${{ matrix.platform }}: $mode"
+          if [ "${{ inputs.publish }}" = true ]; then
+            if [ "$GITHUB_REF" != refs/heads/main ]; then echo "::error::Publish runs only on main. Nothing was published."; exit 1; fi
+            if [ "$mode" = unsigned ] || [ "$mode" = adhoc ]; then echo "::error::Publish needs the ${{ matrix.platform }} signing secrets. Nothing was published."; exit 1; fi
+          fi
+      - name: Load the Apple signing key
+        if: steps.signing.outputs.mode == 'notarised'
+        env:
+          P12_BASE64: ${{ secrets.SX_APPLE_DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.SX_APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          IDENTITY: ${{ vars.SX_APPLE_DEVELOPER_ID_IDENTITY }}
+          ASC_KEY_ID: ${{ secrets.SX_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.SX_ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.SX_ASC_KEY_P8_BASE64 }}
+        run: |
+          # Tauri signs with Developer ID and notarises when these are set. They are set only here, so
+          # ad-hoc runs never see an empty APPLE_* value.
+          umask 077
+          printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/asc-key.p8"
+          {
+            echo "APPLE_CERTIFICATE<<SX_EOF"; printf '%s\n' "$P12_BASE64"; echo "SX_EOF"
+            echo "APPLE_CERTIFICATE_PASSWORD<<SX_EOF"; printf '%s\n' "$P12_PASSWORD"; echo "SX_EOF"
+            echo "APPLE_SIGNING_IDENTITY=$IDENTITY"
+            echo "APPLE_API_KEY=$ASC_KEY_ID"
+            echo "APPLE_API_ISSUER=$ASC_ISSUER_ID"
+            echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/asc-key.p8"
+          } >> "$GITHUB_ENV"
+      - name: Build Sales Xray
+        env:
+          # Read by sign-windows.ps1 through Tauri's signCommand (Windows publish runs only).
+          SX_WINDOWS_SIGN_USERNAME: ${{ steps.signing.outputs.mode == 'signed' && secrets.SX_WINDOWS_SIGN_USERNAME || '' }}
+          SX_WINDOWS_SIGN_PASSWORD: ${{ steps.signing.outputs.mode == 'signed' && secrets.SX_WINDOWS_SIGN_PASSWORD || '' }}
+          SX_WINDOWS_SIGN_TOTP_SECRET: ${{ steps.signing.outputs.mode == 'signed' && secrets.SX_WINDOWS_SIGN_TOTP_SECRET || '' }}
+          SX_WINDOWS_SIGN_CREDENTIAL_ID: ${{ vars.SX_WINDOWS_SIGN_CREDENTIAL_ID }}
+        run: |
+          signer=$(cygpath -m "$PWD/sign-windows.ps1" 2> /dev/null || echo "$PWD/sign-windows.ps1")
+          case "${{ steps.signing.outputs.mode }}" in
+            adhoc) sign='{"bundle":{"macOS":{"signingIdentity":"-"}}}' ;;
+            signed) sign="{\"bundle\":{\"windows\":{\"signCommand\":{\"cmd\":\"pwsh\",\"args\":[\"-NoProfile\",\"-File\",\"$signer\",\"%1\"]}}}}" ;;
+            *) sign='{}' ;;
+          esac
+          npx tauri build --ci $BUNDLE_ARGS --config "{\"version\":\"$VERSION\"}" --config "$sign"
+          # The Dev build below reuses the same release folder, so keep the live app for the MSIX.
+          if [ "${{ matrix.platform }}" = windows ]; then cp src-tauri/target/release/sales-xray-desktop.exe "$(cygpath -u "$RUNNER_TEMP")/SalesXray-live.exe"; fi
+      - name: Keep Sales Xray
+        run: |
           find src-tauri/target -path '*/release/bundle/*' \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \) -exec mv {} dist/ \;
           ls -l dist
       - name: Start it on Windows (smoke check)
@@ -83,6 +154,9 @@ jobs:
         run: |
           app=$(find src-tauri/target -path '*/release/bundle/macos/Sales Xray.app' -print -quit)
           test -n "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -E 'Authority|Signature|TeamIdentifier|flags'
+          if [ "${{ steps.signing.outputs.mode }}" = notarised ]; then spctl --assess --type execute --verbose=4 "$app"; xcrun stapler validate "$app"; fi
           binary=$(find "$app/Contents/MacOS" -type f -perm -u+x -print -quit)
           "$binary" > dist/macos-app.log 2>&1 &
           pid=$!
@@ -90,13 +164,78 @@ jobs:
           kill -0 "$pid"
           screencapture -x dist/macos-screen.png
           kill "$pid"
+      - name: Pack the Microsoft Store MSIX
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          IDENTITY_NAME: ${{ vars.SX_MSSTORE_IDENTITY_NAME }}
+          PUBLISHER: ${{ vars.SX_MSSTORE_PUBLISHER }}
+          PUBLISHER_DISPLAY_NAME: ${{ vars.SX_MSSTORE_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          npx tauri icon app-icon.png -o "$env:RUNNER_TEMP/store-icons"
+          $exe = "$env:RUNNER_TEMP/SalesXray-live.exe"
+          # Partner Center's identity once the name is reserved; until then a stand-in, so the package can be tested.
+          $store = [bool] ($env:IDENTITY_NAME -and $env:PUBLISHER -and $env:PUBLISHER_DISPLAY_NAME)
+          $name = if ($store) { $env:IDENTITY_NAME } else { "AuthorityClosers.SalesXRay" }
+          $publisher = if ($store) { $env:PUBLISHER } else { "CN=Authority Closers Test" }
+          $display = if ($store) { $env:PUBLISHER_DISPLAY_NAME } else { "Authority Closers" }
+          if ($store) {
+            ./msix/make-msix.ps1 -Exe $exe -Icons "$env:RUNNER_TEMP/store-icons" -Version $env:VERSION -IdentityName $name `
+              -Publisher $publisher -PublisherDisplayName $display -Out "dist/sales-xray-$env:VERSION-store-upload.msix"
+          } else {
+            "Partner Center identity not set (SX_MSSTORE_* variables): no Store upload copy in this run." | Tee-Object dist/msix-store-upload-skipped.txt
+          }
+          # The test copy: same package, signed with a certificate made here and thrown away with the runner.
+          $test = "dist/sales-xray-$env:VERSION-test.msix"
+          ./msix/make-msix.ps1 -Exe $exe -Icons "$env:RUNNER_TEMP/store-icons" -Version $env:VERSION -IdentityName $name `
+            -Publisher $publisher -PublisherDisplayName $display -Out $test
+          $cert = New-SelfSignedCertificate -Type Custom -Subject $publisher -KeyUsage DigitalSignature -FriendlyName "Sales X-Ray test package" `
+            -CertStoreLocation Cert:\CurrentUser\My -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}") -NotAfter (Get-Date).AddDays(30)
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object { [version] $_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          & $signtool.FullName sign /fd SHA256 /sha1 $cert.Thumbprint /s My $test
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed with exit code $LASTEXITCODE" }
+          Export-Certificate -Cert $cert -FilePath "dist/sales-xray-$env:VERSION-test-certificate.cer" | Out-Null
+          Import-Certificate -FilePath "dist/sales-xray-$env:VERSION-test-certificate.cer" -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          "PACKAGE_NAME=$name" >> $env:GITHUB_ENV
+      - name: Install and open the MSIX (smoke check)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          Get-Process sales-xray-desktop, SalesXray -ErrorAction SilentlyContinue | Stop-Process -Force
+          Add-AppxPackage -Path "dist/sales-xray-$env:VERSION-test.msix"
+          $package = Get-AppxPackage -Name $env:PACKAGE_NAME
+          if (-not $package) { throw "The MSIX did not install" }
+          "Installed $($package.PackageFullName)"
+          Start-Process "shell:AppsFolder\$($package.PackageFamilyName)!SalesXray"
+          Start-Sleep -Seconds 20
+          $running = Get-Process SalesXray -ErrorAction SilentlyContinue
+          if (-not $running) { throw "Sales X-Ray from the MSIX is not running after 20 s" }
+          Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("$PWD/dist/windows-msix-screen.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          $running | Stop-Process -Force
+          Remove-AppxPackage -Package $package.PackageFullName
       - name: Build Sales Xray Dev
-        run: npx tauri build --ci $BUNDLE_ARGS --config src-tauri/tauri.dev.conf.json --config "{\"version\":\"$VERSION\"}"
+        run: |
+          # The Dev build is for the team: unsigned on Windows (the eSigner quota is for the live app), ad-hoc on the Mac.
+          if [ "${{ matrix.platform }}" = macos ]; then sign='{"bundle":{"macOS":{"signingIdentity":"-"}}}'; else sign='{}'; fi
+          npx tauri build --ci $BUNDLE_ARGS --config src-tauri/tauri.dev.conf.json --config "{\"version\":\"$VERSION\"}" --config "$sign"
       - name: Keep Sales Xray Dev
         run: |
           find src-tauri/target -path '*/release/bundle/*' \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \) -exec mv {} dist/ \;
           ls -l dist
-          if command -v sha256sum > /dev/null; then sha256sum dist/*.exe dist/*.msi dist/*.dmg 2> /dev/null || true; else shasum -a 256 dist/*.dmg; fi
+          cd dist
+          shopt -s nullglob
+          installers=(*.exe *.msi *.msix *.dmg)
+          if command -v sha256sum > /dev/null; then sha256sum "${installers[@]}"; else shasum -a 256 "${installers[@]}"; fi > "SHA256SUMS-${{ matrix.platform }}.txt"
+          cat "SHA256SUMS-${{ matrix.platform }}.txt"
+      - name: Forget the Apple key
+        if: always() && steps.signing.outputs.mode == 'notarised'
+        run: rm -f "$RUNNER_TEMP/asc-key.p8"
       - name: Keep the installers
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -105,3 +244,48 @@ jobs:
           path: apps/desktop/dist/
           retention-days: 14
           if-no-files-found: error
+
+  publish:
+    needs: build
+    if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Fetch the signed installers
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: sales-xray-desktop-*-${{ github.run_number }}
+          merge-multiple: true
+          path: dist
+      - name: Update the published release in place
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: sales-xray-desktop-latest
+          VERSION: 0.1.${{ github.run_number }}
+        run: |
+          cd dist
+          # Live builds only: the Dev builds and the Store copies stay in the run's artifact. The build
+          # job already refused unsigned ones; check again before anything goes out.
+          files=()
+          if [ -f windows-signing.txt ]; then
+            test "$(cat windows-signing.txt)" = signed
+            files+=(Sales\ Xray_*.exe Sales\ Xray_*.msi)
+          fi
+          if [ -f macos-signing.txt ]; then
+            test "$(cat macos-signing.txt)" = notarised
+            files+=(Sales\ Xray_*.dmg)
+          fi
+          test "${#files[@]}" -gt 0
+          ls -l "${files[@]}"
+          sha256sum "${files[@]}" > SHA256SUMS-$VERSION.txt
+          title="Sales X-Ray for Windows and Mac"
+          notes="Signed Sales X-Ray installers ($VERSION): Windows (.exe, .msi; code-signed) and Mac (.dmg; notarised by Apple), whichever this run built. Built from $GITHUB_SHA by run $GITHUB_RUN_ID."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}" SHA256SUMS-$VERSION.txt
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$title" --notes "$notes"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false \
+              --title "$title" --notes "$notes" "${files[@]}" SHA256SUMS-$VERSION.txt
+          fi
