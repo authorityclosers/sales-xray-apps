@@ -1,7 +1,8 @@
 name: Checks
 
 # The repository's scripts on every pull request and push to main: they compile, and their tests pass
-# (tests/play: which Play releases go out at once and which stay drafts). GitHub's own actions only.
+# (tests/play: which Play releases go out at once and which stay drafts; tests/testlab: which Test Lab devices a run
+# takes, and its keyless sign-in file). GitHub's own actions only.
 
 on:
   pull_request:
@@ -25,4 +26,6 @@ jobs:
       - name: Python scripts compile
         run: python3 -m py_compile scripts/*.py
       - name: Script tests
-        run: python3 -m unittest discover -s tests/play -v
+        run: |
+          python3 -m unittest discover -s tests/play -v
+          python3 -m unittest discover -s tests/testlab -v
