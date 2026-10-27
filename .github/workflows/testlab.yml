@@ -1,16 +1,20 @@
 name: Test Lab
 
 # Firebase Test Lab on the free Spark quota (owner, 28 Oct 2026: "Are we using Firebase free testing and so on to 100x
-# testing?"; free plan only for two weeks). After each green Android build on main, Robo explores the Play flavour (the
-# live site, signed out: no sign-in account for robots yet) on Google's own phones: a physical budget phone and virtual
-# phones on the oldest and the newest Android in range, chosen from Test Lab's catalogue (scripts/testlab.py).
+# testing?", then "get it done"; free plan only for two weeks). After each green Android build on main, Robo explores
+# the Play flavour (the live site, signed out: no sign-in account for robots yet) on Google's own phones: a physical
+# budget phone and virtual phones on the oldest and the newest Android in range, chosen from Test Lab's catalogue
+# (scripts/testlab.py).
 #
-# Nothing runs until the owner sets it up (tests/testlab/README.md): a separate Firebase project on Spark, two APIs, a
-# service account this repository may act as through the same keyless GitHub federation as play.yml, and the
-# repository variables SX_TESTLAB_PROJECT and SX_TESTLAB_SERVICE_ACCOUNT. Until then each run says so and passes.
+# Where: the Firebase project in the repository variable SX_TESTLAB_PROJECT (sales-xray-alerts, on Spark with no billing
+# account, so it can't be charged). Who: play.yml's keyless identity, the run's GitHub OIDC token through Workload
+# Identity Federation as play-publisher, which needs Firebase Test Lab Admin and Firebase Analytics Viewer there.
+# Results go to the bucket in SX_TESTLAB_RESULTS_BUCKET when set, else to Test Lab's default bucket.
 #
-# Spark allows 10 virtual and 5 physical test runs a day and can't be billed. A run takes 1 physical and 2 virtual
-# devices, and at most 3 runs go ahead a day (counted from 00:00 UTC), which leaves room for a manual run.
+# It skips cleanly, and passes, while the project variable is unset or the identity has no access yet.
+#
+# Spark allows 10 virtual and 5 physical test runs a day. A run takes 1 physical and 2 virtual devices, and at most 3
+# runs go ahead a day (counted from 00:00 UTC), which leaves room for a manual run.
 on:
   workflow_run:
     workflows: [Android]
@@ -19,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       android_run:
-        description: The Android run whose test APKs to use (empty: the latest green run on main)
+        description: "The Android run whose test APKs to use; empty for the latest green run on main"
         type: string
         default: ""
 
@@ -45,14 +49,13 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       PROJECT: ${{ vars.SX_TESTLAB_PROJECT }}
-      SERVICE_ACCOUNT: ${{ vars.SX_TESTLAB_SERVICE_ACCOUNT }}
       PER_DAY: "3"
     steps:
       - name: Set up yet?
         id: ready
         run: |
-          if [ -z "$PROJECT" ] || [ -z "$SERVICE_ACCOUNT" ]; then
-            echo "Firebase Test Lab is not set up yet (no SX_TESTLAB_PROJECT or SX_TESTLAB_SERVICE_ACCOUNT): nothing ran. The owner's steps: tests/testlab/README.md." >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$PROJECT" ]; then
+            echo "Firebase Test Lab is not set up yet (no SX_TESTLAB_PROJECT variable): nothing ran. See tests/testlab/README.md." >> "$GITHUB_STEP_SUMMARY"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
@@ -78,9 +81,10 @@ jobs:
         run: |
           today=$(date -u +%F)
           used=0
+          # Only runs whose Robo step ran count: a run that skipped for lack of access used nothing.
           for id in $(gh run list -R "$GITHUB_REPOSITORY" --workflow testlab.yml --created ">=$today" --limit 50 --json databaseId --jq '.[].databaseId'); do
             [ "$id" = "$GITHUB_RUN_ID" ] && continue
-            n=$(gh run view "$id" -R "$GITHUB_REPOSITORY" --json jobs --jq '[.jobs[] | select(.name == "Robo on Test Lab" and (.conclusion == "success" or .conclusion == "failure" or .status == "in_progress"))] | length')
+            n=$(gh run view "$id" -R "$GITHUB_REPOSITORY" --json jobs --jq '[.jobs[] | select(.name == "Robo on Test Lab") | .steps[] | select(.name == "Robo, signed out" and (.conclusion == "success" or .conclusion == "failure"))] | length')
             used=$((used + n))
           done
           if [ "$used" -ge "$PER_DAY" ]; then
@@ -103,8 +107,10 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       PROJECT: ${{ vars.SX_TESTLAB_PROJECT }}
-      TESTLAB_SERVICE_ACCOUNT: ${{ vars.SX_TESTLAB_SERVICE_ACCOUNT }}
+      RESULTS_BUCKET: ${{ vars.SX_TESTLAB_RESULTS_BUCKET }}
+      # play.yml's keyless identity.
       TESTLAB_WIF_PROVIDER: projects/501399142248/locations/global/workloadIdentityPools/github/providers/sales-xray-apps
+      TESTLAB_SERVICE_ACCOUNT: play-publisher@ac-sales-xray-ads.iam.gserviceaccount.com
       RUN: ${{ needs.plan.outputs.run }}
       NUMBER: ${{ needs.plan.outputs.number }}
     steps:
@@ -125,15 +131,25 @@ jobs:
           python3 scripts/testlab.py credentials "$creds"
           gcloud auth login --cred-file="$creds" --quiet
           gcloud config set project "$PROJECT" --quiet
-      - name: Choose today's devices
+      - name: Access yet? Choose today's devices
+        id: access
         run: |
-          gcloud firebase test android models list --format=json > "$RUNNER_TEMP/models.json"
+          # The catalogue read needs Test Lab access: until the owner's grant is in place it is refused, and the run
+          # stops here, green, having used nothing.
+          if ! gcloud firebase test android models list --format=json > "$RUNNER_TEMP/models.json" 2> "$RUNNER_TEMP/access.log"; then
+            echo "No Test Lab access in $PROJECT yet for the keyless identity: nothing ran. $(grep -oE 'PERMISSION_DENIED|403|not been used|disabled' "$RUNNER_TEMP/access.log" | head -1)" >> "$GITHUB_STEP_SUMMARY"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           python3 scripts/testlab.py devices "$RUNNER_TEMP/models.json" > "$RUNNER_TEMP/devices.txt"
           { echo "Devices:"; sed 's/^/- /' "$RUNNER_TEMP/devices.txt"; } >> "$GITHUB_STEP_SUMMARY"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
       - name: Robo, signed out
+        if: steps.access.outputs.ok == 'true'
         run: |
           args=()
           while read -r device; do args+=(--device "$device"); done < "$RUNNER_TEMP/devices.txt"
+          [ -z "$RESULTS_BUCKET" ] || args+=(--results-bucket "$RESULTS_BUCKET")
           set +e
           gcloud firebase test android run --type robo --app "$APK" "${args[@]}" \
             --timeout 300s --results-history-name "Sales Xray (Play flavour, signed out)" \
@@ -146,11 +162,11 @@ jobs:
             grep -oE 'https://console\.firebase\.google\.com/\S+' "$RUNNER_TEMP/robo.log" | head -1 | sed 's/^/Results: /' || true
           } >> "$GITHUB_STEP_SUMMARY"
           # 0: every device passed; 10: a device found a crash or failure (a real finding); anything else: Test Lab
-          # could not run it (quota, an unavailable device).
+          # could not run it (quota, an unavailable device, the results bucket).
           case "$code" in
             0) ;;
             10) echo "Robo found a crash or failure on at least one device (the table above)." >> "$GITHUB_STEP_SUMMARY" ;;
-            *) echo "Test Lab could not complete the run (gcloud exit $code)." >> "$GITHUB_STEP_SUMMARY" ;;
+            *) echo "Test Lab could not complete the run (gcloud exit $code): $(grep -iE 'error|denied|bucket' "$RUNNER_TEMP/robo.log" | tail -1)" >> "$GITHUB_STEP_SUMMARY" ;;
           esac
           exit "$code"
       - name: Forget the sign-in
