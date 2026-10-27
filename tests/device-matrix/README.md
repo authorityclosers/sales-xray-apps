@@ -26,7 +26,8 @@ Production sits behind Cloudflare's bot check. The first run (19 Oct, run 392064
 
 Since 27 Oct (the matrix was red every night until then), the browsers don't open production:
 - the `web-export` job builds the same code that production runs;
-- each browser job serves it on its own runner and opens that, so the check never comes up.
+- each browser job serves it on its own runner and opens that, so the check never comes up;
+- there is no API there, so `serve.mjs` answers it as it would a signed-out visitor: every `/v1` read is 401, so `/dashboard` shows its sign-in, and the sign-in settings offer an email code only. Nothing is sent anywhere.
 
 The emulators still open the real app. When the check holds it back, the job prints `CHALLENGED` and adds a line to the run's summary, but it doesn't fail; the layout checks still run.
 

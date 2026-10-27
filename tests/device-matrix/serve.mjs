@@ -7,6 +7,11 @@
 //
 // A path is its file, or its folder's index.html (the export's trailing-slash pages); anything else
 // is the export's 404.html with status 404. Nothing outside the export is ever served.
+//
+// There is no API here, so /v1 answers as it does a signed-out visitor: 401 for everything, as a
+// signed-out session read gets (so /dashboard shows sign-in, not "Can't reach Sales X-Ray"), except the
+// public sign-in settings, which offer an email code and no Google, Apple, Facebook or Pulse (nothing
+// here could open them). Nothing is ever sent anywhere.
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
@@ -48,7 +53,30 @@ export async function fileFor(path) {
   return null;
 }
 
+const SIGN_IN_SETTINGS = {
+  enabled: true,
+  consent_version: "device-matrix",
+  google_enabled: false,
+  apple_enabled: false,
+  facebook_enabled: false,
+  pulse_enabled: false,
+  expires_in_seconds: 600,
+  resend_after_seconds: 30,
+};
+
+/** What the API would tell a signed-out visitor: [status, body]. */
+export function apiAnswer(method, path) {
+  if (method === "GET" && path.split("?")[0] === "/v1/auth/email-code/config") return [200, SIGN_IN_SETTINGS];
+  return [401, { detail: "Not signed in." }];
+}
+
 const server = createServer(async (request, response) => {
+  if ((request.url || "").startsWith("/v1/")) {
+    const [status, body] = apiAnswer(request.method, request.url);
+    response.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+    response.end(JSON.stringify(body));
+    return;
+  }
   const file = await fileFor(request.url || "/");
   const body = await readFile(file || join(root, "404.html")).catch(() => Buffer.from("Not found"));
   response.writeHead(file ? 200 : 404, {

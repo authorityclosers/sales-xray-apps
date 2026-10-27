@@ -242,7 +242,8 @@ jobs:
           - { api: 33, device: pixel_6, variants: "punch-hole,notch,font-large", ram: "" }
           - { api: 33, device: small_phone, variants: "font-large,buttons", ram: "3072" }
           - { api: 34, device: medium_phone, variants: "punch-hole,gesture", ram: "3072" }
-          - { api: 34, device: pixel_7a, variants: "dark,font-large", ram: "" }
+          # pixel_5, not pixel_7a: the runner's emulator tools have no pixel_7a (run 40496250430).
+          - { api: 34, device: pixel_5, variants: "dark,font-large", ram: "" }
           - { api: 35, device: pixel_7, variants: "punch-hole,dark,gesture,buttons", ram: "" }
           - { api: 35, device: pixel_tablet, variants: "dark", ram: "" }
     steps:
