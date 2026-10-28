@@ -20,7 +20,7 @@ TOOL="$platform/infra/application/scripts/sx-web-bundle"
 SERVE="$out/serve"
 mkdir -p "$out/shots" "$SERVE/v1/app-web"
 [ -x "$TOOL" ] || [ -f "$TOOL" ] || { echo "The platform ref has no sx-web-bundle (infra/application/scripts): use a ref with live web updates."; exit 1; }
-: "${SX_TEST_KEY:?SX_TEST_KEY is the run's throwaway signing key}"
+: "${SX_TEST_KEY:?SX_TEST_KEY is the throwaway signing key made for this run}"
 KEY=$(python3 "$TOOL" public-key)
 builtin_commit_ms=$(( $(git -C "$platform" log -1 --format=%ct) * 1000 ))
 
