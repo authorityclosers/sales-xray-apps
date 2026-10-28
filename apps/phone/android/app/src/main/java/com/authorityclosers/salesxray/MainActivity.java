@@ -255,7 +255,11 @@ public class MainActivity extends BridgeActivity {
         if (phone != null) phone.setBundledWeb(next);
         String site = LeadAlerts.serverUrl(this);
         if (site == null) return;
-        getBridge().getWebView().loadUrl(site.replaceAll("/+$", "") + (next.on() ? "/dashboard/" : "/"));
+        WebView page = getBridge().getWebView();
+        // Nothing the failed copy loaded is used again: the WebView keeps scripts in memory by address, and
+        // two copies can share an address (an emulator proof whose broken bundle kept B2's file names).
+        page.clearCache(true);
+        page.loadUrl(site.replaceAll("/+$", "") + (next.on() ? "/dashboard/" : "/"));
         if (next.on()) live.watch(next, this::useWeb);
     }
 
