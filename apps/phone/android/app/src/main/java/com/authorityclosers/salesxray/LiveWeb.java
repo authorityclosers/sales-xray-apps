@@ -129,7 +129,7 @@ final class LiveWeb {
             // A copy the app won't serve pages from (the seller chose the live website, or it is too old) proves nothing.
             if (web != null && !web.on()) state.boot = null;
             save();
-            cleanUp();
+            cleanUpSoon();
             if (launch.builtIn()) {
                 if (builtIn.sha().equals(state.builtInSha)) builtIn.confirmed(state.builtInConfirmedAtMs);
                 Log.i(TAG, "start: the app's own web copy " + shortSha(builtIn.sha()));
@@ -157,7 +157,7 @@ final class LiveWeb {
             if (serving == null || state.boot == null) return;
             LiveWebRules.ready(state, serving.sha256);
             save();
-            cleanUp();
+            cleanUpSoon();
             Log.i(TAG, "web update " + serving.version + " (" + serving.id() + ") is up");
         }
     }
@@ -213,6 +213,7 @@ final class LiveWeb {
             serving = launch.bundle;
             state.lastResult = "rolled_back";
             save();
+            cleanUpSoon();
             Log.w(
                 TAG,
                 "web update " + failed.version + " (" + failed.id() + ") did not start in " + (LiveWebRules.READY_TIMEOUT_MS / 1000) +
@@ -348,10 +349,22 @@ final class LiveWeb {
         return ids;
     }
 
-    /** Folders no longer needed go: only the bundle in use, the one before it and one waiting stay. */
-    private void cleanUp() {
-        Set<String> keep = state.kept();
-        if (serving != null) keep.add(serving.id());
+    /**
+     * Folders no longer needed go: only the bundle in use, the one before it and one waiting stay. On the
+     * background thread, after any download already queued there, so a bundle just unpacked is always kept.
+     */
+    private void cleanUpSoon() {
+        io.execute(() -> {
+            Set<String> keep;
+            synchronized (lock) {
+                keep = state.kept();
+                if (serving != null) keep.add(serving.id());
+            }
+            deleteExcept(keep);
+        });
+    }
+
+    private void deleteExcept(Set<String> keep) {
         File[] list = bundles.listFiles();
         if (list == null) return;
         for (File file : list) {

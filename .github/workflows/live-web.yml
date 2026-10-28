@@ -9,13 +9,27 @@ name: Live web updates
 # sx-web-bundle, with a key made for this run alone and thrown away with the runner: never the release key, which
 # exists only in Infisical. The debug build reads them from the runner (src/debug/assets/live-web.json, written
 # here and never committed); the release build pins no test key.
+#
+# On a pull request that touches live web updates it runs against the platform ref in
+# .github/live-web-platform-ref (main once the platform's live web updates are released; until then a workbench
+# snapshot that has them). A manual run on main can name any ref.
 on:
   workflow_dispatch:
     inputs:
       web_ref:
         description: Platform repo ref with live web updates (sx-web-bundle and the page's webReady)
         type: string
-        default: main
+        default: ""
+  pull_request:
+    paths:
+      - apps/phone/android/app/src/main/java/com/authorityclosers/salesxray/LiveWeb*.java
+      - apps/phone/android/app/src/main/java/com/authorityclosers/salesxray/BundledWeb*.java
+      - apps/phone/android/app/src/main/java/com/authorityclosers/salesxray/Ed25519.java
+      - apps/phone/android/app/src/main/assets/live-web.json
+      - apps/phone/scripts/build-web-shell.sh
+      - scripts/emulator-live-web.sh
+      - .github/workflows/live-web.yml
+      - .github/live-web-platform-ref
 
 permissions:
   contents: read
@@ -39,17 +53,27 @@ jobs:
           node-version: 24.19.0
       - name: Use the runner's JDK 21
         run: echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - name: Which platform ref
+        id: web
+        env:
+          ASKED: ${{ inputs.web_ref }}
+        run: |
+          ref=${ASKED:-$(tr -d '[:space:]' < .github/live-web-platform-ref)}
+          [[ "$ref" =~ ^[A-Za-z0-9._/-]{1,120}$ ]] || { echo "bad platform ref: $ref"; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Platform ref: $ref" >> "$GITHUB_STEP_SUMMARY"
       - name: Check out the web app (platform repo)
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: authorityclosers/authority-closers-platform
-          ref: ${{ inputs.web_ref }}
+          ref: ${{ steps.web.outputs.ref }}
           path: platform
           persist-credentials: false
       - name: The platform ref has live web updates
         run: |
-          test -f platform/infra/application/scripts/sx-web-bundle || { echo "platform@${{ inputs.web_ref }} has no sx-web-bundle"; exit 1; }
-          grep -q "webReady" platform/apps/sales-xray-web/app/web-ready.tsx || { echo "platform@${{ inputs.web_ref }} has no webReady"; exit 1; }
+          test -f platform/infra/application/scripts/sx-web-bundle || { echo "the platform ref has no sx-web-bundle"; exit 1; }
+          grep -q "webReady" platform/apps/sales-xray-web/app/web-ready.tsx || { echo "the platform ref has no webReady"; exit 1; }
+          echo "Platform commit: $(git -C platform rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       - name: Python with cryptography, for the platform's signer
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
