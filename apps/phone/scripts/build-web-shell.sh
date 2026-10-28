@@ -16,6 +16,8 @@ host=$3
 cd "$platform"
 sha=$(git rev-parse HEAD)
 ref=$(git describe --always --tags 2>/dev/null || echo "$sha")
+# The commit's own time: live web updates (LiveWeb) compare releases by it, so a rebuild of an old commit stays old.
+commit_ms=$(( $(git log -1 --format=%ct) * 1000 ))
 corepack enable
 corepack prepare pnpm@11.19.0 --activate
 pnpm install --frozen-lockfile --filter "@ac/sales-xray-web..."
@@ -33,7 +35,7 @@ find "$out" -name '*.map' -delete
 # bundle stays under the 10 MB the upload takes (orchestrator, 23 Oct 2026). Their index and colour logos stay in.
 find "$out/brands" -maxdepth 1 -name '?.json' -delete 2>/dev/null || true
 
-SX_OUT="$out" SX_SHA="$sha" SX_REF="$ref" SX_HOST="$host" node -e '
+SX_OUT="$out" SX_SHA="$sha" SX_REF="$ref" SX_HOST="$host" SX_COMMIT_MS="$commit_ms" node -e '
 const fs = require("fs");
 const path = require("path");
 const root = process.env.SX_OUT;
@@ -51,6 +53,7 @@ const manifest = {
   sha: process.env.SX_SHA,
   ref: process.env.SX_REF,
   builtAtMs: Date.now(),
+  commitAtMs: Number(process.env.SX_COMMIT_MS),
   files,
 };
 fs.writeFileSync(path.join(root, "sx-web.json"), JSON.stringify(manifest));

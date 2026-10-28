@@ -77,6 +77,8 @@ final class PhoneBridge {
     /** Google and Facebook sign-in inside the app (NativeSignIn). */
     private final NativeSignIn nativeSignIn;
     private BundledWeb bundled;
+    /** Live web updates (LiveWeb): the page's ready signal goes there. */
+    private LiveWeb live;
     private JavaScriptReplyProxy pushReply;
     private String pushId;
     private JavaScriptReplyProxy logReply;
@@ -98,6 +100,17 @@ final class PhoneBridge {
 
     void setBundledWeb(BundledWeb bundled) {
         this.bundled = bundled;
+    }
+
+    void setLiveWeb(LiveWeb live) {
+        this.live = live;
+    }
+
+    /** The app's own copy of the web app, and its live updates. */
+    private JSONObject webShellStatus() throws JSONException {
+        JSONObject status = bundled == null ? new JSONObject().put("available", false) : bundled.status();
+        if (live != null) status.put("liveWeb", live.status());
+        return status;
     }
 
     void onResume() {
@@ -341,14 +354,22 @@ final class PhoneBridge {
                     break;
                 }
                 case "webShell":
-                    // The app's own copy of the web app (S9): built from which version, on or off.
-                    reply(reply, id, bundled == null ? new JSONObject().put("available", false) : bundled.status());
+                    // The app's own copy of the web app (S9): built from which version, on or off, and its live updates.
+                    reply(reply, id, webShellStatus());
                     break;
                 case "setWebShell": {
                     // "Use the live website" (support, or a page the copy can't show): the page reloads.
                     if (bundled != null) bundled.setLive(args.optBoolean("live"));
-                    reply(reply, id, bundled == null ? new JSONObject().put("available", false) : bundled.status());
+                    reply(reply, id, webShellStatus());
                     main.post(webView::reload);
+                    break;
+                }
+                case "webReady": {
+                    // The page is up (the web app's root layout says so once it has hydrated): a new web
+                    // update has proved it starts (LiveWeb), so it isn't rolled back.
+                    LiveWeb target = live;
+                    if (target != null) main.post(target::ready);
+                    reply(reply, id, new JSONObject().put("nativeContract", LiveWebRules.NATIVE_CONTRACT));
                     break;
                 }
                 case "checkRecording": {
@@ -583,6 +604,8 @@ final class PhoneBridge {
             status.put("autoAttach", true);
             status.put("audioCheck", true);
             status.put("webShell", bundled != null && bundled.on());
+            // What this build's native side offers a web release (LiveWebRules.NATIVE_CONTRACT).
+            status.put("nativeContract", LiveWebRules.NATIVE_CONTRACT);
             status.put("version", versionName());
             // window.SXHaptics's tokens (owner, 25 Oct 2026).
             status.put("haptics", new JSONArray(Arrays.asList(HapticRules.TOKENS)));

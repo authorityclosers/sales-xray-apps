@@ -101,3 +101,5 @@ app/src/main/res/xml/config.xml
 
 # The web app's static export, built into the app by CI (scripts/build-web-shell.sh)
 app/src/main/assets/web/
+# The live web update test writes its own settings here (scripts/emulator-live-web.sh); never committed.
+app/src/debug/assets/
