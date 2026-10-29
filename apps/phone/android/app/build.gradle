@@ -16,14 +16,14 @@ android {
         // Play builds (play.yml) number themselves above every sideload build.
         if (System.getenv("SX_VERSION_CODE")) versionCode(System.getenv("SX_VERSION_CODE").toInteger())
         if (System.getenv("SX_VERSION_NAME")) versionName System.getenv("SX_VERSION_NAME")
-        manifestPlaceholders = [appLabel: "Sales X-Ray"]
+        manifestPlaceholders = [appIcon: "@mipmap/ic_launcher", appRoundIcon: "@mipmap/ic_launcher_round", appLabel: "Sales X-Ray"]
         // The call recorder listens to this app's own events only (call_recorder_service.xml).
         resValue "string", "sx_self_package", "com.authorityclosers.salesxray"
         // -PsxDev builds "Sales Xray Dev": dev's site, installed beside the real app.
         if (project.hasProperty("sxDev")) {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
-            manifestPlaceholders = [appLabel: "Sales X-Ray Dev"]
+            manifestPlaceholders = [appIcon: "@mipmap/ic_launcher", appRoundIcon: "@mipmap/ic_launcher_round", appLabel: "Sales X-Ray Dev"]
             resValue "string", "sx_self_package", "com.authorityclosers.salesxray.dev"
         }
         // Which store this build is for (the page and the setup checklist read it).
@@ -44,11 +44,21 @@ android {
         direct {
             dimension "store"
         }
+        staging {
+            dimension "store"
+            applicationIdSuffix ".staging"
+            versionNameSuffix "-staging"
+            manifestPlaceholders = [appIcon: "@drawable/staging_icon", appRoundIcon: "@drawable/staging_icon", appLabel: "Sales X-Ray Staging"]
+            resValue "string", "sx_self_package", "com.authorityclosers.salesxray.staging"
+            resValue "string", "sx_store", "play"
+        }
         play {
             dimension "store"
             resValue "string", "sx_store", "play"
         }
     }
+    // Staging uses the Play permission/service overlay, never a fork of native code.
+    sourceSets { staging { manifest.srcFile 'src/play/AndroidManifest.xml' } }
     signingConfigs {
         // No key lives in this public repo. Debug builds are signed with the
         // runner's throwaway debug key: fine for a test install, never
