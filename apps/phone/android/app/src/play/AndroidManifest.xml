@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The Google Play build (the "play" flavour). Removed, because Play allows them only for other kinds of app:
-  - call history (READ_CALL_LOG), until Play approves the Enterprise CRM declaration
-    (docs/play/call-log-declaration.md; orchestrator, 29 Oct 2026: the bundle that keeps it goes up only with
-    that declaration). Auto-capture works without it: it matches the number in the dialer recording's name;
+  The Google Play build (the "play" flavour). READ_CALL_LOG is kept under the Enterprise CRM exception
+  (docs/play/call-log-declaration.md): it is asked for only after the organisation login check and the disclosure,
+  and the bundle goes up only together with that declaration (play.yml waits for PLAY_CALL_LOG_DECLARATION).
+  Removed, because Play allows them only for other kinds of app:
   - placing calls directly (CALL_PHONE): the app opens the dialer with the number in;
   - all-files access (Play's All files access policy): the dialer's recordings are read as audio
     (READ_MEDIA_AUDIO), and through a folder the seller picks where the phone hides them;
@@ -19,7 +19,7 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <uses-permission android:name="android.permission.READ_CALL_LOG" tools:node="remove" />
+    <!-- Enterprise CRM exception: organisation login and disclosure before the runtime request. -->
     <uses-permission android:name="android.permission.CALL_PHONE" tools:node="remove" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" tools:node="remove" />

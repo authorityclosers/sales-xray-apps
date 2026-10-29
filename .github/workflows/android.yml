@@ -187,9 +187,12 @@ jobs:
             if grep -q "android:name=\"$banned\"" "$play"; then echo "Play flavour still declares $banned ($play)"; exit 1; fi
             grep -q "android:name=\"$banned\"" "$direct" || { echo "Direct flavour lost $banned ($direct)"; exit 1; }
           done
-          # Call history stays out of Play until Google approves the Enterprise CRM declaration (orchestrator, 29 Oct 2026).
-          if grep -q 'android:name="android.permission.READ_CALL_LOG"' "$play"; then echo "Play flavour declares READ_CALL_LOG before Play approved it"; exit 1; fi
-          grep -q 'android:name="android.permission.READ_CALL_LOG"' "$direct" || { echo "Direct flavour lost READ_CALL_LOG"; exit 1; }
+          # Call history in both builds; in Play under the Enterprise CRM declaration (docs/play/call-log-declaration.md).
+          for manifest in "$play" "$direct"; do
+            grep -q 'android:name="android.permission.READ_CALL_LOG"' "$manifest" || { echo "READ_CALL_LOG missing from $manifest"; exit 1; }
+          done
+          # The declaration names READ_CALL_LOG alone: nothing else from Play's call log and SMS group.
+          if grep -E 'android:name="android\.permission\.(WRITE_CALL_LOG|PROCESS_OUTGOING_CALLS|READ_SMS|SEND_SMS|RECEIVE_SMS|RECEIVE_MMS|RECEIVE_WAP_PUSH|READ_CELL_BROADCASTS)"' "$play"; then echo "Play flavour declares a call log or SMS permission the declaration doesn't cover"; exit 1; fi
           # Backup off in the Play build (cloud backup would copy in-app meeting recordings to Google Drive).
           grep -q 'android:allowBackup="false"' "$play" || { echo "Play flavour still allows backup"; exit 1; }
           # No microphone in the first Play version (owner, 24 Oct 2026); the download-link app keeps the
