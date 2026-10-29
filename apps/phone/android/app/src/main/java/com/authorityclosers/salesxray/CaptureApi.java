@@ -35,6 +35,7 @@ class CaptureApi {
             c.setRequestMethod(method);
             c.setRequestProperty("Accept", "application/json");
             c.setRequestProperty("Origin", base);
+            c.setRequestProperty("User-Agent", AppUserAgent.current() + " (auto-capture)");
             String cookies = CookieManager.getInstance().getCookie(base);
             if (cookies == null || cookies.isEmpty()) throw new Failure(401);
             SessionCookies.attach(c, cookies);
@@ -43,6 +44,7 @@ class CaptureApi {
             if (standing) c.setRequestProperty("X-Upload-Consent", "standing");
             if (sha != null) {
                 c.setRequestProperty("X-Source-Sha256", sha);
+                c.setRequestProperty("X-Capture-Source", "android_dialer_pickup");
                 c.setRequestProperty("X-Upload-Policy", policy);
             }
             if (input != null) {

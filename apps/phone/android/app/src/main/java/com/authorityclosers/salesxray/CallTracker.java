@@ -181,6 +181,7 @@ final class CallTracker {
         finishing = true;
         unwatch();
         put(call, "endedMs", System.currentTimeMillis());
+        AutoCapture.afterCall(activity, call.optLong("startedMs"));
         save(call);
         io.execute(() -> settle(call));
     }

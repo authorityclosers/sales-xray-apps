@@ -53,7 +53,7 @@ duration and direction. Show a seeded non-lead call staying absent from CRM hist
 Do not describe this permission as a call recorder. Folder upload is a separate demonstration.
 
 ## Data safety changes
-Declare phone number and call activity metadata collected for App functionality, optional,
+Declare **Contacts → Contacts** (lead contact numbers and call history) collected for App functionality, optional,
 non-ephemeral, encrypted in transit, user-deletable through existing paths. Add audio entries only
 with the separate folder-upload feature (`auto-capture-compliance.md`). Reconcile the full app's
 existing provider/SDK declaration; do not mark the whole app as collecting only these fields.

@@ -13,7 +13,7 @@ standing-consent `notice.text` and upload-policy `privacy_details`, followed by:
 > Turn this off in Settings at any time.
 
 Nothing is prechecked. Not now and Back leave uploads off. Enabling starts from now; no historical
-backfill. Wi-Fi only is the default (Android unmetered network constraint); Any network is explicit.
+backfill. Wi-Fi only is the default (Android unmetered constraint plus an active Wi-Fi transport check); Any network is explicit.
 Maximum file size: 100,000,000 bytes. WorkManager may delay execution, especially on HyperOS.
 
 The Play app does not create call recordings: the phone dialler does. A readable persisted folder
@@ -29,8 +29,8 @@ analytics, authentication or crash-reporting SDKs.
 | --- | --- |
 | Does the app collect or share required user data types? | Yes |
 | Audio files → Voice or sound recordings | Collected: Yes; processed ephemerally: No; optional: Yes; purpose: App functionality |
-| Personal info → Phone number | Collected: Yes, only workspace lead call numbers; ephemeral: No; optional: Yes; purpose: App functionality |
-| App activity → Other actions | Collected: Yes, lead call time, duration and direction when available; ephemeral: No; optional: Yes; purpose: App functionality |
+| Contacts → Contacts | Collected: Yes, workspace lead contact numbers and call history (time, duration, direction when available); ephemeral: No; optional: Yes; purpose: App functionality |
+| Personal info → Phone number | Keep the existing account-phone answer; this feature adds lead contact numbers under Contacts, not the seller’s own number |
 | Is all user data encrypted in transit? | Yes, HTTPS to the app's own origin |
 | Can users request deletion? | Yes, existing Calls deletion and account deletion paths |
 | Data used for advertising or sold? | No for this feature |
@@ -57,3 +57,7 @@ The upload API has atomic PUT, not byte-range resumption. WorkManager resumes th
 reconciling the same submission UUID before sending; an interrupted unaccepted transfer restarts
 its bytes. Never claim byte-range resume. Stable UUIDs and attachment/plan keys prevent duplicate
 server objects on retries. No new long-lived phone secret is used.
+
+Google's Data safety taxonomy puts contact recency, interaction duration and call history under
+**Contacts**, even though this feature never requests READ_CONTACTS. Source:
+https://support.google.com/googleplay/android-developer/answer/10787469?hl=en .

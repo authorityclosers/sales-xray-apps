@@ -14,6 +14,15 @@ import org.json.*;
 final class AutoCapture {
     static final String PREFS = "sx_auto_capture";
     static final String DISCLOSURE = "Sales X-Ray reads call history only while you are signed in to an organisation workspace, to log the number, time, duration and direction of calls with that workspace's leads. Other calls are not uploaded. You can turn work-call logging off at any time.";
+    static boolean noticesAllowed(Context c) {
+        if (!androidx.core.app.NotificationManagerCompat.from(c).areNotificationsEnabled()) return false;
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            NotificationManager manager = c.getSystemService(NotificationManager.class);
+            NotificationChannel channel = manager == null ? null : manager.getNotificationChannel("auto_capture");
+            return channel == null || channel.getImportance() != NotificationManager.IMPORTANCE_NONE;
+        }
+        return true;
+    }
     static SharedPreferences prefs(Context c) { return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE); }
     static JSONObject status(Context c) throws JSONException {
         return new JSONObject().put("supported", true).put("on", prefs(c).getBoolean("on", false))
@@ -21,7 +30,7 @@ final class AutoCapture {
     }
     static void configure(Context c, JSONObject book, boolean on, boolean wifi) throws Exception {
         String identity = CaptureRules.identity(book);
-        if (on && !androidx.core.app.NotificationManagerCompat.from(c).areNotificationsEnabled()) throw new Exception("Allow upload notifications first, so Undo is available.");
+        if (on && !noticesAllowed(c)) throw new Exception("Allow upload notifications first, so Undo is available.");
         if (on && (identity.isEmpty() || RecordingFolder.trees(c).isEmpty())) throw new Exception("Pick your recordings folder inside an organisation workspace first.");
         SharedPreferences p = prefs(c);
         if (on && (!p.getBoolean("on", false) || !identity.equals(p.getString("identity", "")))) {
@@ -50,10 +59,17 @@ final class AutoCapture {
                 .setInitialDelay(30, TimeUnit.SECONDS).setConstraints(new Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED).build()).build());
     }
+    static void afterCall(Context c, long started) {
+        if (!prefs(c).getBoolean("on", false)) return;
+        WorkManager.getInstance(c).enqueueUniqueWork("sx-auto-after-call:" + started, ExistingWorkPolicy.KEEP,
+            new OneTimeWorkRequest.Builder(CaptureWatchWorker.class).addTag("sx-auto-capture")
+                .setInitialDelay(90, TimeUnit.SECONDS).setConstraints(new Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED).build()).build());
+    }
     static void scan(Context c) throws Exception {
         CaptureApi api = new CaptureApi(c);
         JSONObject book = api.book();
-        if (!enabled(c, book) || !androidx.core.app.NotificationManagerCompat.from(c).areNotificationsEnabled()) return;
+        if (!enabled(c, book) || !noticesAllowed(c)) return;
         JSONObject policy = api.policy();
         if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) return;
         long now = System.currentTimeMillis();
@@ -94,7 +110,7 @@ final class AutoCapture {
                 .put("stamp", stamp).put("saved", doc.modifiedMs).put("size", doc.size)
                 .put("seconds", seconds).put("leadId", call.getString("lead_id"))
                 .put("eventId", call.getString("event_id")).put("leadName", call.optString("lead_name", "lead"))
-                .put("state", "waiting").put("due", now + CaptureRules.UNDO_MS);
+                .put("state", "waiting").put("due", System.currentTimeMillis() + CaptureRules.UNDO_MS);
             // Commit before scheduling. A process restart sees the same job and submission id.
             prefs(c).edit().putString("job:" + id, job.toString()).commit();
             notice(c, id, "Call with " + job.optString("leadName", "lead") + " waiting for upload", "Uploads in 60 seconds. Undo keeps this recording on your phone.", true);
