@@ -58,7 +58,12 @@ android {
         }
     }
     // Staging uses the Play permission/service overlay, never a fork of native code.
-    sourceSets { staging { manifest.srcFile 'src/play/AndroidManifest.xml' } }
+    sourceSets {
+        staging {
+            manifest.srcFile 'src/play/AndroidManifest.xml'
+            java.srcDir 'src/play/java'
+        }
+    }
     signingConfigs {
         // No key lives in this public repo. Debug builds are signed with the
         // runner's throwaway debug key: fine for a test install, never
@@ -123,8 +128,10 @@ dependencies {
     implementation "com.google.firebase:firebase-crashlytics:19.4.4"
     // Google Play in-app updates, in the Play build only (src/play/StoreUpdates.java).
     playImplementation "com.google.android.play:app-update:2.1.0"
+    stagingImplementation "com.google.android.play:app-update:2.1.0"
     // Google Play In-App Review, Play build only (src/play/StoreReview.java).
     playImplementation "com.google.android.play:review:2.0.2"
+    stagingImplementation "com.google.android.play:review:2.0.2"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     // Plain-JVM tests read and write JSON (Android's own org.json is only a stub there).

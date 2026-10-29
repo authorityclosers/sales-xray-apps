@@ -2,7 +2,7 @@
 
 The Capacitor Android build is the reference for phone bugs. Localhost browser checks do not cover the bundled web copy, Android WebView, native bridge, permissions or system bars.
 
-Staging installs beside Play as `com.authorityclosers.salesxray.staging`, labelled **Sales X-Ray Staging**, with a purple and gold icon. It uses `https://salesxray-staging.authorityclosers.com`. Its native sources are shared, and its manifest is the **same Play overlay**, including auto-capture changes from PR #10; it does not gain the direct build's restricted recorder services. Its data and sign-in are separate from Play. Staging's source-set Capacitor config overrides the main asset after `cap sync`; the S9 manifest must name staging too.
+Staging installs beside Play as `com.authorityclosers.salesxray.staging`, labelled **Sales X-Ray Staging**, with a purple and gold icon. It uses `https://salesxray-staging.authorityclosers.com`. Its native sources (including Play Java) are shared, and its manifest is the **same Play overlay**, including auto-capture changes from PR #10; it does not gain the direct build's restricted recorder services. Its data and sign-in are separate from Play. Staging's source-set Capacitor config overrides the main asset after `cap sync`; the S9 manifest must name staging too.
 
 ## Build an exact staging revision
 
@@ -14,7 +14,7 @@ gh workflow run staging-android.yml -R authorityclosers/sales-xray-apps --ref ma
 
 The workflow bundles S9 from that exact platform checkout, builds `assembleStagingRelease` with the existing `android-release` environment and `SX_ANDROID_SIGNING_STORE_BASE64` / `SX_ANDROID_SIGNING_PASSWORD`, and keeps `sales-xray-staging-N` for 14 days. It does not publish a release or upload to Play. The existing environment approval is retained; no new signing secret is needed. PR builds run unit tests, compare staging and Play merged permissions/services, and compile a debug APK. Debug PR APKs have throwaway keys and are not the durable QA upgrade path. Missing signing secrets fail the signed build.
 
-The artifact contains `sales-xray-staging.apk`, its checksum, `platform-sha.txt` and `apps-sha.txt`. Review the source pins when filing a bug. The staging flavour uses `sx_store=play` to retain native Play behaviour. Future store-update/review code must continue to require the real production package before opening Google Play.
+The artifact contains `sales-xray-staging.apk`, its checksum, `platform-sha.txt` and `apps-sha.txt`. Review the source pins when filing a bug. The staging flavour uses `sx_store=play` to retain native Play behaviour. Shared Play update/review entry points require the production package, so staging never launches a Play flow. A sideloaded staging package cannot receive Play distribution updates or submit a store review.
 
 ## One command on the owner's laptop
 

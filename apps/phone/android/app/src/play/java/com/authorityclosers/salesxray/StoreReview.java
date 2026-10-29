@@ -22,6 +22,10 @@ final class StoreReview {
     }
 
     static void ask(Activity activity, Done done) {
+        if (!"com.authorityclosers.salesxray".equals(activity.getPackageName())) {
+            done.shown(false);
+            return;
+        }
         try {
             ReviewManager manager = ReviewManagerFactory.create(activity);
             manager.requestReviewFlow().addOnCompleteListener(request -> {

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 const read = p => readFileSync(new URL('../' + p, import.meta.url), 'utf8');
 test('staging inherits Play overlay and keeps native sources shared', () => {
   const gradle = read('apps/phone/android/app/build.gradle');
-  assert.match(gradle, /staging \{ manifest.srcFile 'src\/play\/AndroidManifest.xml'/);
+  assert.match(gradle, /manifest.srcFile 'src\/play\/AndroidManifest.xml'/);
   assert.match(gradle, /applicationIdSuffix "\.staging"/);
   assert.match(gradle, /appLabel: "Sales X-Ray Staging"/);
   assert.match(gradle, /sx_self_package", "com.authorityclosers.salesxray.staging"/);
@@ -25,4 +25,13 @@ test('QA workflow requires exact staging web ref and cannot publish', () => {
   assert.match(workflow, /secrets.SX_ANDROID_SIGNING_STORE_BASE64/);
   assert.doesNotMatch(workflow, /play-upload|gh release|bundlePlayRelease|contents: write/);
   assert.match(workflow, /SX_STAGING_TESTLAB_ENABLED == 'true'/);
+});
+
+test('staging shares Play Java but cannot launch its store flows', () => {
+  const gradle = read('apps/phone/android/app/build.gradle');
+  assert.match(gradle, /java.srcDir 'src\/play\/java'/);
+  for (const name of ['StoreUpdates', 'StoreReview']) {
+    const source = read(`apps/phone/android/app/src/play/java/com/authorityclosers/salesxray/${name}.java`);
+    assert.match(source, /!"com.authorityclosers.salesxray".equals\(activity.getPackageName\(\)\)/);
+  }
 });
