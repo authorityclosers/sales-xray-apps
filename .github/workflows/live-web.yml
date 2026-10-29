@@ -107,10 +107,12 @@ jobs:
         env:
           SX_BUILD_NUMBER: ${{ github.run_number }}
         run: ./gradlew --no-daemon --stacktrace assembleDirectDebug
-      - name: The release build pins no key
+      - name: The release build pins only the owner-approved production key
         working-directory: apps/phone/android
+        # Owner approved live web updates on 29 Oct 2026. Production pins exactly this public key (its private seed is only in
+        # Infisical prod /app-web); every other site pins none. Any other key, or a second one, fails the build.
         run: |
-          python3 -c "import json,sys; sites=json.load(open('app/src/main/assets/live-web.json'))['sites']; assert all(not s['keys'] for s in sites.values()), 'live-web.json pins a key'"
+          python3 -c "import json,sys; sites=json.load(open('app/src/main/assets/live-web.json'))['sites']; prod='salesxray.authorityclosers.com'; approved=['770e00b4a94665ae2caeb379cf678ad31f470cf88b32b74b998861f6395f90d8']; assert sites[prod]['keys']==approved, 'production must pin exactly the approved key'; assert all(not s['keys'] for h,s in sites.items() if h!=prod), 'only production may pin a key'"
       - name: Let the emulator use KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
