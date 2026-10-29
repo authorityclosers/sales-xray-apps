@@ -23,6 +23,7 @@ stage. The first stage that doesn't happen fails the run, and the error names it
 - By hand: Actions → Pipeline simulator (staging) → Run workflow, or `gh workflow run pipeline-sim.yml
   -R authorityclosers/sales-xray-apps [-f nudge=true]`.
 - Nightly at 03:00 IST once the Infisical identity below exists and the repository variable `SX_SIM_ENABLED` is `true`.
+- One analysis a night on staging: about 44 s of fictional audio from the staging workspace's minutes.
 
 ## The staging login: Infisical only, read with the run's GitHub OIDC token
 AGENTS.md keeps secrets only in Infisical and the team password manager, so nothing is stored in GitHub. The run
@@ -53,7 +54,6 @@ One-time setup (the owner, or the owner's operator on the owner's ask):
 
 For a run by hand on a developer machine, `SX_SIM_EMAIL` and `SX_SIM_PASSWORD` typed into that run's environment
 take the place of Infisical.
-- One analysis a night on staging: about 44 s of fictional audio from the staging workspace's minutes.
 
 ## What a run keeps (artifact `pipeline-sim-<n>`, 14 days)
 - `summary.md`: the stage table, also in the run summary.
