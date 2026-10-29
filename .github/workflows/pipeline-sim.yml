@@ -1,0 +1,101 @@
+name: Pipeline simulator (staging)
+# The whole call-to-report path on an emulator against staging, timed per stage (owner order, 30 Oct 2026).
+# scripts/pipeline-sim.sh says what it drives; docs/qa/pipeline-sim.md how to read a red run.
+# Nightly once the staging login is set (environment staging-sim + variable SX_SIM_ENABLED=true); by hand any time.
+on:
+  schedule:
+    - cron: "30 21 * * *" # 03:00 IST
+  workflow_dispatch:
+    inputs:
+      nudge:
+        description: Run the app's jobs at once instead of waiting for Android's schedule (faster, less real)
+        type: boolean
+        default: false
+      app:
+        description: The app after set-up
+        type: choice
+        options: [background, killed]
+        default: background
+      web_ref:
+        description: Platform commit for the bundled web copy (default main)
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  # One analysis at a time on staging.
+  group: pipeline-sim
+  cancel-in-progress: false
+jobs:
+  simulate:
+    if: github.event_name == 'workflow_dispatch' || vars.SX_SIM_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: staging-sim
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: The staging login is set
+        env:
+          SX_SIM_EMAIL: ${{ secrets.SX_SIM_EMAIL }}
+          SX_SIM_PASSWORD: ${{ secrets.SX_SIM_PASSWORD }}
+        run: |
+          if [ -z "$SX_SIM_EMAIL" ] || [ -z "$SX_SIM_PASSWORD" ]; then
+            echo "::error::PIPELINE STUCK at sign_in: SX_SIM_EMAIL and SX_SIM_PASSWORD are not set in environment staging-sim"
+            exit 3
+          fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+      - run: echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - name: Capacitor
+        working-directory: apps/phone
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx cap sync android
+      - name: Platform (bundled web copy and the fictional canary call)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: authorityclosers/authority-closers-platform
+          ref: ${{ inputs.web_ref || 'main' }}
+          path: platform
+          persist-credentials: false
+      - name: Bundle staging web copy (S9)
+        working-directory: apps/phone
+        run: bash scripts/build-web-shell.sh "$GITHUB_WORKSPACE/platform" android/app/src/main/assets/web salesxray-staging.authorityclosers.com
+      - name: Staging app and its device tests (debug, throwaway key)
+        working-directory: apps/phone/android
+        run: |
+          export SX_VERSION_CODE=$(( $(date +%s) / 60 ))
+          export SX_VERSION_NAME="0.4.${GITHUB_RUN_NUMBER}-sim"
+          ./gradlew --no-daemon --stacktrace assembleStagingDebug assembleStagingDebugAndroidTest
+      - name: The canary call is the fictional one
+        run: |
+          wav=platform/packages/python/ac_platform/conversation_intelligence/canary_fixture/sales_call_v1.wav
+          echo "78cb1194e987db6b8d06d0aa2a4d2e66d21bbdf0c3de6960e4e26da36ed207af  $wav" | sha256sum -c -
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Call to report
+        env:
+          SX_SIM_EMAIL: ${{ secrets.SX_SIM_EMAIL }}
+          SX_SIM_PASSWORD: ${{ secrets.SX_SIM_PASSWORD }}
+          SX_SIM_WORKSPACE: ${{ vars.SX_SIM_WORKSPACE || 'Authority Closers' }}
+          SX_SIM_NUDGE: ${{ inputs.nudge && '1' || '0' }}
+          SX_SIM_APP: ${{ inputs.app || 'background' }}
+        run: |
+          bash scripts/pipeline-sim.sh \
+            apps/phone/android/app/build/outputs/apk/staging/debug/app-staging-debug.apk \
+            apps/phone/android/app/build/outputs/apk/androidTest/staging/debug/app-staging-debug-androidTest.apk \
+            platform/packages/python/ac_platform/conversation_intelligence/canary_fixture/sales_call_v1.wav
+      - name: Keep the stage timings and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pipeline-sim-${{ github.run_number }}
+          path: pipeline-sim/
+          if-no-files-found: ignore
+          retention-days: 14
