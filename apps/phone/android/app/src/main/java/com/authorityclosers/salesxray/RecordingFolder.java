@@ -106,6 +106,11 @@ final class RecordingFolder {
 
     /** Files in the picked folders, and in folders inside them (RecordingFolderRules.DEPTH). */
     static List<Document> files(Context context) {
+        return files(context, 0);
+    }
+
+    /** Automatic scans do not let old archive files consume the bounded recent-file list. */
+    static List<Document> files(Context context, long afterMs) {
         List<Document> found = new ArrayList<>();
         String[] columns = {
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -130,7 +135,7 @@ final class RecordingFolder {
                 String folderId = folders.poll();
                 int depth = depths.poll();
                 Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, folderId);
-                try (Cursor cursor = context.getContentResolver().query(children, columns, null, null, null)) {
+                try (Cursor cursor = context.getContentResolver().query(children, columns, null, null, DocumentsContract.Document.COLUMN_LAST_MODIFIED + " DESC")) {
                     if (cursor == null) continue;
                     while (cursor.moveToNext() && found.size() < MAX_FILES) {
                         String id = cursor.getString(0);
@@ -143,6 +148,7 @@ final class RecordingFolder {
                             }
                             continue;
                         }
+                        if (afterMs > 0 && (cursor.isNull(3) || cursor.getLong(3) < afterMs)) continue;
                         Document document = new Document();
                         document.uri = DocumentsContract.buildDocumentUriUsingTree(tree, id);
                         document.name = cursor.getString(1);

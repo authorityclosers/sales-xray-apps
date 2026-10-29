@@ -85,7 +85,7 @@ final class AutoCapture {
                 prefs(c).edit().remove(stored.getKey()).commit();
             }
         }
-        for (RecordingFolder.Document doc : RecordingFolder.files(c)) {
+        for (RecordingFolder.Document doc : RecordingFolder.files(c, Math.max(prefs(c).getLong("since", now), now - CaptureRules.KEEP_MS))) {
             if (doc.size <= 0 || doc.size > CaptureRules.MAX_BYTES || !Arrays.asList("m4a", "mp3", "mpeg", "wav", "ogg", "flac", "aac", "amr", "awb", "3gp", "opus").contains(RecordingScanner.extension(doc.name))) continue;
             String number = CaptureRules.number(doc.name, doc.modifiedMs, now,
                 prefs(c).getLong("since", now), TimeZone.getDefault(), book);
