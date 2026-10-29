@@ -8,10 +8,10 @@ script and Data safety: [call-log-declaration.md](call-log-declaration.md) and
 | Item | Where |
 | --- | --- |
 | PR that adds READ_CALL_LOG to Play and flips the CI checks | authorityclosers/sales-xray-apps PR #12 (merge it only at step 3) |
-| 45-second declaration video (mp4) | Owner's Drive, Sales X-Ray folder: `sales-xray-call-log-declaration.mp4` |
+| 45-second declaration video (mp4, 44.97 s, recorded 29 Oct on the Redmi 13 against staging v1.8.0) | Drive "Sales X-Ray Play listing": [sales-xray-call-log-declaration.mp4](https://drive.google.com/file/d/1RZT2OClpx3frYw1nCHUApKGwz7cQw7sp/view) |
 | Form text | call-log-declaration.md → "Form text" (paste each quoted block as written) |
 | Data safety changes | call-log-declaration.md → "Data safety changes"; auto-capture-compliance.md table |
-| Video build only (never merge; close after recording) | PR #13: staging app with call history |
+| Video build (closed, never merged) | PR #13: the staging app with call history, run 40877680915 |
 
 ## Before you start
 1. **Production has platform v1.8.0 or later.** The Play app's call-log flow needs the phone book's
