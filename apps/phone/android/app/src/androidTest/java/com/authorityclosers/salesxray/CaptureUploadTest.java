@@ -30,12 +30,12 @@ public class CaptureUploadTest {
         @Override InputStream source(Context c, JSONObject job) throws Exception { return new FileInputStream(recording); }
     }
     static class FakeApi extends CaptureApi {
-        int uploads, plans, attaches; boolean consent = true, report, uploaded;
+        int uploads, plans, attaches; boolean consent = true, report, uploaded, loseReply, otherWorkspace;
         String sha;
         FakeApi(Context c) throws Exception { super(c); }
         @Override JSONObject book() throws Exception {
             return new JSONObject().put("organisation_workspace", true).put("tenant_id", SCOPE.split(":")[0])
-                .put("person_id", SCOPE.split(":")[1]).put("numbers", new JSONArray().put("+12025550123"));
+                .put("person_id", otherWorkspace ? ID : SCOPE.split(":")[1]).put("numbers", new JSONArray().put("+12025550123"));
         }
         @Override JSONObject policy() throws Exception { return new JSONObject().put("policy_sha256", HASH); }
         @Override JSONObject consent() throws Exception { return new JSONObject().put("state", consent ? "on" : "off").put("can_start", consent).put("terms_sha256", HASH); }
@@ -52,6 +52,7 @@ public class CaptureUploadTest {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(); byte[] buffer = new byte[1024]; int n;
             while ((n = in.read(buffer)) != -1) bytes.write(buffer, 0, n);
             assertEquals(size, bytes.size()); uploads++; uploaded = true; sha = hash;
+            if (loseReply) { loseReply = false; throw new IOException("lost_response_after_acceptance"); }
             return new JSONObject().put("source_sha256", sha).put("local_state", "running");
         }
     }
@@ -85,6 +86,16 @@ public class CaptureUploadTest {
     }
     @Test public void noConsentMeansNoUploadOrPlan() throws Exception {
         fake.consent = false; worker().doWork(); assertEquals(0, fake.uploads); assertEquals(0, fake.plans);
+        assertEquals("held", AutoCapture.job(c, ID).getString("state"));
+    }
+    @Test public void lostUploadResponseReconcilesWithoutASecondPut() throws Exception {
+        fake.loseReply = true;
+        worker().doWork(); assertEquals(1, fake.uploads); assertEquals(0, fake.plans);
+        worker().doWork(); assertEquals(1, fake.uploads); assertEquals(1, fake.plans);
+    }
+    @Test public void anotherWorkspaceMeansNoAudioLeavesThePhone() throws Exception {
+        fake.otherWorkspace = true; worker().doWork();
+        assertEquals(0, fake.uploads); assertEquals(0, fake.plans);
         assertEquals("held", AutoCapture.job(c, ID).getString("state"));
     }
     @Test public void undoMeansNoUploadOrPlan() throws Exception {

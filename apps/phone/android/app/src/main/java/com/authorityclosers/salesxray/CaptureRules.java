@@ -23,6 +23,17 @@ final class CaptureRules {
             policy.equals(consent.optString("terms_sha256"));
     }
 
+    static boolean samePhone(String raw, String lead) {
+        String a = raw.replaceAll("[^0-9]", "");
+        String b = lead.replaceAll("[^0-9]", "");
+        if (a.startsWith("00")) a = a.substring(2);
+        if (b.startsWith("00")) b = b.substring(2);
+        if (a.equals(b)) return a.length() >= 10;
+        // Indian national/trunk spellings are explicit; foreign country codes never collapse to a suffix.
+        if (a.length() == 11 && a.startsWith("0")) a = a.substring(1);
+        return a.length() == 10 && b.length() == 12 && b.startsWith("91") && b.substring(2).equals(a);
+    }
+
     static String number(String name, long saved, long now, long since, TimeZone zone, JSONObject book) {
         RecordingMatch.Name parsed = RecordingMatch.read(name, zone);
         if (parsed.stampMs <= 0 || parsed.stampMs < since || parsed.stampMs > now ||
@@ -37,7 +48,7 @@ final class CaptureRules {
             String found = null;
             for (int i = 0; numbers != null && i < numbers.length(); i++) {
                 String lead = numbers.optString(i);
-                if (CallLogRules.key(lead).equals(key)) {
+                if (samePhone(raw, lead)) {
                     if (found != null && !found.equals(lead)) return null;
                     found = lead;
                 }

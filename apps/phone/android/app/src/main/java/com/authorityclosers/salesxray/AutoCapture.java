@@ -66,18 +66,20 @@ final class AutoCapture {
             }
         }
         for (RecordingFolder.Document doc : RecordingFolder.files(c)) {
-            if (doc.size <= 0 || doc.size > CaptureRules.MAX_BYTES) continue;
+            if (doc.size <= 0 || doc.size > CaptureRules.MAX_BYTES || !Arrays.asList("m4a", "mp3", "mpeg", "wav", "ogg", "flac", "aac", "amr", "awb", "3gp", "opus").contains(RecordingScanner.extension(doc.name))) continue;
             String number = CaptureRules.number(doc.name, doc.modifiedMs, now,
                 prefs(c).getLong("since", now), TimeZone.getDefault(), book);
             if (number == null) continue;
             long stamp = RecordingMatch.read(doc.name, TimeZone.getDefault()).stampMs;
-            String id = CaptureRules.id(CaptureRules.identity(book), CallLogRules.key(number), stamp);
+            String id = CaptureRules.id(CaptureRules.identity(book), number, stamp);
             if (prefs(c).contains("job:" + id)) continue;
             long seconds;
-            try (MediaMetadataRetriever media = new MediaMetadataRetriever()) {
+            MediaMetadataRetriever media = new MediaMetadataRetriever();
+            try {
                 media.setDataSource(c, doc.uri);
                 seconds = Long.parseLong(media.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)) / 1000;
             } catch (Exception unsupported) { continue; }
+            finally { media.release(); }
             if (seconds <= 0 || seconds > 14400 || doc.modifiedMs < stamp + seconds * 1000 - 5000) continue;
             JSONObject call;
             try { call = api.json("POST", "/v1/lead-desk/recording-call", new JSONObject()
@@ -106,7 +108,8 @@ final class AutoCapture {
                 enqueue(c, job.getString("id"), Math.max(0, job.optLong("due") - now));
         }
     }
-    static JSONArray states(Context c, JSONObject book) throws JSONException {
+    static JSONArray states(Context c, CaptureApi api) throws Exception {
+        JSONObject book = api.book();
         JSONArray states = new JSONArray();
         String identity = CaptureRules.identity(book);
         if (identity.isEmpty()) return states;
@@ -114,6 +117,12 @@ final class AutoCapture {
             if (!entry.getKey().startsWith("job:")) continue;
             JSONObject job = new JSONObject(String.valueOf(entry.getValue()));
             if (!identity.equals(job.optString("identity"))) continue;
+            if ("analysing".equals(job.optString("state")) && job.has("eventId")) {
+                try {
+                    String sid = CaptureRules.id(identity, job.getString("eventId"), 0);
+                    if (api.json("GET", "/v1/conversation/acquisition/submissions/" + sid, null, null, false).optBoolean("has_report")) save(c, job, "report_ready");
+                } catch (Exception unavailable) { /* Keep the last confirmed state. */ }
+            }
             states.put(new JSONObject().put("eventId", job.optString("eventId")).put("state", job.optString("state")));
         }
         return states;

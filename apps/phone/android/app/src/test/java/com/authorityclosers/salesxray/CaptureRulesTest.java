@@ -44,6 +44,11 @@ public class CaptureRulesTest {
         assertEquals(CaptureRules.id("workspace:seller", "12025550123", stamp), CaptureRules.id("workspace:seller", "12025550123", stamp));
         assertNotEquals(CaptureRules.id("workspace:seller", "12025550123", stamp), CaptureRules.id("other:seller", "12025550123", stamp));
     }
+    @Test public void internationalNumbersNeverMatchBySuffixAlone() {
+        assertFalse(CaptureRules.samePhone("442025550123", "+12025550123"));
+        assertTrue(CaptureRules.samePhone("0012025550123", "+12025550123"));
+        assertFalse(CaptureRules.samePhone("2025550123", "+12025550123"));
+    }
     @Test public void corporateProofIsRequired() throws Exception {
         assertEquals("", CaptureRules.identity(new JSONObject().put("person_id", "fictional-seller")));
         assertFalse(CaptureRules.identity(book()).isEmpty());
