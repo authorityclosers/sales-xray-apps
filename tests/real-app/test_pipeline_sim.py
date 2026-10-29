@@ -75,10 +75,50 @@ class PipelineSimTests(unittest.TestCase):
                 sim.poll(args)
         self.assertEqual(stuck.exception.stage, 'recorded')
 
+    def test_a_login_typed_in_for_a_run_by_hand_comes_first(self):
+        with patch.dict(sim.os.environ, {'SX_SIM_EMAIL': 'qa@example.invalid', 'SX_SIM_PASSWORD': 'x'}), \
+                patch.object(sim.urllib.request, 'urlopen') as network:
+            self.assertEqual(sim.staging_login(), ('qa@example.invalid', 'x'))
+        network.assert_not_called()
+
+    def test_infisical_reads_the_login_with_the_runs_oidc_token_and_revokes_it(self):
+        class Answer:
+            def __init__(self, body):
+                self.body = body
+            def read(self):
+                return sim.json.dumps(self.body).encode()
+            def close(self):
+                pass
+            def __enter__(self):
+                return self
+            def __exit__(self, *exc):
+                return False
+        seen = []
+        def urlopen(request, timeout=0):
+            seen.append(request.full_url)
+            if 'audience=' in request.full_url:
+                return Answer({'value': 'github-jwt'})
+            if request.full_url.endswith('/oidc-auth/login'):
+                self.assertEqual(sim.json.loads(request.data)['jwt'], 'github-jwt')
+                return Answer({'accessToken': 'short-lived'})
+            if '/v4/secrets/SX_SIM_EMAIL' in request.full_url:
+                return Answer({'secret': {'secretValue': 'qa@example.invalid'}})
+            if '/v4/secrets/SX_SIM_PASSWORD' in request.full_url:
+                return Answer({'secret': {'secretValue': 'from-infisical'}})
+            return Answer({})
+        environment = {'SX_SIM_EMAIL': '', 'SX_SIM_PASSWORD': '', 'SX_SIM_INFISICAL_IDENTITY_ID': 'identity',
+                       'ACTIONS_ID_TOKEN_REQUEST_URL': 'https://token.example.invalid/?x=1',
+                       'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'runner'}
+        with patch.dict(sim.os.environ, environment), patch.object(sim.urllib.request, 'urlopen', side_effect=urlopen):
+            self.assertEqual(sim.staging_login(), ('qa@example.invalid', 'from-infisical'))
+        self.assertTrue(seen[-1].endswith('/v1/auth/token/revoke'))
+        self.assertIn('environment=staging', seen[2])
+        self.assertIn('secretPath=%2Fqa%2Fpipeline-sim', seen[2])
+
     def test_prepare_refuses_without_the_staging_login(self):
         args = SimpleNamespace(base='https://example.invalid', jar='j', cookies='c', workspace='Authority Closers',
                                lead_number='+12025550142', lead_name='x', clip_seconds=45)
-        with patch.dict(sim.os.environ, {'SX_SIM_EMAIL': '', 'SX_SIM_PASSWORD': ''}):
+        with patch.dict(sim.os.environ, {'SX_SIM_EMAIL': '', 'SX_SIM_PASSWORD': '', 'SX_SIM_INFISICAL_IDENTITY_ID': ''}):
             with self.assertRaises(sim.Stuck) as stuck:
                 sim.prepare(args)
         self.assertEqual(stuck.exception.stage, 'sign_in')

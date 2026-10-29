@@ -1,7 +1,9 @@
 name: Pipeline simulator (staging)
 # The whole call-to-report path on an emulator against staging, timed per stage (owner order, 30 Oct 2026).
 # scripts/pipeline-sim.sh says what it drives; docs/qa/pipeline-sim.md how to read a red run.
-# Nightly once the staging login is set (environment staging-sim + variable SX_SIM_ENABLED=true); by hand any time.
+# The QA seller's staging login is read from Infisical at run time with this run's GitHub OIDC token (keyless, like
+# play.yml); nothing is stored in GitHub. Nightly once the identity is set up (docs/qa/pipeline-sim.md) and the
+# repository variable SX_SIM_ENABLED is true; by hand any time.
 on:
   schedule:
     - cron: "30 21 * * *" # 03:00 IST
@@ -31,18 +33,21 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || vars.SX_SIM_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    # The OIDC subject Infisical trusts: repo:authorityclosers/sales-xray-apps:environment:staging-sim.
     environment: staging-sim
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - name: The staging login is set
+      - name: The Infisical identity is set up
         env:
-          SX_SIM_EMAIL: ${{ secrets.SX_SIM_EMAIL }}
-          SX_SIM_PASSWORD: ${{ secrets.SX_SIM_PASSWORD }}
+          IDENTITY: ${{ vars.SX_SIM_INFISICAL_IDENTITY_ID }}
         run: |
-          if [ -z "$SX_SIM_EMAIL" ] || [ -z "$SX_SIM_PASSWORD" ]; then
-            echo "::error::PIPELINE STUCK at sign_in: SX_SIM_EMAIL and SX_SIM_PASSWORD are not set in environment staging-sim"
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::PIPELINE STUCK at sign_in: no Infisical identity for this workflow (repository variable SX_SIM_INFISICAL_IDENTITY_ID; docs/qa/pipeline-sim.md)"
             exit 3
           fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -81,8 +86,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Call to report
         env:
-          SX_SIM_EMAIL: ${{ secrets.SX_SIM_EMAIL }}
-          SX_SIM_PASSWORD: ${{ secrets.SX_SIM_PASSWORD }}
+          SX_SIM_INFISICAL_IDENTITY_ID: ${{ vars.SX_SIM_INFISICAL_IDENTITY_ID }}
           SX_SIM_WORKSPACE: ${{ vars.SX_SIM_WORKSPACE || 'Authority Closers' }}
           SX_SIM_NUDGE: ${{ inputs.nudge && '1' || '0' }}
           SX_SIM_APP: ${{ inputs.app || 'background' }}

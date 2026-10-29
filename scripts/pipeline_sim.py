@@ -19,11 +19,19 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime, timezone
 
 SIM_NAMESPACE = uuid.UUID("6f2f8a52-5e4b-4b1d-9a43-1f3c0f0e7c11")
+# The QA seller's staging login lives only in Infisical (AGENTS.md); the run reads it with its own GitHub
+# OIDC token, keyless like play.yml, and keeps it in this process only.
+INFISICAL_API = os.environ.get("INFISICAL_API_URL", "https://app.infisical.com/api")
+INFISICAL_PROJECT = os.environ.get("INFISICAL_PROJECT_ID", "b421c44e-4599-4394-8df6-758ed8aedfed")
+INFISICAL_ENVIRONMENT = "staging"
+INFISICAL_PATH = os.environ.get("SX_SIM_INFISICAL_PATH", "/qa/pipeline-sim")
+INFISICAL_AUDIENCE = os.environ.get("SX_SIM_INFISICAL_AUDIENCE", "infisical-pipeline-sim")
 SERVER_STAGES = ["waiting", "uploaded", "analysing", "report_ready"]
 
 
@@ -109,10 +117,54 @@ def minutes_left(allowance: object, need_seconds: int) -> bool:
     return isinstance(available, int) and available >= need_seconds
 
 
-def prepare(args: argparse.Namespace) -> dict:
+def _json(request: urllib.request.Request) -> dict:
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read())
+
+
+def staging_login() -> tuple[str, str]:
+    """A login typed in for a run by hand (SX_SIM_EMAIL/SX_SIM_PASSWORD), else Infisical via GitHub OIDC."""
     email, password = os.environ.get("SX_SIM_EMAIL", ""), os.environ.get("SX_SIM_PASSWORD", "")
-    if not email or not password:
-        raise Stuck("sign_in", "SX_SIM_EMAIL and SX_SIM_PASSWORD are not set (GitHub environment staging-sim).")
+    if email and password:
+        return email, password
+    identity = os.environ.get("SX_SIM_INFISICAL_IDENTITY_ID", "")
+    oidc_url, oidc_token = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL", ""), os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")
+    if not identity or not oidc_url or not oidc_token:
+        raise Stuck("sign_in", "no staging login: set up the Infisical identity for this workflow (docs/qa/pipeline-sim.md).")
+    try:
+        github = urllib.request.Request(oidc_url + "&audience=" + urllib.parse.quote(INFISICAL_AUDIENCE))
+        github.add_header("Authorization", "Bearer " + oidc_token)
+        jwt = _json(github)["value"]
+        login = urllib.request.Request(INFISICAL_API + "/v1/auth/oidc-auth/login", method="POST",
+                                       data=json.dumps({"identityId": identity, "jwt": jwt}).encode())
+        login.add_header("Content-Type", "application/json")
+        access = _json(login)["accessToken"]
+    except (urllib.error.URLError, KeyError, ValueError) as error:
+        raise Stuck("sign_in", f"Infisical refused the run's OIDC login ({type(error).__name__}).") from None
+    values = []
+    try:
+        for key in ("SX_SIM_EMAIL", "SX_SIM_PASSWORD"):
+            query = urllib.parse.urlencode({"projectId": INFISICAL_PROJECT, "environment": INFISICAL_ENVIRONMENT,
+                                            "secretPath": INFISICAL_PATH})
+            read = urllib.request.Request(f"{INFISICAL_API}/v4/secrets/{key}?{query}")
+            read.add_header("Authorization", "Bearer " + access)
+            values.append(_json(read)["secret"]["secretValue"])
+    except (urllib.error.URLError, KeyError, ValueError) as error:
+        raise Stuck("sign_in", f"Infisical has no {INFISICAL_PATH} staging login for this identity ({type(error).__name__}).") from None
+    finally:
+        # The token is not needed again: revoke it at once.
+        revoke = urllib.request.Request(INFISICAL_API + "/v1/auth/token/revoke", method="POST",
+                                        data=json.dumps({"accessToken": access}).encode())
+        revoke.add_header("Content-Type", "application/json")
+        try:
+            urllib.request.urlopen(revoke, timeout=10).close()
+        except (urllib.error.URLError, ValueError):
+            pass
+    return values[0], values[1]
+
+
+def prepare(args: argparse.Namespace) -> dict:
+    email, password = staging_login()
     session = Session(args.base, args.jar)
     status, value = session.request("POST", "/v1/auth/password/login", {"email": email, "password": password})
     if status >= 400:

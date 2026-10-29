@@ -10,7 +10,8 @@
 #
 #   bash scripts/pipeline-sim.sh STAGING_DEBUG_APK STAGING_DEVICE_TESTS_APK CANARY_WAV
 #
-# Needs SX_SIM_EMAIL and SX_SIM_PASSWORD (GitHub environment staging-sim). Optional: SX_SIM_BASE,
+# The QA seller's login: in GitHub Actions from Infisical with the run's OIDC token (SX_SIM_INFISICAL_IDENTITY_ID);
+# for a run by hand, SX_SIM_EMAIL and SX_SIM_PASSWORD typed into its environment. Optional: SX_SIM_BASE,
 # SX_SIM_WORKSPACE (default "Authority Closers"), SX_SIM_NUDGE=1 (run the app's jobs at once instead of
 # waiting for Android's schedule), SX_SIM_APP=background|killed. No real customer audio: the clip is the
 # platform's fictional canary call (Piper TTS, PROVENANCE.md), re-encoded so each night is a new recording.
