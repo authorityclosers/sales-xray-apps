@@ -11,8 +11,15 @@ def verify(play, staging):
     p, s = ET.parse(play).getroot(), ET.parse(staging).getroot()
     assert s.get('package') == 'com.authorityclosers.salesxray.staging'
     assert p.get('package') == 'com.authorityclosers.salesxray'
-    for tag in ['uses-permission', 'uses-feature']:
-        canonical = lambda root: sorted(tuple(sorted(e.attrib.items())) for e in root.findall(tag))
+    def attributes(element, package):
+        values = dict(element.attrib)
+        # AndroidX generates a signature permission scoped to each applicationId.
+        # These names must differ between packages; all platform permissions stay exact.
+        if values.get(A + 'name') == package + '.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION':
+            values[A + 'name'] = '$SELF.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'
+        return tuple(sorted(values.items()))
+    for tag in ['permission', 'uses-permission', 'uses-feature']:
+        canonical = lambda root: sorted(attributes(e, root.get('package')) for e in root.findall(tag))
         assert canonical(p) == canonical(s), f'{tag} differs from Play'
     pa, sa = p.find('application'), s.find('application')
     assert sa.get(A + 'label') == 'Sales X-Ray Staging'

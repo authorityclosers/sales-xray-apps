@@ -115,3 +115,28 @@ class RealAppTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ManifestTests(unittest.TestCase):
+    def test_self_signature_permission_is_scoped_but_platform_permission_drift_fails(self):
+        spec = importlib.util.spec_from_file_location('manifest_check', ROOT / 'scripts/check-staging-manifest.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            def xml(package, label, icon, extra=''):
+                return f'''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{package}">
+                  <permission android:name="{package}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" android:protectionLevel="signature"/>
+                  <uses-permission android:name="{package}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"/>
+                  <uses-permission android:name="android.permission.INTERNET"/>{extra}
+                  <application android:label="{label}" android:allowBackup="false" android:icon="{icon}">
+                    <provider android:authorities="{package}.fileprovider"/>
+                  </application></manifest>'''
+            play, staging = root / 'play.xml', root / 'staging.xml'
+            play.write_text(xml('com.authorityclosers.salesxray', 'Sales X-Ray', '@mipmap/ic_launcher'))
+            staging.write_text(xml(check.PACKAGE, 'Sales X-Ray Staging', '@drawable/staging_icon'))
+            module.verify(play, staging)
+            staging.write_text(xml(check.PACKAGE, 'Sales X-Ray Staging', '@drawable/staging_icon',
+                                   '<uses-permission android:name="android.permission.RECORD_AUDIO"/>'))
+            with self.assertRaisesRegex(AssertionError, 'uses-permission differs'):
+                module.verify(play, staging)
