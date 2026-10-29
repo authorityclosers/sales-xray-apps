@@ -85,6 +85,8 @@ class RealAppTests(unittest.TestCase):
                 output = ''
                 if 'packages' in command:
                     output = 'package:' + check.PACKAGE + ' uid:12345\n'
+                if 'dumpsys' in command:
+                    output = 'mResumedActivity: ActivityRecord{test ' + check.PACKAGE + '/.MainActivity}'
                 if 'start' in command:
                     path = command[-1].split(':', 1)[1]
                     record = {'ms': 123, 'url': 'https://' + check.HOST + path.split('?')[0]}

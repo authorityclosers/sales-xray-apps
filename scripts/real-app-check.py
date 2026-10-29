@@ -132,6 +132,8 @@ def check(args):
                     launch = run(adb + ['shell', 'am', 'start', '-W', '-n', PACKAGE + '/com.authorityclosers.salesxray.MainActivity',
                                         '-a', 'android.intent.action.VIEW', '-d', PACKAGE + ':' + path], capture_output=True, text=True)
                     (args.out / (name.lower() + '-launch.txt')).write_text(launch.stdout + launch.stderr)
+                    if re.search(r'Error:|Exception|Status: (?!ok)', launch.stdout + launch.stderr):
+                        raise ValueError('Staging activity failed to launch; refusing screenshot')
                     record = None
                     # Each screen has a fresh process and document: FCP is meaningful, not an SPA estimate.
                     deadline = start + args.timeout
@@ -147,6 +149,10 @@ def check(args):
                         time.sleep(.25)
                     # Give the hydrated page time to settle for the visual evidence, without calling it FCP.
                     time.sleep(args.settle)
+                    activities = run(adb + ['shell', 'dumpsys', 'activity', 'activities'], capture_output=True, text=True).stdout
+                    resumed = [line for line in activities.splitlines() if re.search(r'(?:mResumedActivity|topResumedActivity|ResumedActivity)', line)]
+                    if not resumed or not any(PACKAGE + '/' in line for line in resumed):
+                        raise ValueError('Staging is not the resumed activity; refusing to capture another app')
                     shot = name.lower() + '.png'
                     with (args.out / shot).open('wb') as image:
                         run(adb + ['exec-out', 'screencap', '-p'], stdout=image)
