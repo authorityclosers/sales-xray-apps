@@ -128,6 +128,7 @@ public class CaptureUploadWorker extends Worker {
             return Result.retry();
         } catch (CaptureApi.Failure error) {
             if (error.code >= 500 || error.code == 429 || error.code == 408) return Result.retry();
+            if (error.code == 401 || error.code == 403 || error.code == 409) AutoCapture.stop(c);
             try { if (job != null) AutoCapture.save(c, job, "held"); } catch (Exception ignored) { }
             return Result.success();
         } catch (Exception error) { return Result.retry(); }

@@ -291,7 +291,10 @@ final class CallLogSync {
         if (cookies == null || cookies.isEmpty()) return state(context, "signed_out");
 
         Response book = request("GET", base + "/v1/lead-desk/phone-book", base, cookies, null);
-        if (book.code != 200 || book.body == null) return state(context, failure(book.code));
+        if (book.code != 200 || book.body == null) {
+            if (book.code == 401 || book.code == 403) setOn(context, false, "");
+            return state(context, failure(book.code));
+        }
         Map<String, String> numbers = new HashMap<>();
         String person;
         int[] workDays = new int[0];
