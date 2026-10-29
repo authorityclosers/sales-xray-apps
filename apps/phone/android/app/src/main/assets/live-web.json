@@ -1,9 +1,11 @@
 {
-  "about": "Live web updates (LiveWeb.java): where each site's signed web bundle manifest is, and the Ed25519 public keys (hex) its signature must match. No key, no live updates: the release pipeline's private key exists only in Infisical, and a key is added here only on the owner's word. A test build's CI may replace this file (src/debug/assets/live-web.json, never committed).",
+  "about": "Live web updates (LiveWeb.java): where each site's signed web bundle manifest is, and the Ed25519 public keys (hex) its signature must match. No key, no live updates: the release pipeline's private key exists only in Infisical, and a key is added here only on the owner's word (production key pinned 29 Oct 2026 on the owner's order). A test build's CI may replace this file (src/debug/assets/live-web.json, never committed).",
   "sites": {
     "salesxray.authorityclosers.com": {
       "manifest": "https://salesxray.authorityclosers.com/v1/app-web/manifest.json",
-      "keys": []
+      "keys": [
+        "770e00b4a94665ae2caeb379cf678ad31f470cf88b32b74b998861f6395f90d8"
+      ]
     },
     "salesxray-dev.authorityclosers.com": {
       "manifest": "https://salesxray-dev.authorityclosers.com/v1/app-web/manifest.json",
