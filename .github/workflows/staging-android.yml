@@ -61,9 +61,12 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: authorityclosers/authority-closers-platform
-          ref: ${{ inputs.web_ref || 'main' }}
+          # Video build only (PR #13, never merged): v1.8.0's web, the build staging runs.
+          ref: ${{ inputs.web_ref || '7e5bd53dc621ea0c9278f3c879240a0f93252c8c' }}
           path: platform
           persist-credentials: false
+      - name: Video build only - Personal says why work-call logging is refused
+        run: git -C "$GITHUB_WORKSPACE/platform" apply --verbose "$GITHUB_WORKSPACE/video/personal-refusal.patch"
       - name: Bundle staging web copy (S9)
         run: bash scripts/build-web-shell.sh "$GITHUB_WORKSPACE/platform" android/app/src/main/assets/web salesxray-staging.authorityclosers.com
       - name: Durable QA key (manual staging runs only)
