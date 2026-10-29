@@ -18,7 +18,15 @@ class CaptureApi {
     }
     static final class Failure extends IOException {
         final int code;
-        Failure(int code) { super("capture_http_" + code); this.code = code; }
+        /** The server's {"detail"} words, at most 300 characters (never audio or a credential). */
+        final String detail;
+        Failure(int code) { this(code, ""); }
+        Failure(int code, String detail) { super("capture_http_" + code); this.code = code; this.detail = detail == null ? "" : detail; }
+    }
+    /** A call that waits on this phone, and why (CaptureRules). */
+    static final class Hold extends Exception {
+        final String reason;
+        Hold(String reason) { super("capture_hold_" + reason); this.reason = reason; }
     }
     JSONObject json(String method, String path, JSONObject body, String key, boolean standing) throws Exception {
         byte[] bytes = body == null ? null : body.toString().getBytes(StandardCharsets.UTF_8);
@@ -61,7 +69,8 @@ class CaptureApi {
                 }
             }
             int status = c.getResponseCode();
-            if (status < 200 || status >= 300) throw new Failure(status);
+            if (status < 200 || status >= 300) throw new Failure(status, detail(c));
+            if (status == 204) return new JSONObject();
             try (InputStream in = c.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
                 byte[] buffer = new byte[8192]; int n;
                 while ((n = in.read(buffer)) != -1) {
@@ -72,6 +81,16 @@ class CaptureApi {
             }
         } finally { c.disconnect(); }
     }
+    /** The refusal's {"detail"}; the edge's write-eligibility check answers with the API's own body. */
+    private static String detail(HttpURLConnection c) {
+        try (InputStream in = c.getErrorStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            if (in == null) return "";
+            byte[] buffer = new byte[1024]; int n;
+            while ((n = in.read(buffer)) != -1 && out.size() < 4096) out.write(buffer, 0, n);
+            String words = new JSONObject(out.toString("UTF-8")).optString("detail", "");
+            return words.length() > 300 ? words.substring(0, 300) : words;
+        } catch (Exception unreadable) { return ""; }
+    }
     JSONObject book() throws Exception {
         JSONObject result = json("GET", "/v1/lead-desk/phone-book", null, null, false);
         if (identity == null) identity = CaptureRules.identity(result);
@@ -79,4 +98,13 @@ class CaptureApi {
     }
     JSONObject policy() throws Exception { return json("GET", "/v1/conversation/acquisition/upload-policy", null, null, false); }
     JSONObject consent() throws Exception { return json("GET", "/v1/sales-xray/call-ai/auto-analysis", null, null, false); }
+    /** The edge asks this before any audio: false while the seller's contact profile is incomplete. */
+    boolean eligible() throws Exception {
+        try { json("GET", "/v1/me/sales-xray-profile/write-eligibility", null, null, false); return true; }
+        catch (Failure refused) { if (refused.code == 403) return false; throw refused; }
+    }
+    /** Call minutes left for this seller in the current workspace; null when the answer says nothing. */
+    Boolean minutesLeft() throws Exception {
+        return CaptureRules.minutesLeft(json("GET", "/v1/conversation/acquisition/session", null, null, false).optJSONObject("allowance"));
+    }
 }

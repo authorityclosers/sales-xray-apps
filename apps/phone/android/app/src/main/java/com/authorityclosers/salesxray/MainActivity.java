@@ -360,7 +360,8 @@ public class MainActivity extends BridgeActivity {
 
     /** Screens an alert or a long-press shortcut may open: Leads, Calls, Chats and Home. */
     static boolean opensInApp(String path) {
-        for (String start : new String[] { "/leads", "/analysis/calls", "/chats", "/dashboard" }) {
+        // /settings: call-upload notices open Profile or Privacy → Calls (AutoCapture.attention).
+        for (String start : new String[] { "/leads", "/analysis/calls", "/chats", "/dashboard", "/settings" }) {
             if (path.equals(start) || path.startsWith(start + "/") || path.startsWith(start + "#") || path.startsWith(start + "?")) return true;
         }
         return false;
@@ -381,7 +382,10 @@ public class MainActivity extends BridgeActivity {
     /** Opens the alert's lead or Report in the page (a fresh mark each time, so the same one opens again). */
     private void deliverOpen() {
         if (pendingOpen == null || !pageReady) return;
-        String path = pendingOpen + (pendingOpen.contains("#") ? "&" : "#") + "n=" + System.currentTimeMillis();
+        // A plain anchor (#calls-setup) is a place on the page, not a list of marks: it stays as it is.
+        int hash = pendingOpen.indexOf('#');
+        String path = hash >= 0 && !pendingOpen.substring(hash).contains("=") ? pendingOpen
+            : pendingOpen + (hash >= 0 ? "&" : "#") + "n=" + System.currentTimeMillis();
         pendingOpen = null;
         Uri parsed = Uri.parse("https://x" + path.replace('#', '?'));
         if (ReviewAlertRules.isPath(path)) ReviewAlerts.clear(this);

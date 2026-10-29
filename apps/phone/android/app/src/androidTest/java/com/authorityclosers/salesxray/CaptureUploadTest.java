@@ -32,6 +32,8 @@ public class CaptureUploadTest {
     static class FakeApi extends CaptureApi {
         int uploads, plans, attaches; boolean consent = true, report, uploaded, loseReply, otherWorkspace, held;
         String sha;
+        // A refusal before any byte is accepted, as the edge and the API send them (Redmi test, 30 Oct 2026).
+        int refuse; String refusal = ""; boolean profileComplete = true; Boolean minutes = true;
         FakeApi(Context c) throws Exception { super(c); }
         @Override JSONObject book() throws Exception {
             return new JSONObject().put("organisation_workspace", true).put("tenant_id", SCOPE.split(":")[0])
@@ -39,6 +41,8 @@ public class CaptureUploadTest {
         }
         @Override JSONObject policy() throws Exception { return new JSONObject().put("policy_sha256", HASH); }
         @Override JSONObject consent() throws Exception { return new JSONObject().put("state", consent ? "on" : "off").put("can_start", consent).put("terms_sha256", HASH); }
+        @Override boolean eligible() { return profileComplete; }
+        @Override Boolean minutesLeft() { return minutes; }
         @Override JSONObject json(String method, String path, JSONObject body, String key, boolean standing) throws Exception {
             if (path.endsWith("/recording-call")) return new JSONObject().put("lead_id", ID).put("event_id", ID);
             if (path.endsWith("/recordings")) { attaches++; return new JSONObject(); }
@@ -49,6 +53,7 @@ public class CaptureUploadTest {
         }
         @Override JSONObject request(String method, String path, InputStream in, long size, String mime, String key, boolean standing, String hash, String policy) throws Exception {
             assertEquals("PUT", method); assertTrue(standing); assertEquals(HASH, policy);
+            if (refuse != 0) throw new Failure(refuse, refusal);
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(); byte[] buffer = new byte[1024]; int n;
             while ((n = in.read(buffer)) != -1) bytes.write(buffer, 0, n);
             assertEquals(size, bytes.size()); uploads++; uploaded = true; sha = hash;
@@ -109,5 +114,63 @@ public class CaptureUploadTest {
         new CaptureUndoReceiver().onReceive(c, new android.content.Intent().putExtra("id", ID));
         worker().doWork(); assertEquals(0, fake.uploads); assertEquals(0, fake.plans);
         assertEquals("cancelled", AutoCapture.job(c, ID).getString("state"));
+    }
+    /** A held call goes back in the queue (as the watch does) and runs here, not in WorkManager. */
+    void releaseAndRun() throws Exception {
+        JSONObject job = AutoCapture.job(c, ID).put("due", System.currentTimeMillis() + 3_600_000);
+        AutoCapture.prefs(c).edit().putString("job:" + ID, job.toString()).commit();
+        AutoCapture.release(c, fake, SCOPE, System.currentTimeMillis());
+        WorkManager.getInstance(c).cancelUniqueWork("sx-capture:" + ID).getResult().get();
+        assertEquals("waiting", AutoCapture.job(c, ID).getString("state"));
+        AutoCapture.prefs(c).edit().putString("job:" + ID, AutoCapture.job(c, ID).put("due", 0).toString()).commit();
+        worker().doWork();
+    }
+    @Test public void profileRefusalHoldsKeepsUploadsOnAndUploadsOnceComplete() throws Exception {
+        fake.refuse = 403; fake.refusal = "Complete your Sales Xray contact profile to continue."; fake.profileComplete = false;
+        worker().doWork();
+        assertEquals("held", AutoCapture.job(c, ID).getString("state"));
+        assertEquals(CaptureRules.PROFILE, AutoCapture.job(c, ID).getString("hold"));
+        assertTrue(AutoCapture.prefs(c).getBoolean("on", false));
+        assertEquals(CaptureRules.PROFILE, AutoCapture.status(c).getString("health"));
+        // Still incomplete: the watch leaves it held.
+        AutoCapture.release(c, fake, SCOPE, System.currentTimeMillis());
+        assertEquals("held", AutoCapture.job(c, ID).getString("state"));
+        fake.refuse = 0; fake.profileComplete = true;
+        releaseAndRun();
+        assertEquals(1, fake.uploads);
+        assertEquals("ok", AutoCapture.status(c).getString("health"));
+    }
+    @Test public void allowanceRefusalHoldsAndUploadsOnceMinutesExist() throws Exception {
+        fake.refuse = 409; fake.refusal = "Your current free call allowance has been used."; fake.minutes = false;
+        worker().doWork();
+        assertEquals(0, fake.uploads);
+        assertEquals("held", AutoCapture.job(c, ID).getString("state"));
+        assertEquals(CaptureRules.ALLOWANCE, AutoCapture.job(c, ID).getString("hold"));
+        assertTrue(AutoCapture.prefs(c).getBoolean("on", false));
+        assertEquals(CaptureRules.ALLOWANCE, AutoCapture.status(c).getString("health"));
+        fake.refuse = 0; fake.minutes = true;
+        releaseAndRun();
+        assertEquals(1, fake.uploads);
+    }
+    @Test public void signedOutHoldsWithoutTurningUploadsOff() throws Exception {
+        fake.refuse = 401;
+        worker().doWork();
+        assertEquals(CaptureRules.SIGNED_OUT, AutoCapture.job(c, ID).getString("hold"));
+        assertTrue(AutoCapture.prefs(c).getBoolean("on", false));
+        fake.refuse = 0;
+        releaseAndRun();
+        assertEquals(1, fake.uploads);
+    }
+    @Test public void callsMadeBeforeUploadsWereTurnedOnAgainStillUpload() throws Exception {
+        // Turning uploads off and on moved "since" past this call; the job made before still goes.
+        AutoCapture.prefs(c).edit().putLong("since", System.currentTimeMillis()).commit();
+        worker().doWork();
+        assertEquals(1, fake.uploads);
+    }
+    @Test public void anOnlinePhoneNeedsNoWaitForTheNetwork() {
+        assertEquals(CaptureRules.NET_OK, CaptureNet.state(c));
+        long started = android.os.SystemClock.elapsedRealtime();
+        assertTrue(CaptureNet.await(c, worker()));
+        assertTrue(android.os.SystemClock.elapsedRealtime() - started < 1000);
     }
 }
