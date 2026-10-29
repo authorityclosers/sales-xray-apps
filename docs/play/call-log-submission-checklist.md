@@ -18,15 +18,18 @@ script and Data safety: [call-log-declaration.md](call-log-declaration.md) and
    `organisation_workspace` and `tenant_id` (platform e0340f6a6). Without them every workspace,
    including the reviewer's, gets `organisation_required`, and Google sees a feature that can't be
    turned on.
-2. **Reviewer account** (App content → App access): its default workspace is an organisation with one
+2. **Production web includes platform workbench a0e073172.** If Turn on is ever reached outside an organisation,
+   the card says "Work-call logging is for your company's workspace…". Without it, the card says "Your phone
+   didn't answer" instead. The Play bundle's `web_ref` must contain it too.
+3. **Reviewer account** (App content → App access): its default workspace is an organisation with one
    fictional lead. Add this line to the instructions (500-character limit for the whole field):
    `Work-call logging: Leads → "Log work calls by themselves" → Turn on → read the disclosure →
    Enable call logging → Allow. Calls with that workspace's leads then appear on the lead.`
-3. **Store listing.** Google wants the declared core feature in the full description. Add one
+4. **Store listing.** Google wants the declared core feature in the full description. Add one
    sentence, for example: "In your company's workspace, Sales X-Ray logs calls with your leads from
    the phone's call history, after you turn it on." Then press Next → Save, and check that
    Publishing overview lists the change. A listing left as a draft is never submitted (24 Oct lesson).
-4. **Video link.** The Drive file is shared as "Anyone with the link can view". Reviewers can't
+5. **Video link.** The Drive file is shared as "Anyone with the link can view". Reviewers can't
    sign in to our Drive. A YouTube link (unlisted) is Google's preferred alternative.
 
 ## In order
@@ -43,7 +46,7 @@ script and Data safety: [call-log-declaration.md](call-log-declaration.md) and
    - Core functionality: business and enterprise CRM.
    - Exception: "Enterprise archive, business & enterprise CRM, and/or enterprise device management".
    - Paste the form text. Video URL: the Drive (or YouTube) link.
-   - Instructions: as in "Before you start", step 2.
+   - Instructions: as in "Before you start", step 3.
    - Save.
 7. Data safety: add **Contacts → Contacts** (collected, optional, app functionality, not ephemeral,
    encrypted in transit, deletable). Keep every existing answer. Save, and check Publishing overview.
