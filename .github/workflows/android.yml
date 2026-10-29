@@ -187,7 +187,9 @@ jobs:
             if grep -q "android:name=\"$banned\"" "$play"; then echo "Play flavour still declares $banned ($play)"; exit 1; fi
             grep -q "android:name=\"$banned\"" "$direct" || { echo "Direct flavour lost $banned ($direct)"; exit 1; }
           done
-          grep -q 'android:name="android.permission.READ_CALL_LOG"' "$play" || { echo "Play CRM call-log declaration missing"; exit 1; }
+          # Call history stays out of Play until Google approves the Enterprise CRM declaration (orchestrator, 29 Oct 2026).
+          if grep -q 'android:name="android.permission.READ_CALL_LOG"' "$play"; then echo "Play flavour declares READ_CALL_LOG before Play approved it"; exit 1; fi
+          grep -q 'android:name="android.permission.READ_CALL_LOG"' "$direct" || { echo "Direct flavour lost READ_CALL_LOG"; exit 1; }
           # Backup off in the Play build (cloud backup would copy in-app meeting recordings to Google Drive).
           grep -q 'android:allowBackup="false"' "$play" || { echo "Play flavour still allows backup"; exit 1; }
           # No microphone in the first Play version (owner, 24 Oct 2026); the download-link app keeps the
