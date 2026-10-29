@@ -406,6 +406,14 @@ final class PhoneBridge {
                     pushReset();
                     reply(reply, id, pushState());
                     break;
+                case "autoCaptureStates": {
+                    final String asked = id;
+                    io.execute(() -> {
+                        try { reply(reply, asked, new JSONObject().put("items", AutoCapture.states(activity, new CaptureApi(activity).book()))); }
+                        catch (Exception e) { fail(reply, asked, "capture_unavailable"); }
+                    });
+                    break;
+                }
                 case "autoCaptureStatus":
                     reply(reply, id, AutoCapture.status(activity));
                     break;

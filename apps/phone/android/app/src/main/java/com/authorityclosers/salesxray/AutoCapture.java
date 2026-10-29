@@ -68,13 +68,18 @@ final class AutoCapture {
                 seconds = Long.parseLong(media.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)) / 1000;
             } catch (Exception unsupported) { continue; }
             if (seconds <= 0 || seconds > 14400 || doc.modifiedMs < stamp + seconds * 1000 - 5000) continue;
+            JSONObject call = api.json("POST", "/v1/lead-desk/recording-call", new JSONObject()
+                .put("command_id", id).put("number", number).put("started_at", CallLogRules.iso(stamp))
+                .put("duration_seconds", seconds), id, false);
             JSONObject job = new JSONObject().put("id", id).put("identity", CaptureRules.identity(book))
                 .put("source", doc.uri.toString()).put("name", doc.name).put("number", number)
                 .put("stamp", stamp).put("saved", doc.modifiedMs).put("size", doc.size)
-                .put("seconds", seconds).put("state", "waiting").put("due", now + CaptureRules.UNDO_MS);
+                .put("seconds", seconds).put("leadId", call.getString("lead_id"))
+                .put("eventId", call.getString("event_id")).put("leadName", call.optString("lead_name", "lead"))
+                .put("state", "waiting").put("due", now + CaptureRules.UNDO_MS);
             // Commit before scheduling. A process restart sees the same job and submission id.
             prefs(c).edit().putString("job:" + id, job.toString()).commit();
-            notice(c, id, "Lead call waiting for upload", "Uploads in 60 seconds. Undo keeps this recording on your phone.", true);
+            notice(c, id, "Call with " + job.optString("leadName", "lead") + " waiting for upload", "Uploads in 60 seconds. Undo keeps this recording on your phone.", true);
             enqueue(c, id, CaptureRules.UNDO_MS);
         }
         // Recover a process death between saving a job and enqueueing it.
@@ -84,6 +89,18 @@ final class AutoCapture {
             if (Arrays.asList("waiting", "uploading", "analysing").contains(job.optString("state")))
                 enqueue(c, job.getString("id"), Math.max(0, job.optLong("due") - now));
         }
+    }
+    static JSONArray states(Context c, JSONObject book) throws JSONException {
+        JSONArray states = new JSONArray();
+        String identity = CaptureRules.identity(book);
+        if (identity.isEmpty()) return states;
+        for (Map.Entry<String, ?> entry : prefs(c).getAll().entrySet()) {
+            if (!entry.getKey().startsWith("job:")) continue;
+            JSONObject job = new JSONObject(String.valueOf(entry.getValue()));
+            if (!identity.equals(job.optString("identity"))) continue;
+            states.put(new JSONObject().put("eventId", job.optString("eventId")).put("state", job.optString("state")));
+        }
+        return states;
     }
     static void enqueue(Context c, String id, long delay) {
         boolean wifi = prefs(c).getBoolean("wifiOnly", true);

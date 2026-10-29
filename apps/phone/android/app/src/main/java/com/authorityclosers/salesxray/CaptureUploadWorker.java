@@ -15,7 +15,7 @@ import org.json.*;
 public class CaptureUploadWorker extends Worker {
     private static final String API = "/v1/conversation/acquisition/submissions/";
     public CaptureUploadWorker(@NonNull Context c, @NonNull WorkerParameters p) { super(c, p); }
-    private JSONObject gate(Context c, CaptureApi api, JSONObject job) throws Exception {
+    JSONObject gate(Context c, CaptureApi api, JSONObject job) throws Exception {
         JSONObject book = api.book();
         if (!AutoCapture.enabled(c, book) || !CaptureRules.identity(book).equals(job.optString("identity")))
             throw new CaptureApi.Failure(403);
@@ -29,11 +29,11 @@ public class CaptureUploadWorker extends Worker {
         if (isStopped()) throw new IOException("stopped");
         return policy;
     }
-    private InputStream source(Context c, JSONObject job) throws Exception {
+    InputStream source(Context c, JSONObject job) throws Exception {
         Uri uri = Uri.parse(job.getString("source"));
         boolean granted = false;
         for (Uri tree : RecordingFolder.trees(c)) {
-            if (uri.getAuthority().equals(tree.getAuthority()) && DocumentsContract.isChildDocument(c.getContentResolver(), tree, uri)) granted = true;
+            if (uri.getAuthority().equals(tree.getAuthority()) && RecordingFolderRules.inside(DocumentsContract.getTreeDocumentId(tree), DocumentsContract.getDocumentId(uri))) granted = true;
         }
         if (!granted) throw new CaptureApi.Failure(403);
         try (Cursor cursor = c.getContentResolver().query(uri, new String[] {
@@ -44,6 +44,7 @@ public class CaptureUploadWorker extends Worker {
         }
         return c.getContentResolver().openInputStream(uri);
     }
+    CaptureApi api(Context c) throws Exception { return new CaptureApi(c); }
     @NonNull public Result doWork() {
         Context c = getApplicationContext(); String id = getInputData().getString("id");
         JSONObject job = null;
@@ -54,7 +55,7 @@ public class CaptureUploadWorker extends Worker {
             if (System.currentTimeMillis() - job.optLong("stamp") > CaptureRules.KEEP_MS) {
                 AutoCapture.save(c, job, "held"); return Result.success();
             }
-            CaptureApi api = new CaptureApi(c);
+            CaptureApi api = api(c);
             JSONObject policy = gate(c, api, job);
             // No bytes before the Undo state has been read again.
             synchronized (AutoCapture.class) {
@@ -84,34 +85,35 @@ public class CaptureUploadWorker extends Worker {
                 .put("duration_seconds", job.getLong("seconds")), id, false);
             job.put("leadId", call.getString("lead_id")).put("eventId", call.getString("event_id"));
             AutoCapture.save(c, job, "uploading");
+            String sid = CaptureRules.id(job.getString("identity"), job.getString("eventId"), 0);
             JSONObject progress = null;
-            try { progress = api.json("GET", API + id, null, null, false); }
+            try { progress = api.json("GET", API + sid, null, null, false); }
             catch (CaptureApi.Failure missing) { if (missing.code != 404) throw missing; }
             if (progress == null) {
                 policy = gate(c, api, job);
                 try (InputStream in = source(c, job)) {
-                    progress = api.request("PUT", API + id + "/source", in, job.getLong("size"),
+                    progress = api.request("PUT", API + sid + "/source", in, job.getLong("size"),
                         "application/octet-stream", id, true, job.getString("sha"), policy.getString("policy_sha256"));
                 }
             }
             if (!job.getString("sha").equals(progress.optString("source_sha256"))) throw new CaptureApi.Failure(409);
             api.json("POST", "/v1/lead-desk/leads/" + job.getString("leadId") + "/recordings", new JSONObject()
-                .put("command_id", CaptureRules.id(id, "attach", 0)).put("submission_id", id)
+                .put("command_id", CaptureRules.id(id, "attach", 0)).put("submission_id", sid)
                 .put("call_event_id", job.getString("eventId")), null, false);
             if (progress.optBoolean("has_report")) { AutoCapture.save(c, job, "report_ready"); return Result.success(); }
             if (progress.optBoolean("automatic_progression")) { AutoCapture.save(c, job, "analysing"); return Result.retry(); }
             if (!"completed".equals(progress.optString("local_state"))) return Result.retry();
             gate(c, api, job);
-            JSONObject plan = api.json("POST", API + id + "/plan/quote", new JSONObject().put("report_language", "en"), "capture-quote:" + id, false);
+            JSONObject plan = api.json("POST", API + sid + "/plan/quote", new JSONObject().put("report_language", "en"), "capture-quote:" + sid, false);
             if (!plan.optBoolean("accepted")) {
                 gate(c, api, job);
-                api.json("POST", API + id + "/plan", new JSONObject().put("plan_id", plan.getString("id"))
+                api.json("POST", API + sid + "/plan", new JSONObject().put("plan_id", plan.getString("id"))
                     .put("plan_fingerprint", plan.getString("plan_fingerprint"))
                     .put("privacy_revision", plan.getString("privacy_revision")).put("accepted", true),
                     "accept-plan:" + plan.getString("id"), true);
             }
             AutoCapture.save(c, job, "analysing");
-            AutoCapture.notice(c, id, "Lead call uploaded for analysis", "Open the lead to see its report when ready.", false);
+            AutoCapture.notice(c, id, "Call with " + job.optString("leadName", "lead") + " uploaded for analysis", "Open the lead to see its report when ready.", false);
             return Result.retry();
         } catch (CaptureApi.Failure error) {
             if (error.code >= 500 || error.code == 429 || error.code == 408) return Result.retry();

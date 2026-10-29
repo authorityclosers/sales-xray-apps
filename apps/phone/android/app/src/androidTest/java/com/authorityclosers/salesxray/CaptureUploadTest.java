@@ -1,0 +1,95 @@
+package com.authorityclosers.salesxray;
+
+import static org.junit.Assert.*;
+import android.content.Context;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.work.*;
+import androidx.work.testing.TestWorkerBuilder;
+import java.io.*;
+import java.security.MessageDigest;
+import java.util.*;
+import java.util.concurrent.Executors;
+import org.json.*;
+import org.junit.*;
+import org.junit.runner.RunWith;
+
+/** Seeded synthetic file + mocked own API. SAF and OEM dialler behavior require real-phone proof. */
+@RunWith(AndroidJUnit4.class)
+public class CaptureUploadTest {
+    static FakeApi fake;
+    static File recording;
+    Context c;
+    static final String ID = "00000000-0000-4000-8000-000000000001";
+    static final String HASH = String.join("", Collections.nCopies(64, "a"));
+    static final String SCOPE = "00000000-0000-4000-8000-000000000002:00000000-0000-4000-8000-000000000003";
+
+    public static class SeededWorker extends CaptureUploadWorker {
+        public SeededWorker(Context c, WorkerParameters p) { super(c, p); }
+        @Override CaptureApi api(Context c) { return fake; }
+        @Override InputStream source(Context c, JSONObject job) throws Exception { return new FileInputStream(recording); }
+    }
+    static class FakeApi extends CaptureApi {
+        int uploads, plans, attaches; boolean consent = true, report, uploaded;
+        String sha;
+        FakeApi(Context c) throws Exception { super(c); }
+        @Override JSONObject book() throws Exception {
+            return new JSONObject().put("organisation_workspace", true).put("tenant_id", SCOPE.split(":")[0])
+                .put("person_id", SCOPE.split(":")[1]).put("numbers", new JSONArray().put("+12025550123"));
+        }
+        @Override JSONObject policy() throws Exception { return new JSONObject().put("policy_sha256", HASH); }
+        @Override JSONObject consent() throws Exception { return new JSONObject().put("state", consent ? "on" : "off").put("can_start", consent).put("terms_sha256", HASH); }
+        @Override JSONObject json(String method, String path, JSONObject body, String key, boolean standing) throws Exception {
+            if (path.endsWith("/recording-call")) return new JSONObject().put("lead_id", ID).put("event_id", ID);
+            if (path.endsWith("/recordings")) { attaches++; return new JSONObject(); }
+            if (path.endsWith("/plan/quote")) return new JSONObject().put("id", ID).put("plan_fingerprint", HASH).put("privacy_revision", "sales-xray-processing-plan-v1");
+            if (path.endsWith("/plan")) { assertTrue(standing); plans++; return new JSONObject(); }
+            if (!uploaded) throw new Failure(404);
+            return new JSONObject().put("source_sha256", sha).put("local_state", "completed").put("has_report", report);
+        }
+        @Override JSONObject request(String method, String path, InputStream in, long size, String mime, String key, boolean standing, String hash, String policy) throws Exception {
+            assertEquals("PUT", method); assertTrue(standing); assertEquals(HASH, policy);
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream(); byte[] buffer = new byte[1024]; int n;
+            while ((n = in.read(buffer)) != -1) bytes.write(buffer, 0, n);
+            assertEquals(size, bytes.size()); uploads++; uploaded = true; sha = hash;
+            return new JSONObject().put("source_sha256", sha).put("local_state", "running");
+        }
+    }
+    @Before public void setup() throws Exception {
+        c = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        AutoCapture.prefs(c).edit().clear().putBoolean("on", true).putBoolean("wifiOnly", false)
+            .putString("identity", SCOPE).putLong("since", System.currentTimeMillis() - 3600000).commit();
+        recording = new File(c.getCacheDir(), "Call recording 12025550123_261029120000.wav");
+        try (OutputStream out = new FileOutputStream(recording)) { out.write(new byte[32044]); }
+        fake = new FakeApi(c);
+        long stamp = System.currentTimeMillis() - 120000;
+        java.text.SimpleDateFormat format = new java.text.SimpleDateFormat("yyMMddHHmmss", Locale.ROOT);
+        String name = "Call recording 12025550123_" + format.format(new Date(stamp)) + ".wav";
+        stamp = RecordingMatch.read(name, TimeZone.getDefault()).stampMs;
+        JSONObject job = new JSONObject().put("id", ID).put("identity", SCOPE).put("name", name)
+            .put("source", recording.toURI().toString()).put("stamp", stamp).put("saved", stamp + 10000)
+            .put("size", recording.length()).put("seconds", 10).put("number", "+12025550123").put("due", 0).put("state", "waiting");
+        AutoCapture.prefs(c).edit().putString("job:" + ID, job.toString()).commit();
+    }
+    SeededWorker worker() {
+        return TestWorkerBuilder.from(c, SeededWorker.class, Executors.newSingleThreadExecutor())
+            .setInputData(new Data.Builder().putString("id", ID).build()).build();
+    }
+    @After public void cleanup() { AutoCapture.prefs(c).edit().clear().commit(); recording.delete(); }
+    @Test public void uploadReconcilesAfterRestartAndAcceptsOneStandingPlan() throws Exception {
+        worker().doWork(); assertEquals(1, fake.uploads); assertEquals(0, fake.plans);
+        worker().doWork(); assertEquals(1, fake.uploads); assertEquals(1, fake.plans);
+        fake.report = true;
+        worker().doWork(); assertEquals(1, fake.uploads); assertEquals(1, fake.plans);
+        assertEquals("report_ready", AutoCapture.job(c, ID).getString("state"));
+    }
+    @Test public void noConsentMeansNoUploadOrPlan() throws Exception {
+        fake.consent = false; worker().doWork(); assertEquals(0, fake.uploads); assertEquals(0, fake.plans);
+        assertEquals("held", AutoCapture.job(c, ID).getString("state"));
+    }
+    @Test public void undoMeansNoUploadOrPlan() throws Exception {
+        new CaptureUndoReceiver().onReceive(c, new android.content.Intent().putExtra("id", ID));
+        worker().doWork(); assertEquals(0, fake.uploads); assertEquals(0, fake.plans);
+        assertEquals("cancelled", AutoCapture.job(c, ID).getString("state"));
+    }
+}

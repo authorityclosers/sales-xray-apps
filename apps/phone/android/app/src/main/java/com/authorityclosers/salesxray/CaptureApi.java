@@ -9,8 +9,9 @@ import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 
 /** Same-origin requests on the existing WebView session. No redirect or stored credential. */
-final class CaptureApi {
+class CaptureApi {
     final String base;
+    String identity;
     CaptureApi(Context context) throws IOException {
         base = LeadAlerts.serverUrl(context);
         if (base == null) throw new IOException("origin_unavailable");
@@ -38,6 +39,7 @@ final class CaptureApi {
             if (cookies == null || cookies.isEmpty()) throw new Failure(401);
             SessionCookies.attach(c, cookies);
             if (key != null) c.setRequestProperty("Idempotency-Key", key);
+            if (identity != null) c.setRequestProperty("X-Auto-Capture-Identity", identity);
             if (standing) c.setRequestProperty("X-Upload-Consent", "standing");
             if (sha != null) {
                 c.setRequestProperty("X-Source-Sha256", sha);
@@ -68,7 +70,11 @@ final class CaptureApi {
             }
         } finally { c.disconnect(); }
     }
-    JSONObject book() throws Exception { return json("GET", "/v1/lead-desk/phone-book", null, null, false); }
+    JSONObject book() throws Exception {
+        JSONObject result = json("GET", "/v1/lead-desk/phone-book", null, null, false);
+        if (identity == null) identity = CaptureRules.identity(result);
+        return result;
+    }
     JSONObject policy() throws Exception { return json("GET", "/v1/conversation/acquisition/upload-policy", null, null, false); }
     JSONObject consent() throws Exception { return json("GET", "/v1/sales-xray/call-ai/auto-analysis", null, null, false); }
 }
