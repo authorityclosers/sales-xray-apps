@@ -29,8 +29,8 @@ script and Data safety: [call-log-declaration.md](call-log-declaration.md) and
    sentence, for example: "In your company's workspace, Sales X-Ray logs calls with your leads from
    the phone's call history, after you turn it on." Then press Next → Save, and check that
    Publishing overview lists the change. A listing left as a draft is never submitted (24 Oct lesson).
-5. **Video link.** The Drive file is shared as "Anyone with the link can view". Reviewers can't
-   sign in to our Drive. A YouTube link (unlisted) is Google's preferred alternative.
+5. **Video link.** Done 29 Oct: the Drive file is shared as "Anyone with the link can view" and opens without
+   signing in. Paste the link from the table above.
 
 ## In order
 1. Check the video once against the script: 0–8 s organisation, 8–15 s disclosure, 15–22 s Allow,
