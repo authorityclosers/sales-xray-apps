@@ -64,6 +64,7 @@ public class MainActivity extends BridgeActivity {
     private boolean painted;
     private boolean finishedOnce;
 
+    private final QaProbe qa = new QaProbe();
     private PhoneBridge phone;
     private GoogleSignIn google;
     /** The web app's own copy in the app (S9): pages come from the phone, the API from the server. */
@@ -160,6 +161,7 @@ public class MainActivity extends BridgeActivity {
                     @Override
                     public void onPageCommitVisible(WebView view, String url) {
                         super.onPageCommitVisible(view, url);
+                        qa.committed(view, url);
                         if (painted) return;
                         // The first page is on screen: the splash goes, and the start time is logged.
                         painted = true;
@@ -202,6 +204,12 @@ public class MainActivity extends BridgeActivity {
         webView.setWebChromeClient(
             new BridgeWebChromeClient(getBridge()) {
                 @Override
+                public boolean onConsoleMessage(android.webkit.ConsoleMessage message) {
+                    QaProbe.console(MainActivity.this, message);
+                    return super.onConsoleMessage(message);
+                }
+
+                @Override
                 public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
                     if (!isUserGesture) return false;
                     WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
@@ -234,7 +242,8 @@ public class MainActivity extends BridgeActivity {
         // Capacitor started loading the site before this client was in place: with the app's own
         // copy on, load the home screen again so it comes from the phone (the live site sends / there).
         String site = LeadAlerts.serverUrl(this);
-        if (bundled.on() && site != null) {
+        boolean qaOpened = qa.open(this, webView, getIntent());
+        if (!qaOpened && bundled.on() && site != null) {
             webView.loadUrl(site.replaceAll("/+$", "") + "/dashboard/");
             // A web update's first start must say it is up, or the app goes back (LiveWeb).
             live.watch(bundled, this::useWeb);
@@ -278,6 +287,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (qa.open(this, getBridge().getWebView(), intent)) return;
         if (phone == null) return;
         phone.takeLaunch(intent);
         phone.signal("launch");

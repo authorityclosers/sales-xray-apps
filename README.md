@@ -48,3 +48,5 @@ All builds run on GitHub's standard hosted runners. They are free while this rep
 ## Licence
 
 Copyright Authority Closers. All rights reserved. The code is public so GitHub can build it. No licence is granted; see [LICENSE](LICENSE).
+
+For signed staging builds and installed-app screen evidence on a USB phone, see [Real app testing](docs/testing/real-app.md).

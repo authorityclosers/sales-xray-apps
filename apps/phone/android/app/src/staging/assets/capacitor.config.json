@@ -1,0 +1,19 @@
+{
+  "appId": "com.authorityclosers.salesxray.staging",
+  "appName": "Sales X-Ray Staging",
+  "webDir": "www",
+  "appendUserAgent": "SalesXrayApp/0.3",
+  "server": {
+    "url": "https://salesxray-staging.authorityclosers.com",
+    "cleartext": false,
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "disable"
+    }
+  }
+}
