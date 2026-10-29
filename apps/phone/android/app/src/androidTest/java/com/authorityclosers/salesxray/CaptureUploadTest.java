@@ -30,7 +30,7 @@ public class CaptureUploadTest {
         @Override InputStream source(Context c, JSONObject job) throws Exception { return new FileInputStream(recording); }
     }
     static class FakeApi extends CaptureApi {
-        int uploads, plans, attaches; boolean consent = true, report, uploaded, loseReply, otherWorkspace;
+        int uploads, plans, attaches; boolean consent = true, report, uploaded, loseReply, otherWorkspace, held;
         String sha;
         FakeApi(Context c) throws Exception { super(c); }
         @Override JSONObject book() throws Exception {
@@ -45,7 +45,7 @@ public class CaptureUploadTest {
             if (path.endsWith("/plan/quote")) return new JSONObject().put("id", ID).put("plan_fingerprint", HASH).put("privacy_revision", "sales-xray-processing-plan-v1");
             if (path.endsWith("/plan")) { assertTrue(standing); plans++; return new JSONObject(); }
             if (!uploaded) throw new Failure(404);
-            return new JSONObject().put("source_sha256", sha).put("local_state", "completed").put("has_report", report);
+            return new JSONObject().put("source_sha256", sha).put("local_state", "completed").put("has_report", report).put("state", held ? "held" : "processing");
         }
         @Override JSONObject request(String method, String path, InputStream in, long size, String mime, String key, boolean standing, String hash, String policy) throws Exception {
             assertEquals("PUT", method); assertTrue(standing); assertEquals(HASH, policy);
@@ -98,6 +98,12 @@ public class CaptureUploadTest {
         fake.otherWorkspace = true; worker().doWork();
         assertEquals(0, fake.uploads); assertEquals(0, fake.plans);
         assertEquals("held", AutoCapture.job(c, ID).getString("state"));
+    }
+    @Test public void terminalFileChecksHoldWithoutStartingAPlanOrRepeatingUpload() throws Exception {
+        worker().doWork(); assertEquals(1, fake.uploads);
+        fake.held = true; worker().doWork();
+        assertEquals("held", AutoCapture.job(c, ID).getString("state"));
+        worker().doWork(); assertEquals(1, fake.uploads); assertEquals(0, fake.plans);
     }
     @Test public void undoMeansNoUploadOrPlan() throws Exception {
         new CaptureUndoReceiver().onReceive(c, new android.content.Intent().putExtra("id", ID));

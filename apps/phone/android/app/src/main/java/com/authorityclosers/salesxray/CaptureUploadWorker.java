@@ -112,6 +112,10 @@ public class CaptureUploadWorker extends Worker {
                 .put("command_id", CaptureRules.id(id, "attach", 0)).put("submission_id", sid)
                 .put("call_event_id", job.getString("eventId")), null, false);
             if (progress.optBoolean("has_report")) { AutoCapture.save(c, job, "report_ready"); return Result.success(); }
+            if (Arrays.asList("failed", "cancelled").contains(progress.optString("local_state")) ||
+                Arrays.asList("held", "cancelled", "completed").contains(progress.optString("state"))) {
+                AutoCapture.save(c, job, "held"); return Result.success();
+            }
             if (progress.optBoolean("automatic_progression")) { AutoCapture.save(c, job, "analysing"); return Result.retry(); }
             if (!"completed".equals(progress.optString("local_state"))) return Result.retry();
             gate(c, api, job);
