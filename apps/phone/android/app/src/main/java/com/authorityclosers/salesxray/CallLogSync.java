@@ -378,6 +378,7 @@ final class CallLogSync {
                 // A number that is not a lead's never leaves the phone. A real
                 // conversation with one is kept here to offer "Save as lead?".
                 String number = key.length() >= 6 ? numbers.get(key) : null;
+                if (number != null && !CaptureRules.samePhone(cursor.getString(1), number)) number = null;
                 if (number == null) {
                     if (!"play".equals(Permissions.store(context)) && CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)) {
                         unknown = CallLogRules.keepUnknown(unknown, cursor.getString(1), key, date, direction, cursor.getLong(3), now, UNKNOWN_KEEP_MS, UNKNOWN_MAX);
