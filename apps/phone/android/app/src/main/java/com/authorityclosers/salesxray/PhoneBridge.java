@@ -847,16 +847,23 @@ final class PhoneBridge {
                     .setMessage(AutoCapture.DISCLOSURE)
                     .setNegativeButton("Not now", (dialog, which) -> reply(reply, id, CallLogSync.status(activity)))
                     .setOnCancelListener(dialog -> reply(reply, id, CallLogSync.status(activity)))
-                    .setPositiveButton("Enable call logging", (dialog, which) -> {
-                        CallLogSync.authorize(activity, scope);
-                        if (CallLogSync.supported(activity) && !CallLogSync.hasAccess(activity)) {
-                            logReply = reply; logId = id; logSim = sim;
-                            ActivityCompat.requestPermissions(activity, CallLogSync.wanted(), REQUEST_LOG);
-                        } else {
-                            if (CallLogSync.setOn(activity, true, sim)) CallLogSync.soon(activity);
-                            reply(reply, id, CallLogSync.status(activity));
-                        }
-                    }).show());
+                    .setPositiveButton("Enable call logging", (dialog, which) -> io.execute(() -> {
+                        try {
+                            if (!scope.equals(CaptureRules.identity(new CaptureApi(activity).book()))) {
+                                fail(reply, id, "organisation_required"); return;
+                            }
+                            main.post(() -> {
+                                CallLogSync.authorize(activity, scope);
+                                if (CallLogSync.supported(activity) && !CallLogSync.hasAccess(activity)) {
+                                    logReply = reply; logId = id; logSim = sim;
+                                    ActivityCompat.requestPermissions(activity, CallLogSync.wanted(), REQUEST_LOG);
+                                } else {
+                                    if (CallLogSync.setOn(activity, true, sim)) CallLogSync.soon(activity);
+                                    reply(reply, id, CallLogSync.status(activity));
+                                }
+                            });
+                        } catch (Exception e) { fail(reply, id, "organisation_required"); }
+                    })).show());
             } catch (Exception e) { fail(reply, id, "organisation_required"); }
         });
     }

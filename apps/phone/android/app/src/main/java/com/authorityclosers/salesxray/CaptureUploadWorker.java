@@ -17,7 +17,7 @@ public class CaptureUploadWorker extends Worker {
     public CaptureUploadWorker(@NonNull Context c, @NonNull WorkerParameters p) { super(c, p); }
     JSONObject gate(Context c, CaptureApi api, JSONObject job) throws Exception {
         JSONObject book = api.book();
-        if (!androidx.core.app.NotificationManagerCompat.from(c).areNotificationsEnabled()) throw new CaptureApi.Failure(409);
+        if (!AutoCapture.noticesAllowed(c)) throw new CaptureApi.Failure(409);
         if (!AutoCapture.enabled(c, book) || !CaptureRules.identity(book).equals(job.optString("identity")))
             throw new CaptureApi.Failure(403);
         if (CaptureRules.number(job.getString("name"), job.getLong("saved"), System.currentTimeMillis(),
@@ -25,8 +25,12 @@ public class CaptureUploadWorker extends Worker {
             throw new CaptureApi.Failure(409);
         JSONObject policy = api.policy();
         if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) throw new CaptureApi.Failure(409);
-        if (AutoCapture.prefs(c).getBoolean("wifiOnly", true) &&
-            c.getSystemService(ConnectivityManager.class).isActiveNetworkMetered()) throw new IOException("waiting_for_wifi");
+        if (AutoCapture.prefs(c).getBoolean("wifiOnly", true)) {
+            ConnectivityManager network = c.getSystemService(ConnectivityManager.class);
+            NetworkCapabilities active = network.getNetworkCapabilities(network.getActiveNetwork());
+            if (active == null || !active.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || network.isActiveNetworkMetered())
+                throw new IOException("waiting_for_wifi");
+        }
         if (isStopped()) throw new IOException("stopped");
         return policy;
     }
@@ -56,6 +60,7 @@ public class CaptureUploadWorker extends Worker {
         JSONObject job = null;
         try {
             job = AutoCapture.job(c, id);
+            if (id == null || !job.has("id")) return Result.success();
             if (Arrays.asList("cancelled", "held", "report_ready").contains(job.optString("state"))) return Result.success();
             if (System.currentTimeMillis() < job.optLong("due")) return Result.retry();
             if (System.currentTimeMillis() - job.optLong("stamp") > CaptureRules.KEEP_MS) {

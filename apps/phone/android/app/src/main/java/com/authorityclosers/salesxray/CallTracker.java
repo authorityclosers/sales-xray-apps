@@ -181,6 +181,7 @@ final class CallTracker {
         finishing = true;
         unwatch();
         put(call, "endedMs", System.currentTimeMillis());
+        AutoCapture.afterCall(activity, call.optLong("startedMs"));
         save(call);
         io.execute(() -> settle(call));
     }
@@ -225,7 +226,14 @@ final class CallTracker {
         long ended = call.optLong("endedMs");
         String digits = digits(call.optString("number"));
         boolean corporate = false;
-        try { corporate = !CaptureRules.identity(new CaptureApi(activity).book()).isEmpty(); } catch (Exception ignored) { }
+        try {
+            JSONObject book = new CaptureApi(activity).book();
+            org.json.JSONArray numbers = book.optJSONArray("numbers");
+            if (!CaptureRules.identity(book).isEmpty()) {
+                for (int i = 0; numbers != null && i < numbers.length(); i++)
+                    if (CaptureRules.samePhone(digits, numbers.optString(i))) corporate = true;
+            }
+        } catch (Exception ignored) { }
         if (corporate && granted(activity, Manifest.permission.READ_CALL_LOG)) {
             long deadline = System.currentTimeMillis() + LOG_WAIT_MS;
             do {
