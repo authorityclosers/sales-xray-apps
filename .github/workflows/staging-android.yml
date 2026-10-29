@@ -1,0 +1,147 @@
+name: Staging Android QA
+on:
+  workflow_dispatch:
+    inputs:
+      web_ref:
+        description: Exact 40-character deployed staging platform web commit (ac-release status, environments.staging.web)
+        required: true
+        type: string
+  pull_request:
+    paths: [apps/phone/**, scripts/**, .github/workflows/staging-android.yml, tests/real-app/**]
+permissions:
+  contents: read
+concurrency:
+  group: staging-qa-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+      - run: |
+          node --test scripts/*.test.mjs
+          python3 -m unittest discover -s tests/real-app -v
+          bash scripts/real-app-check.sh USB123 --lead qa-lead --report qa-report --dry-run
+          bash -n scripts/real-app-check.sh
+  build:
+    needs: checks
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    # Same durable QA key and approval boundary as android.yml signed_only.
+    # PR builds get no release environment secrets and are never installable QA upgrades.
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'android-release' || 'staging-ci' }}
+    defaults:
+      run:
+        working-directory: apps/phone
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Require the deployed commit for signed QA
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          WEB_REF: ${{ inputs.web_ref }}
+        run: '[[ "$WEB_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "Exact staging web SHA required"; exit 1; }'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+      - run: echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - name: Capacitor
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx cap sync android
+      - name: Platform at staging's exact web commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: authorityclosers/authority-closers-platform
+          ref: ${{ inputs.web_ref || 'main' }}
+          path: platform
+          persist-credentials: false
+      - name: Bundle staging web copy (S9)
+        run: bash scripts/build-web-shell.sh "$GITHUB_WORKSPACE/platform" android/app/src/main/assets/web salesxray-staging.authorityclosers.com
+      - name: Durable QA key (manual staging runs only)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          STORE_BASE64: ${{ secrets.SX_ANDROID_SIGNING_STORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.SX_ANDROID_SIGNING_PASSWORD }}
+        run: |
+          test -n "$STORE_BASE64" && test -n "$STORE_PASSWORD" || { echo 'Durable QA signing unavailable'; exit 1; }
+          printf '%s' "$STORE_BASE64" | base64 -d > "$RUNNER_TEMP/staging.keystore"
+          echo "SX_SIGNING_STORE=$RUNNER_TEMP/staging.keystore" >> "$GITHUB_ENV"
+      - name: Build and test staging, compare Play manifest
+        working-directory: apps/phone/android
+        env:
+          SX_SIGNING_PASSWORD: ${{ secrets.SX_ANDROID_SIGNING_PASSWORD }}
+          SIGNED: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          # Time-based version code is monotonic across independent workflows (and safe below int32).
+          export SX_VERSION_CODE=$(( $(date +%s) / 60 ))
+          export SX_VERSION_NAME="0.4.${GITHUB_RUN_NUMBER}"
+          ./gradlew --no-daemon --stacktrace testStagingDebugUnitTest :app:processPlayDebugMainManifest :app:processStagingDebugMainManifest
+          python3 ../../../scripts/check-staging-manifest.py app/build/intermediates
+          if [ "$SIGNED" = true ]; then
+            ./gradlew --no-daemon --stacktrace assembleStagingRelease
+            apk=app/build/outputs/apk/staging/release/app-staging-release.apk
+          else
+            ./gradlew --no-daemon --stacktrace assembleStagingDebug
+            apk=app/build/outputs/apk/staging/debug/app-staging-debug.apk
+          fi
+          mkdir -p ../dist
+          cp "$apk" ../dist/sales-xray-staging.apk
+          sha256sum ../dist/*.apk > ../dist/SHA256SUMS.txt
+          git -C "$GITHUB_WORKSPACE/platform" rev-parse HEAD > ../dist/platform-sha.txt
+          git rev-parse HEAD > ../dist/apps-sha.txt
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/staging.keystore"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sales-xray-staging-${{ github.run_number }}
+          path: apps/phone/dist/*
+          if-no-files-found: error
+          retention-days: 14
+  firebase-robo:
+    needs: build
+    # Deliberately disabled until the owner chooses the Firebase project and enables this flag.
+    if: github.event_name == 'workflow_dispatch' && vars.SX_STAGING_TESTLAB_ENABLED == 'true' && vars.SX_TESTLAB_PROJECT != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PROJECT: ${{ vars.SX_TESTLAB_PROJECT }}
+      TESTLAB_WIF_PROVIDER: projects/501399142248/locations/global/workloadIdentityPools/github/providers/sales-xray-apps
+      TESTLAB_SERVICE_ACCOUNT: play-publisher@ac-sales-xray-ads.iam.gserviceaccount.com
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sales-xray-staging-${{ github.run_number }}
+          path: apks
+      - name: Keyless sign-in, existing Test Lab identity
+        run: |
+          python3 scripts/testlab.py credentials "$RUNNER_TEMP/testlab.json"
+          gcloud auth login --cred-file="$RUNNER_TEMP/testlab.json" --quiet
+      - name: Robo (one physical device, signed out; Spark project only)
+        run: |
+          # Device chosen by the owner from `gcloud firebase test android models list`.
+          # Spark with billing unlinked enforces the shared five-physical-runs/day free cap.
+          test -n "$DEVICE"
+          gcloud firebase test android run tests/real-app/robo.yml:staging --project "$PROJECT" --device "$DEVICE"
+        env:
+          DEVICE: ${{ vars.SX_STAGING_TESTLAB_DEVICE }}
+      - name: Remove credentials
+        if: always()
+        run: |
+          gcloud auth revoke --all --quiet 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/testlab.json"

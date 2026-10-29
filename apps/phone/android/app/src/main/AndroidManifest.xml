@@ -13,9 +13,9 @@
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         tools:replace="android:allowBackup,android:fullBackupContent,android:dataExtractionRules"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="${appIcon}"
         android:label="${appLabel}"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="${appRoundIcon}"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
         <receiver android:name=".CaptureUndoReceiver" android:exported="false" />

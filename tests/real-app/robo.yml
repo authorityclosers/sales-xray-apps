@@ -1,0 +1,6 @@
+staging:
+  type: robo
+  app: apks/sales-xray-staging.apk
+  timeout: 300s
+  results-history-name: Sales X-Ray Staging (signed out)
+  # One owner-selected physical device is passed by CI. No production login or credentials.

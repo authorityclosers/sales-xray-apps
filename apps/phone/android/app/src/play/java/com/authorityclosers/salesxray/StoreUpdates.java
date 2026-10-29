@@ -61,6 +61,7 @@ final class StoreUpdates {
 
     /** After the first screen is up: listen for downloads and ask Play once. */
     void start() {
+        if (!"com.authorityclosers.salesxray".equals(activity.getPackageName())) return;
         try {
             manager.registerListener(downloads);
             manager
@@ -97,6 +98,7 @@ final class StoreUpdates {
 
     /** Back in the app: a finished download is offered once, and a required update left half-way goes on. */
     void resume() {
+        if (!"com.authorityclosers.salesxray".equals(activity.getPackageName())) return;
         try {
             manager.getAppUpdateInfo().addOnSuccessListener(info -> {
                 if (info.installStatus() == InstallStatus.DOWNLOADED) offerRestart();
