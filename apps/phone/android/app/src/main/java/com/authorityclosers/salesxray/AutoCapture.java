@@ -21,14 +21,17 @@ final class AutoCapture {
     }
     static void configure(Context c, JSONObject book, boolean on, boolean wifi) throws Exception {
         String identity = CaptureRules.identity(book);
+        if (on && !androidx.core.app.NotificationManagerCompat.from(c).areNotificationsEnabled()) throw new Exception("Allow upload notifications first, so Undo is available.");
         if (on && (identity.isEmpty() || RecordingFolder.trees(c).isEmpty())) throw new Exception("Pick your recordings folder inside an organisation workspace first.");
         SharedPreferences p = prefs(c);
         if (on && (!p.getBoolean("on", false) || !identity.equals(p.getString("identity", "")))) {
             p.edit().putLong("since", System.currentTimeMillis()).apply();
         }
+        boolean changedNetwork = wifi != p.getBoolean("wifiOnly", true);
         p.edit().putBoolean("on", on).putString("identity", identity).putBoolean("wifiOnly", wifi).commit();
         WorkManager work = WorkManager.getInstance(c);
         if (!on) { work.cancelAllWorkByTag("sx-auto-capture"); return; }
+        if (changedNetwork) work.cancelAllWorkByTag("sx-auto-capture").getResult().get();
         // Jobs check the current network setting again before bytes leave the device.
         work.enqueueUniquePeriodicWork("sx-auto-capture-watch", ExistingPeriodicWorkPolicy.UPDATE,
             new PeriodicWorkRequest.Builder(CaptureWatchWorker.class, 15, TimeUnit.MINUTES)
@@ -50,10 +53,18 @@ final class AutoCapture {
     static void scan(Context c) throws Exception {
         CaptureApi api = new CaptureApi(c);
         JSONObject book = api.book();
-        if (!enabled(c, book)) return;
+        if (!enabled(c, book) || !androidx.core.app.NotificationManagerCompat.from(c).areNotificationsEnabled()) return;
         JSONObject policy = api.policy();
         if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) return;
         long now = System.currentTimeMillis();
+        for (Map.Entry<String, ?> stored : prefs(c).getAll().entrySet()) {
+            if (!stored.getKey().startsWith("job:")) continue;
+            JSONObject old = new JSONObject(String.valueOf(stored.getValue()));
+            if (now - old.optLong("stamp") > CaptureRules.KEEP_MS) {
+                WorkManager.getInstance(c).cancelUniqueWork("sx-capture:" + old.optString("id"));
+                prefs(c).edit().remove(stored.getKey()).commit();
+            }
+        }
         for (RecordingFolder.Document doc : RecordingFolder.files(c)) {
             if (doc.size <= 0 || doc.size > CaptureRules.MAX_BYTES) continue;
             String number = CaptureRules.number(doc.name, doc.modifiedMs, now,
@@ -68,9 +79,14 @@ final class AutoCapture {
                 seconds = Long.parseLong(media.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)) / 1000;
             } catch (Exception unsupported) { continue; }
             if (seconds <= 0 || seconds > 14400 || doc.modifiedMs < stamp + seconds * 1000 - 5000) continue;
-            JSONObject call = api.json("POST", "/v1/lead-desk/recording-call", new JSONObject()
+            JSONObject call;
+            try { call = api.json("POST", "/v1/lead-desk/recording-call", new JSONObject()
                 .put("command_id", id).put("number", number).put("started_at", CallLogRules.iso(stamp))
                 .put("duration_seconds", seconds), id, false);
+            } catch (CaptureApi.Failure rejected) {
+                if (rejected.code == 409 || rejected.code == 422 || rejected.code == 404) continue;
+                throw rejected;
+            }
             JSONObject job = new JSONObject().put("id", id).put("identity", CaptureRules.identity(book))
                 .put("source", doc.uri.toString()).put("name", doc.name).put("number", number)
                 .put("stamp", stamp).put("saved", doc.modifiedMs).put("size", doc.size)

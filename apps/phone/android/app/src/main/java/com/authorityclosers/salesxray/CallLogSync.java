@@ -213,6 +213,7 @@ final class CallLogSync {
 
     /** Work calls with numbers that aren't leads, newest first (they never leave the phone by themselves). */
     static JSONArray unknown(Context context) {
+        if ("play".equals(Permissions.store(context))) return new JSONArray();
         try {
             JSONArray stored = new JSONArray(prefs(context).getString(UNKNOWN, "[]"));
             return CallLogRules.keepUnknown(stored, null, null, 0, null, 0, System.currentTimeMillis(), UNKNOWN_KEEP_MS, UNKNOWN_MAX);

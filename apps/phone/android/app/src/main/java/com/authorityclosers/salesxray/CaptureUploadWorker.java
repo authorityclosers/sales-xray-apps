@@ -17,6 +17,7 @@ public class CaptureUploadWorker extends Worker {
     public CaptureUploadWorker(@NonNull Context c, @NonNull WorkerParameters p) { super(c, p); }
     JSONObject gate(Context c, CaptureApi api, JSONObject job) throws Exception {
         JSONObject book = api.book();
+        if (!androidx.core.app.NotificationManagerCompat.from(c).areNotificationsEnabled()) throw new CaptureApi.Failure(409);
         if (!AutoCapture.enabled(c, book) || !CaptureRules.identity(book).equals(job.optString("identity")))
             throw new CaptureApi.Failure(403);
         if (CaptureRules.number(job.getString("name"), job.getLong("saved"), System.currentTimeMillis(),
@@ -42,7 +43,12 @@ public class CaptureUploadWorker extends Worker {
             if (cursor == null || !cursor.moveToFirst() || cursor.getLong(0) != job.getLong("size") ||
                 cursor.getLong(1) != job.getLong("saved")) throw new CaptureApi.Failure(409);
         }
-        return c.getContentResolver().openInputStream(uri);
+        return new FilterInputStream(c.getContentResolver().openInputStream(uri)) {
+            @Override public int read(byte[] b, int off, int len) throws IOException {
+                if (isStopped() || !AutoCapture.prefs(c).getBoolean("on", false)) throw new IOException("stopped");
+                return super.read(b, off, len);
+            }
+        };
     }
     CaptureApi api(Context c) throws Exception { return new CaptureApi(c); }
     @NonNull public Result doWork() {

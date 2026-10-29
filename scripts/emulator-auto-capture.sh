@@ -21,5 +21,6 @@ done
 [ "$booted" = 1 ] || { tail -60 auto-capture-emulator.txt; exit 1; }
 adb install "dist/sales-xray-dev-android-0.3.${run}-test.apk"
 adb install "dist/sales-xray-dev-android-0.3.${run}-device-tests.apk"
+adb shell pm grant "$package" android.permission.POST_NOTIFICATIONS
 adb shell am instrument -w -e class com.authorityclosers.salesxray.CaptureUploadTest "$package.test/androidx.test.runner.AndroidJUnitRunner" | tee auto-capture-proof.txt
 grep -q '^OK (3 tests)' auto-capture-proof.txt

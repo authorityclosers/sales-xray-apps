@@ -414,22 +414,27 @@ final class PhoneBridge {
                     });
                     break;
                 }
-                case "autoCaptureStatus":
-                    reply(reply, id, AutoCapture.status(activity));
+                case "autoCaptureStatus": {
+                    final String asked = id;
+                    io.execute(() -> {
+                        try { reply(reply, asked, AutoCapture.status(activity).put("on", AutoCapture.enabled(activity, new CaptureApi(activity).book()))); }
+                        catch (Exception e) { fail(reply, asked, "capture_unavailable"); }
+                    });
                     break;
+                }
                 case "autoCaptureSetup": {
                     final String asked = id;
                     final boolean on = args.optBoolean("on");
                     final boolean wifi = args.optBoolean("wifiOnly", true);
                     io.execute(() -> {
                         try {
-                            CaptureApi api = new CaptureApi(activity);
-                            JSONObject book = api.book();
                             if (!on) {
-                                AutoCapture.configure(activity, book, false, wifi);
+                                AutoCapture.configure(activity, new JSONObject(), false, wifi);
                                 reply(reply, asked, AutoCapture.status(activity));
                                 return;
                             }
+                            CaptureApi api = new CaptureApi(activity);
+                            JSONObject book = api.book();
                             JSONObject policy = api.policy();
                             JSONObject consent = api.consent();
                             if (!CaptureRules.consent(consent, policy.optString("policy_sha256")) || CaptureRules.identity(book).isEmpty()) {
