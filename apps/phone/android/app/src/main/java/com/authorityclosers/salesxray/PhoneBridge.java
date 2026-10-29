@@ -440,6 +440,9 @@ final class PhoneBridge {
                             if (!CaptureRules.consent(consent, policy.optString("policy_sha256")) || CaptureRules.identity(book).isEmpty()) {
                                 fail(reply, asked, "standing_consent_required"); return;
                             }
+                            // The edge refuses every upload while the contact profile is incomplete (30 Oct 2026):
+                            // say so before uploads turn on, not with a held call later.
+                            if (!api.eligible()) { fail(reply, asked, "profile_required"); return; }
                             String words = consent.getJSONObject("notice").getString("text");
                             main.post(() -> new androidx.appcompat.app.AlertDialog.Builder(activity)
                                 .setTitle("Automatically upload lead calls")
@@ -450,11 +453,35 @@ final class PhoneBridge {
                                     try {
                                         JSONObject fresh = api.book();
                                         if (!CaptureRules.identity(book).equals(CaptureRules.identity(fresh)) || !CaptureRules.consent(api.consent(), api.policy().optString("policy_sha256"))) throw new Exception();
-                                        AutoCapture.configure(activity, fresh, true, wifi);
-                                        reply(reply, asked, AutoCapture.status(activity));
+                                        int earlier = AutoCapture.offPeriodCalls(activity, fresh);
+                                        if (earlier == 0) {
+                                            AutoCapture.configure(activity, fresh, true, wifi);
+                                            reply(reply, asked, AutoCapture.status(activity));
+                                            return;
+                                        }
+                                        // Calls saved while uploads were off: the seller decides; nothing is chosen for them.
+                                        main.post(() -> new androidx.appcompat.app.AlertDialog.Builder(activity)
+                                            .setTitle("Upload calls from while uploads were off?")
+                                            .setMessage((earlier == 1 ? "1 lead call recording was" : earlier + " lead call recordings were")
+                                                + " saved on this phone after uploads were turned off at "
+                                                + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(new java.util.Date(AutoCapture.offAt(activity)))
+                                                + ". Upload them for analysis too? Each still gets its 60-second Undo.")
+                                            .setCancelable(false)
+                                            .setNegativeButton("Skip them", (inner, button) -> io.execute(() -> turnOn(reply, asked, fresh, wifi, false)))
+                                            .setPositiveButton("Upload them", (inner, button) -> io.execute(() -> turnOn(reply, asked, fresh, wifi, true)))
+                                            .show());
                                     } catch (Exception e) { fail(reply, asked, "capture_unavailable"); }
                                 })).show());
                         } catch (Exception e) { fail(reply, asked, "capture_unavailable"); }
+                    });
+                    break;
+                }
+                case "autoCaptureRetry": {
+                    // Try again on the capture-health card: held calls whose cause is gone go now.
+                    final String asked = id;
+                    io.execute(() -> {
+                        try { AutoCapture.now(activity); reply(reply, asked, AutoCapture.status(activity)); }
+                        catch (Exception e) { fail(reply, asked, "capture_unavailable"); }
                     });
                     break;
                 }
@@ -655,6 +682,8 @@ final class PhoneBridge {
             // (app 0.3.80+, owner 22 Oct).
             status.put("autoAttach", true);
             status.put("autoCapture", true);
+            // Capture health: why calls wait (profile, minutes, sign-in, network...) and Try again (30 Oct 2026).
+            status.put("autoCaptureHealth", true);
             status.put("audioCheck", true);
             status.put("webShell", bundled != null && bundled.on());
             // What this build's native side offers a web release (LiveWebRules.NATIVE_CONTRACT).
@@ -780,7 +809,7 @@ final class PhoneBridge {
 
     /** Signed out on this phone: drop its alert address, so no alert reaches it. */
     private void pushReset() {
-        AutoCapture.stop(activity);
+        AutoCapture.stop(activity, CaptureRules.SIGNED_OUT);
         CallLogSync.setOn(activity, false, "");
         if (LeadAlerts.token(activity) == null) return;
         LeadAlerts.forget(activity);
@@ -830,6 +859,13 @@ final class PhoneBridge {
         }
         PhoneSetup.open(activity, "notifications");
         io.execute(() -> reply(reply, id, setupStatus()));
+    }
+
+    private void turnOn(JavaScriptReplyProxy reply, String id, JSONObject book, boolean wifi, boolean includeOffPeriod) {
+        try {
+            AutoCapture.configure(activity, book, true, wifi, includeOffPeriod);
+            reply(reply, id, AutoCapture.status(activity));
+        } catch (Exception e) { fail(reply, id, "capture_unavailable"); }
     }
 
     /** Work calls logged by themselves (UX study item 5): call history access is asked for once. */
