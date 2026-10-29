@@ -131,7 +131,7 @@ jobs:
           # The final merged manifest; only declarations count (the source manifests' comments name them).
           manifest=$(find app/build/intermediates -path "*merged_manifests*playRelease*" -name AndroidManifest.xml | head -1)
           test -n "$manifest"
-          ! grep -E 'android:name="(android\.permission\.(READ_CALL_LOG|CALL_PHONE|MANAGE_EXTERNAL_STORAGE|REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)|[a-z.]*CallRecorderService)"' "$manifest"
+          ! grep -E 'android:name="(android\.permission\.(CALL_PHONE|MANAGE_EXTERNAL_STORAGE|REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)|[a-z.]*CallRecorderService)"' "$manifest"
           echo "Play bundle declares none of them ($manifest)"
       - name: Upload to Play (keyless sign-in with the run's GitHub OIDC token)
         env:

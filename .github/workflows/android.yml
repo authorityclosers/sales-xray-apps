@@ -34,6 +34,10 @@ on:
         description: Also prove the call recorder on an emulator (adb emu gsm call, accept, cancel)
         type: boolean
         default: false
+  pull_request:
+    paths:
+      - apps/phone/**
+      - .github/workflows/android.yml
   push:
     branches:
       - main

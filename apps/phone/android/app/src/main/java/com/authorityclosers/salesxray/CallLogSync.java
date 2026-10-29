@@ -81,6 +81,10 @@ final class CallLogSync {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
+    static void authorize(Context context, String identity) {
+        prefs(context).edit().putString("workspace_identity", identity).commit();
+    }
+
     static boolean isOn(Context context) {
         return supported(context) && prefs(context).getBoolean(ON, false);
     }
@@ -267,6 +271,7 @@ final class CallLogSync {
             PhoneBridge.signalActive("recordings");
             RecordingQueue.announce(context, !MainActivity.inFront);
         }
+        AutoCapture.soon(context);
         return status(context);
     }
 
@@ -293,6 +298,11 @@ final class CallLogSync {
         int workEnd = 24 * 60;
         try {
             JSONObject json = new JSONObject(book.body);
+            String identity = CaptureRules.identity(json);
+            if (identity.isEmpty() || !identity.equals(prefs.getString("workspace_identity", ""))) {
+                setOn(context, false, "");
+                return state(context, "signed_out");
+            }
             person = json.getString("person_id");
             // The team's work hours: a call outside them stays on the phone.
             JSONObject hours = json.optJSONObject("work_hours");
@@ -368,7 +378,7 @@ final class CallLogSync {
                 // conversation with one is kept here to offer "Save as lead?".
                 String number = key.length() >= 6 ? numbers.get(key) : null;
                 if (number == null) {
-                    if (CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)) {
+                    if (!"play".equals(Permissions.store(context)) && CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)) {
                         unknown = CallLogRules.keepUnknown(unknown, cursor.getString(1), key, date, direction, cursor.getLong(3), now, UNKNOWN_KEEP_MS, UNKNOWN_MAX);
                     }
                     continue;

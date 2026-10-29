@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The Google Play build (the "play" flavour). Removed, because Play allows them only for other kinds of app:
-  - call history (READ_CALL_LOG: Play's SMS and Call Log policy): no work-call logging from the phone's
-    dialer; a call placed from the app is answered by the seller ("How did it go?");
+  READ_CALL_LOG is retained under the Enterprise CRM exception; see docs/play/call-log-declaration.md.
   - placing calls directly (CALL_PHONE): the app opens the dialer with the number in;
   - all-files access (Play's All files access policy): the dialer's recordings are read as audio
     (READ_MEDIA_AUDIO), and through a folder the seller picks where the phone hides them;
@@ -18,7 +17,7 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <uses-permission android:name="android.permission.READ_CALL_LOG" tools:node="remove" />
+    <!-- Enterprise CRM exception: organisation login and disclosure before runtime request. -->
     <uses-permission android:name="android.permission.CALL_PHONE" tools:node="remove" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" tools:node="remove" />

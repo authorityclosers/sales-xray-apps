@@ -64,6 +64,7 @@ public class RecordingWatchWorker extends Worker {
     @Override
     public Result doWork() {
         Context context = getApplicationContext();
+        AutoCapture.soon(context);
         if (!watching(context)) return Result.success();
         long lastSeen = prefs(context).getLong(LAST_SEEN, System.currentTimeMillis());
         List<JSONObject> items = RecordingScanner.list(context, 50);

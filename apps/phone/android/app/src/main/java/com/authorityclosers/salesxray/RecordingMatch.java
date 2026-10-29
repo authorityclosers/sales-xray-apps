@@ -48,7 +48,7 @@ final class RecordingMatch {
     );
     // 241005_101530 (Samsung).
     private static final Pattern SHORT_STAMP = Pattern.compile(
-        "(?<!\\d)(\\d\\d)(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])[-_]([01]\\d|2[0-3])([0-5]\\d)([0-5]\\d)(?!\\d)"
+        "(?<!\\d)(\\d\\d)(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])[-_]?([01]\\d|2[0-3])([0-5]\\d)([0-5]\\d)(?!\\d)"
     );
     private static final Pattern DIGITS = Pattern.compile("\\d+");
 
@@ -89,6 +89,7 @@ final class RecordingMatch {
     private static long clock(TimeZone zone, int year, Matcher found) {
         Calendar calendar = Calendar.getInstance(zone, Locale.ROOT);
         calendar.clear();
+        calendar.setLenient(false);
         calendar.set(
             year,
             Integer.parseInt(found.group(2)) - 1,
@@ -97,7 +98,7 @@ final class RecordingMatch {
             Integer.parseInt(found.group(5)),
             Integer.parseInt(found.group(6))
         );
-        return calendar.getTimeInMillis();
+        try { return calendar.getTimeInMillis(); } catch (IllegalArgumentException invalid) { return 0; }
     }
 
     /** True when a number in a file name is this lead's (the last ten digits, or all of a shorter one). */

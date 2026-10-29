@@ -76,7 +76,11 @@ final class CallTracker {
             Manifest.permission.READ_CALL_LOG,
             Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_AUDIO : Manifest.permission.READ_EXTERNAL_STORAGE,
         };
-        for (String permission : all) if (Permissions.declared(context, permission)) list.add(permission);
+        for (String permission : all) {
+            // Play's restricted permission is requested only by the corporate CRM disclosure flow.
+            if (Manifest.permission.READ_CALL_LOG.equals(permission) && "play".equals(Permissions.store(context))) continue;
+            if (Permissions.declared(context, permission)) list.add(permission);
+        }
         return list.toArray(new String[0]);
     }
 
@@ -93,6 +97,7 @@ final class CallTracker {
             Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.READ_CALL_LOG,
         }) {
+            if (Manifest.permission.READ_CALL_LOG.equals(permission) && "play".equals(Permissions.store(context))) continue;
             if (Permissions.declared(context, permission) && !granted(context, permission)) return false;
         }
         return true;
@@ -128,6 +133,7 @@ final class CallTracker {
             direct = false;
             activity.startActivity(new Intent(Intent.ACTION_DIAL, uri));
         }
+        AutoCapture.soon(activity);
         watch();
         JSONObject started = new JSONObject();
         put(started, "started", true);
@@ -218,7 +224,9 @@ final class CallTracker {
         long started = call.optLong("startedMs");
         long ended = call.optLong("endedMs");
         String digits = digits(call.optString("number"));
-        if (granted(activity, Manifest.permission.READ_CALL_LOG)) {
+        boolean corporate = false;
+        try { corporate = !CaptureRules.identity(new CaptureApi(activity).book()).isEmpty(); } catch (Exception ignored) { }
+        if (corporate && granted(activity, Manifest.permission.READ_CALL_LOG)) {
             long deadline = System.currentTimeMillis() + LOG_WAIT_MS;
             do {
                 long[] row = loggedCall(started, digits);
