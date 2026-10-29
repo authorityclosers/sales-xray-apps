@@ -406,6 +406,58 @@ final class PhoneBridge {
                     pushReset();
                     reply(reply, id, pushState());
                     break;
+                case "autoCaptureStates": {
+                    final String asked = id;
+                    io.execute(() -> {
+                        try { reply(reply, asked, new JSONObject().put("items", AutoCapture.states(activity, new CaptureApi(activity)))); }
+                        catch (Exception e) { fail(reply, asked, "capture_unavailable"); }
+                    });
+                    break;
+                }
+                case "autoCaptureStatus": {
+                    final String asked = id;
+                    io.execute(() -> {
+                        try { reply(reply, asked, AutoCapture.status(activity).put("on", AutoCapture.enabled(activity, new CaptureApi(activity).book()))); }
+                        catch (Exception e) { fail(reply, asked, "capture_unavailable"); }
+                    });
+                    break;
+                }
+                case "autoCaptureSetup": {
+                    final String asked = id;
+                    final boolean on = args.optBoolean("on");
+                    final boolean wifi = args.optBoolean("wifiOnly", true);
+                    io.execute(() -> {
+                        try {
+                            if (!on) {
+                                AutoCapture.configure(activity, new JSONObject(), false, wifi);
+                                reply(reply, asked, AutoCapture.status(activity));
+                                return;
+                            }
+                            CaptureApi api = new CaptureApi(activity);
+                            JSONObject book = api.book();
+                            JSONObject policy = api.policy();
+                            JSONObject consent = api.consent();
+                            if (!CaptureRules.consent(consent, policy.optString("policy_sha256")) || CaptureRules.identity(book).isEmpty()) {
+                                fail(reply, asked, "standing_consent_required"); return;
+                            }
+                            String words = consent.getJSONObject("notice").getString("text");
+                            main.post(() -> new androidx.appcompat.app.AlertDialog.Builder(activity)
+                                .setTitle("Automatically upload lead calls")
+                                .setMessage(words + "\n\nSales X-Ray checks the recordings folder you choose, including in the background. Only files with a lead's number and a matching time are uploaded to your workspace for analysis. You have 60 seconds to Undo before upload. Audio is encrypted in transit and can be deleted from Calls. Turn this off in Settings at any time.\n\n" + policy.optString("privacy_details"))
+                                .setNegativeButton("Not now", (dialog, which) -> { try { reply(reply, asked, AutoCapture.status(activity)); } catch (Exception ignored) { fail(reply, asked, "capture_unavailable"); } })
+                                .setOnCancelListener(dialog -> { try { reply(reply, asked, AutoCapture.status(activity)); } catch (Exception ignored) { fail(reply, asked, "capture_unavailable"); } })
+                                .setPositiveButton("Turn on", (dialog, which) -> io.execute(() -> {
+                                    try {
+                                        JSONObject fresh = api.book();
+                                        if (!CaptureRules.identity(book).equals(CaptureRules.identity(fresh)) || !CaptureRules.consent(api.consent(), api.policy().optString("policy_sha256"))) throw new Exception();
+                                        AutoCapture.configure(activity, fresh, true, wifi);
+                                        reply(reply, asked, AutoCapture.status(activity));
+                                    } catch (Exception e) { fail(reply, asked, "capture_unavailable"); }
+                                })).show());
+                        } catch (Exception e) { fail(reply, asked, "capture_unavailable"); }
+                    });
+                    break;
+                }
                 case "callLogStatus":
                     reply(reply, id, CallLogSync.status(activity));
                     break;
@@ -602,6 +654,7 @@ final class PhoneBridge {
             // Logged lead calls wait here with their recording; recordings are checked for silence
             // (app 0.3.80+, owner 22 Oct).
             status.put("autoAttach", true);
+            status.put("autoCapture", true);
             status.put("audioCheck", true);
             status.put("webShell", bundled != null && bundled.on());
             // What this build's native side offers a web release (LiveWebRules.NATIVE_CONTRACT).
@@ -727,6 +780,8 @@ final class PhoneBridge {
 
     /** Signed out on this phone: drop its alert address, so no alert reaches it. */
     private void pushReset() {
+        AutoCapture.stop(activity);
+        CallLogSync.setOn(activity, false, "");
         if (LeadAlerts.token(activity) == null) return;
         LeadAlerts.forget(activity);
         if (!LeadAlerts.init(activity)) return;
@@ -779,15 +834,40 @@ final class PhoneBridge {
 
     /** Work calls logged by themselves (UX study item 5): call history access is asked for once. */
     private void callLogSetup(JavaScriptReplyProxy reply, String id, boolean on, String sim) {
-        if (on && CallLogSync.supported(activity) && !CallLogSync.hasAccess(activity)) {
-            logReply = reply;
-            logId = id;
-            logSim = sim;
-            ActivityCompat.requestPermissions(activity, CallLogSync.wanted(), REQUEST_LOG);
-            return;
+        if (!on) {
+            CallLogSync.setOn(activity, false, sim);
+            reply(reply, id, CallLogSync.status(activity)); return;
         }
-        if (CallLogSync.setOn(activity, on, sim) && on) CallLogSync.soon(activity);
-        reply(reply, id, CallLogSync.status(activity));
+        // Verify corporate login off the UI thread BEFORE showing any permission prompt.
+        io.execute(() -> {
+            try {
+                JSONObject book = new CaptureApi(activity).book();
+                String scope = CaptureRules.identity(book);
+                if (scope.isEmpty()) { fail(reply, id, "organisation_required"); return; }
+                main.post(() -> new androidx.appcompat.app.AlertDialog.Builder(activity)
+                    .setTitle("Log your company's lead calls")
+                    .setMessage(AutoCapture.DISCLOSURE)
+                    .setNegativeButton("Not now", (dialog, which) -> reply(reply, id, CallLogSync.status(activity)))
+                    .setOnCancelListener(dialog -> reply(reply, id, CallLogSync.status(activity)))
+                    .setPositiveButton("Enable call logging", (dialog, which) -> io.execute(() -> {
+                        try {
+                            if (!scope.equals(CaptureRules.identity(new CaptureApi(activity).book()))) {
+                                fail(reply, id, "organisation_required"); return;
+                            }
+                            main.post(() -> {
+                                CallLogSync.authorize(activity, scope);
+                                if (CallLogSync.supported(activity) && !CallLogSync.hasAccess(activity)) {
+                                    logReply = reply; logId = id; logSim = sim;
+                                    ActivityCompat.requestPermissions(activity, CallLogSync.wanted(), REQUEST_LOG);
+                                } else {
+                                    if (CallLogSync.setOn(activity, true, sim)) CallLogSync.soon(activity);
+                                    reply(reply, id, CallLogSync.status(activity));
+                                }
+                            });
+                        } catch (Exception e) { fail(reply, id, "organisation_required"); }
+                    })).show());
+            } catch (Exception e) { fail(reply, id, "organisation_required"); }
+        });
     }
 
     private void setWatch(JavaScriptReplyProxy reply, String id, boolean on) {

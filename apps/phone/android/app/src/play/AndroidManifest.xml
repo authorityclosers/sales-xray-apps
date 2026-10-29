@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The Google Play build (the "play" flavour). Removed, because Play allows them only for other kinds of app:
-  - call history (READ_CALL_LOG: Play's SMS and Call Log policy): no work-call logging from the phone's
-    dialer; a call placed from the app is answered by the seller ("How did it go?");
+  - call history (READ_CALL_LOG), until Play approves the Enterprise CRM declaration
+    (docs/play/call-log-declaration.md; orchestrator, 29 Oct 2026: the bundle that keeps it goes up only with
+    that declaration). Auto-capture works without it: it matches the number in the dialer recording's name;
   - placing calls directly (CALL_PHONE): the app opens the dialer with the number in;
   - all-files access (Play's All files access policy): the dialer's recordings are read as audio
     (READ_MEDIA_AUDIO), and through a folder the seller picks where the phone hides them;

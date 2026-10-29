@@ -81,6 +81,10 @@ final class CallLogSync {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
+    static void authorize(Context context, String identity) {
+        prefs(context).edit().putString("workspace_identity", identity).commit();
+    }
+
     static boolean isOn(Context context) {
         return supported(context) && prefs(context).getBoolean(ON, false);
     }
@@ -209,6 +213,7 @@ final class CallLogSync {
 
     /** Work calls with numbers that aren't leads, newest first (they never leave the phone by themselves). */
     static JSONArray unknown(Context context) {
+        if ("play".equals(Permissions.store(context))) return new JSONArray();
         try {
             JSONArray stored = new JSONArray(prefs(context).getString(UNKNOWN, "[]"));
             return CallLogRules.keepUnknown(stored, null, null, 0, null, 0, System.currentTimeMillis(), UNKNOWN_KEEP_MS, UNKNOWN_MAX);
@@ -267,6 +272,7 @@ final class CallLogSync {
             PhoneBridge.signalActive("recordings");
             RecordingQueue.announce(context, !MainActivity.inFront);
         }
+        AutoCapture.soon(context);
         return status(context);
     }
 
@@ -285,7 +291,10 @@ final class CallLogSync {
         if (cookies == null || cookies.isEmpty()) return state(context, "signed_out");
 
         Response book = request("GET", base + "/v1/lead-desk/phone-book", base, cookies, null);
-        if (book.code != 200 || book.body == null) return state(context, failure(book.code));
+        if (book.code != 200 || book.body == null) {
+            if (book.code == 401 || book.code == 403) setOn(context, false, "");
+            return state(context, failure(book.code));
+        }
         Map<String, String> numbers = new HashMap<>();
         String person;
         int[] workDays = new int[0];
@@ -293,6 +302,11 @@ final class CallLogSync {
         int workEnd = 24 * 60;
         try {
             JSONObject json = new JSONObject(book.body);
+            String identity = CaptureRules.identity(json);
+            if (identity.isEmpty() || !identity.equals(prefs.getString("workspace_identity", ""))) {
+                setOn(context, false, "");
+                return state(context, "signed_out");
+            }
             person = json.getString("person_id");
             // The team's work hours: a call outside them stays on the phone.
             JSONObject hours = json.optJSONObject("work_hours");
@@ -367,8 +381,9 @@ final class CallLogSync {
                 // A number that is not a lead's never leaves the phone. A real
                 // conversation with one is kept here to offer "Save as lead?".
                 String number = key.length() >= 6 ? numbers.get(key) : null;
+                if (number != null && !CaptureRules.samePhone(cursor.getString(1), number)) number = null;
                 if (number == null) {
-                    if (CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)) {
+                    if (!"play".equals(Permissions.store(context)) && CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)) {
                         unknown = CallLogRules.keepUnknown(unknown, cursor.getString(1), key, date, direction, cursor.getLong(3), now, UNKNOWN_KEEP_MS, UNKNOWN_MAX);
                     }
                     continue;
