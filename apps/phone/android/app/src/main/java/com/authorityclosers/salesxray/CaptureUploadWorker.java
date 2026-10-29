@@ -17,14 +17,14 @@ public class CaptureUploadWorker extends Worker {
     public CaptureUploadWorker(@NonNull Context c, @NonNull WorkerParameters p) { super(c, p); }
     JSONObject gate(Context c, CaptureApi api, JSONObject job) throws Exception {
         JSONObject book = api.book();
-        if (!AutoCapture.noticesAllowed(c)) throw new CaptureApi.Failure(409);
+        if (!AutoCapture.noticesAllowed(c)) { AutoCapture.stop(c); throw new CaptureApi.Failure(409); }
         if (!AutoCapture.enabled(c, book) || !CaptureRules.identity(book).equals(job.optString("identity")))
             throw new CaptureApi.Failure(403);
         if (CaptureRules.number(job.getString("name"), job.getLong("saved"), System.currentTimeMillis(),
             AutoCapture.prefs(c).getLong("since", Long.MAX_VALUE), TimeZone.getDefault(), book) == null)
             throw new CaptureApi.Failure(409);
         JSONObject policy = api.policy();
-        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) throw new CaptureApi.Failure(409);
+        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) { AutoCapture.stop(c); throw new CaptureApi.Failure(409); }
         if (AutoCapture.prefs(c).getBoolean("wifiOnly", true)) {
             ConnectivityManager network = c.getSystemService(ConnectivityManager.class);
             NetworkCapabilities active = network.getNetworkCapabilities(network.getActiveNetwork());
@@ -128,7 +128,7 @@ public class CaptureUploadWorker extends Worker {
             return Result.retry();
         } catch (CaptureApi.Failure error) {
             if (error.code >= 500 || error.code == 429 || error.code == 408) return Result.retry();
-            if (error.code == 401 || error.code == 403 || error.code == 409) AutoCapture.stop(c);
+            if (error.code == 401 || error.code == 403) AutoCapture.stop(c);
             try { if (job != null) AutoCapture.save(c, job, "held"); } catch (Exception ignored) { }
             return Result.success();
         } catch (Exception error) { return Result.retry(); }
