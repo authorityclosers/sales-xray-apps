@@ -86,6 +86,7 @@ public class CaptureUploadTest {
     }
     @Test public void noConsentMeansNoUploadOrPlan() throws Exception {
         fake.consent = false; worker().doWork(); assertEquals(0, fake.uploads); assertEquals(0, fake.plans);
+        assertFalse(AutoCapture.prefs(c).getBoolean("on", true));
         assertEquals("held", AutoCapture.job(c, ID).getString("state"));
     }
     @Test public void lostUploadResponseReconcilesWithoutASecondPut() throws Exception {

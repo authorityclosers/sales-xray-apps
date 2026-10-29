@@ -48,6 +48,10 @@ final class AutoCapture {
                     .setRequiredNetworkType(wifi ? NetworkType.UNMETERED : NetworkType.CONNECTED).build()).build());
         soon(c);
     }
+    static void stop(Context c) {
+        prefs(c).edit().putBoolean("on", false).commit();
+        WorkManager.getInstance(c).cancelAllWorkByTag("sx-auto-capture");
+    }
     static boolean enabled(Context c, JSONObject book) {
         return prefs(c).getBoolean("on", false) && !CaptureRules.identity(book).isEmpty() &&
             CaptureRules.identity(book).equals(prefs(c).getString("identity", ""));
@@ -69,9 +73,9 @@ final class AutoCapture {
     static void scan(Context c) throws Exception {
         CaptureApi api = new CaptureApi(c);
         JSONObject book = api.book();
-        if (!enabled(c, book) || !noticesAllowed(c)) return;
+        if (!enabled(c, book) || !noticesAllowed(c)) { stop(c); return; }
         JSONObject policy = api.policy();
-        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) return;
+        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) { stop(c); return; }
         long now = System.currentTimeMillis();
         for (Map.Entry<String, ?> stored : prefs(c).getAll().entrySet()) {
             if (!stored.getKey().startsWith("job:")) continue;

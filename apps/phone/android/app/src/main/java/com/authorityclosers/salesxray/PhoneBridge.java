@@ -780,6 +780,8 @@ final class PhoneBridge {
 
     /** Signed out on this phone: drop its alert address, so no alert reaches it. */
     private void pushReset() {
+        AutoCapture.stop(activity);
+        CallLogSync.setOn(activity, false, "");
         if (LeadAlerts.token(activity) == null) return;
         LeadAlerts.forget(activity);
         if (!LeadAlerts.init(activity)) return;
