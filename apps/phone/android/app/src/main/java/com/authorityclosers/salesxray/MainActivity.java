@@ -67,7 +67,9 @@ public class MainActivity extends BridgeActivity {
     private PhoneBridge phone;
     private GoogleSignIn google;
     /** The web app's own copy in the app (S9): pages come from the phone, the API from the server. */
-    private BundledWeb bundled;
+    private volatile BundledWeb bundled;
+    /** Live web updates: a newer copy downloaded after a release, used from the next start (LiveWeb). */
+    private LiveWeb live;
     /** The page's pending audio file pick (RecordingPicker), and the picker it waits on. */
     private ValueCallback<Uri[]> pickCallback;
     private ActivityResultLauncher<Intent> recordingPicker;
@@ -100,7 +102,10 @@ public class MainActivity extends BridgeActivity {
             );
         });
         WebView webView = getBridge().getWebView();
-        bundled = BundledWeb.load(this, LeadAlerts.serverUrl(this));
+        // The app's own copy, or a live web update it downloaded and checked before this start.
+        BundledWeb builtIn = BundledWeb.load(this, LeadAlerts.serverUrl(this));
+        live = LiveWeb.create(this, LeadAlerts.serverUrl(this), builtIn);
+        bundled = live.choose();
         // The page's ground before it paints follows the phone's light or dark mode.
         webView.setBackgroundColor(ContextCompat.getColor(this, R.color.sx_ground));
         // The page has its own dark design (prefers-color-scheme follows the DayNight theme), so the
@@ -127,6 +132,7 @@ public class MainActivity extends BridgeActivity {
         connect = new ConnectFlow(this, webView);
         phone = new PhoneBridge(this, webView, connect);
         phone.setBundledWeb(bundled);
+        phone.setLiveWeb(live);
         google = new GoogleSignIn(this, webView);
         updates = new StoreUpdates(this);
         // Asked once the first screen is up, so Play's sheet never covers the start.
@@ -228,13 +234,33 @@ public class MainActivity extends BridgeActivity {
         // Capacitor started loading the site before this client was in place: with the app's own
         // copy on, load the home screen again so it comes from the phone (the live site sends / there).
         String site = LeadAlerts.serverUrl(this);
-        if (bundled.on() && site != null) webView.loadUrl(site.replaceAll("/+$", "") + "/dashboard/");
+        if (bundled.on() && site != null) {
+            webView.loadUrl(site.replaceAll("/+$", "") + "/dashboard/");
+            // A web update's first start must say it is up, or the app goes back (LiveWeb).
+            live.watch(bundled, this::useWeb);
+        }
+        // Is there a newer web release? Downloaded in the background, used from the next start.
+        live.check(true);
         AppShortcuts.publish(this);
         CrashReports.tag(this, bundled);
         google.take(getIntent());
         connect.take(getIntent());
         // After Capacitor's SystemBars has painted the theme's colours at start-up.
         webView.post(() -> SystemBarColors.restore(this));
+    }
+
+    /** A web update didn't start in time: the app went back (LiveWeb), and Home opens again from {@code next}. */
+    private void useWeb(BundledWeb next) {
+        bundled = next;
+        if (phone != null) phone.setBundledWeb(next);
+        String site = LeadAlerts.serverUrl(this);
+        if (site == null) return;
+        WebView page = getBridge().getWebView();
+        // Nothing the failed copy loaded is used again: the WebView keeps scripts in memory by address, and
+        // two copies can share an address (an emulator proof whose broken bundle kept B2's file names).
+        page.clearCache(true);
+        page.loadUrl(site.replaceAll("/+$", "") + (next.on() ? "/dashboard/" : "/"));
+        if (next.on()) live.watch(next, this::useWeb);
     }
 
     @Override
@@ -287,6 +313,9 @@ public class MainActivity extends BridgeActivity {
         AfterCallNotice.clear(this);
         if (phone != null) phone.onResume();
         if (google != null) google.onResume();
+        // Back on screen: a web update still waiting to say it is up gets its full time again, and a
+        // newer release is looked for (at most every 5 minutes).
+        if (live != null) live.resumed();
         DeviceTelemetry.watchFrames(this);
         if (updates != null) updates.resume();
         // Work calls made since the last look reach their leads (UX study item 5).
@@ -297,6 +326,7 @@ public class MainActivity extends BridgeActivity {
     public void onPause() {
         super.onPause();
         inFront = false;
+        if (live != null) live.paused();
         DeviceTelemetry.stopFrames(this);
     }
 

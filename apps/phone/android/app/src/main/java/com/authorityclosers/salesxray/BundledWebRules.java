@@ -67,6 +67,8 @@ final class BundledWebRules {
                 return "image/jpeg";
             case "webp":
                 return "image/webp";
+            case "avif":
+                return "image/avif";
             case "gif":
                 return "image/gif";
             case "ico":
@@ -77,12 +79,28 @@ final class BundledWebRules {
                 return "font/woff";
             case "ttf":
                 return "font/ttf";
+            case "otf":
+                return "font/otf";
+            case "xml":
+                return "application/xml";
+            case "csv":
+                return "text/csv";
+            case "pdf":
+                return "application/pdf";
             case "webmanifest":
                 return "application/manifest+json";
             case "mp3":
                 return "audio/mpeg";
             case "mp4":
                 return "video/mp4";
+            case "webm":
+                return "video/webm";
+            case "wav":
+                return "audio/wav";
+            case "ogg":
+                return "audio/ogg";
+            case "m4a":
+                return "audio/mp4";
             case "wasm":
                 return "application/wasm";
             default:

@@ -1,0 +1,139 @@
+name: Live web updates
+
+# Proves live web updates on an emulator (owner, 28 Oct 2026: web releases reach the app with no Play build):
+# a web change shows up without reinstalling, the app starts offline from what it has, a deliberately broken
+# bundle is rolled back, and a bundle that needs a newer app waits. scripts/emulator-live-web.sh does it; the
+# screenshots and logs are this run's live-web-proof artifact.
+#
+# The bundles are the platform's real static export, packed, signed and published by the platform's own
+# sx-web-bundle, with a key made for this run alone and thrown away with the runner: never the release key, which
+# exists only in Infisical. The debug build reads them from the runner (src/debug/assets/live-web.json, written
+# here and never committed); the release build pins no test key.
+#
+# On a pull request that touches live web updates it runs against the platform ref in
+# .github/live-web-platform-ref (main once the platform's live web updates are released; until then a workbench
+# snapshot that has them). A manual run on main can name any ref.
+on:
+  workflow_dispatch:
+    inputs:
+      web_ref:
+        description: Platform repo ref with live web updates (sx-web-bundle and the page's webReady)
+        type: string
+        default: ""
+  pull_request:
+    paths:
+      - apps/phone/android/app/src/main/java/com/authorityclosers/salesxray/LiveWeb*.java
+      - apps/phone/android/app/src/main/java/com/authorityclosers/salesxray/BundledWeb*.java
+      - apps/phone/android/app/src/main/java/com/authorityclosers/salesxray/Ed25519.java
+      - apps/phone/android/app/src/main/assets/live-web.json
+      - apps/phone/scripts/build-web-shell.sh
+      - scripts/emulator-live-web.sh
+      - .github/workflows/live-web.yml
+      - .github/live-web-platform-ref
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Check out
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+      - name: Use the runner's JDK 21
+        run: echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - name: Which platform ref
+        id: web
+        env:
+          ASKED: ${{ inputs.web_ref }}
+        run: |
+          ref=${ASKED:-$(tr -d '[:space:]' < .github/live-web-platform-ref)}
+          [[ "$ref" =~ ^[A-Za-z0-9._/-]{1,120}$ ]] || { echo "bad platform ref: $ref"; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Platform ref: $ref" >> "$GITHUB_STEP_SUMMARY"
+      - name: Check out the web app (platform repo)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: authorityclosers/authority-closers-platform
+          ref: ${{ steps.web.outputs.ref }}
+          path: platform
+          persist-credentials: false
+      - name: The platform ref has live web updates
+        run: |
+          test -f platform/infra/application/scripts/sx-web-bundle || { echo "the platform ref has no sx-web-bundle"; exit 1; }
+          grep -q "webReady" platform/apps/sales-xray-web/app/web-ready.tsx || { echo "the platform ref has no webReady"; exit 1; }
+          echo "Platform commit: $(git -C platform rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Python with cryptography, for the platform's signer
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet cryptography==44.0.1
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: A signing key for this run only (never stored)
+        run: |
+          key=$(python3 -c 'import os; print(os.urandom(32).hex())')
+          echo "::add-mask::$key"
+          echo "SX_TEST_KEY=$key" >> "$GITHUB_ENV"
+      - name: Install Capacitor
+        working-directory: apps/phone
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: The web app inside the app (its static export; the app's own copy)
+        working-directory: apps/phone
+        run: |
+          bash scripts/build-web-shell.sh "$GITHUB_WORKSPACE/platform" android/app/src/main/assets/web salesxray.authorityclosers.com
+          # The same export, kept for the bundles (build-web-shell.sh copies it).
+          cp -R "$GITHUB_WORKSPACE/platform/apps/sales-xray-web/out" "$RUNNER_TEMP/export"
+      - name: The test build reads live web updates from this runner
+        working-directory: apps/phone
+        env:
+          AC_SX_WEB_BUNDLE_SIGNING_KEY: ${{ env.SX_TEST_KEY }}
+        run: |
+          public=$(python3 "$GITHUB_WORKSPACE/platform/infra/application/scripts/sx-web-bundle" public-key)
+          mkdir -p android/app/src/debug/assets
+          printf '{"sites":{"salesxray.authorityclosers.com":{"manifest":"http://10.0.2.2:8787/v1/app-web/manifest.json","keys":["%s"]}}}\n' "$public" > android/app/src/debug/assets/live-web.json
+          npx cap sync android
+      - name: Build Sales X-Ray (debug)
+        working-directory: apps/phone/android
+        env:
+          SX_BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew --no-daemon --stacktrace assembleDirectDebug
+      - name: The release build pins only the owner-approved production key
+        working-directory: apps/phone/android
+        # Owner approved live web updates on 29 Oct 2026. Production pins exactly this public key (its private seed is only in
+        # Infisical prod /app-web); every other site pins none. Any other key, or a second one, fails the build.
+        run: |
+          python3 -c "import json,sys; sites=json.load(open('app/src/main/assets/live-web.json'))['sites']; prod='salesxray.authorityclosers.com'; approved=['770e00b4a94665ae2caeb379cf678ad31f470cf88b32b74b998861f6395f90d8']; assert sites[prod]['keys']==approved, 'production must pin exactly the approved key'; assert all(not s['keys'] for h,s in sites.items() if h!=prod), 'only production may pin a key'"
+      - name: Let the emulator use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Update, offline start, rollback and native gating on an emulator
+        env:
+          AC_SX_WEB_BUNDLE_SIGNING_KEY: ${{ env.SX_TEST_KEY }}
+        run: |
+          export SX_TEST_KEY
+          bash scripts/emulator-live-web.sh apps/phone/android/app/build/outputs/apk/direct/debug/app-direct-debug.apk \
+            "$GITHUB_WORKSPACE/platform" "$RUNNER_TEMP/export" "$RUNNER_TEMP/live-web"
+      - name: Keep the screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: live-web-proof
+          path: |
+            ${{ runner.temp }}/live-web/shots
+            ${{ runner.temp }}/live-web/state.json
+            ${{ runner.temp }}/live-web/http.log
+            ${{ runner.temp }}/live-web/*/facts.json
+          if-no-files-found: warn
+          retention-days: 30

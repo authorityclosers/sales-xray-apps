@@ -58,6 +58,30 @@ If Google refuses the Call log declaration, the Play build drops `READ_CALL_LOG`
 - **Category:** Business. **Contact:** support email and website https://salesxray.authorityclosers.com
 - **Graphics:** icon 512×512 (from the app icon), feature graphic 1024×500, and 4–8 phone screenshots (we capture them from the emulator matrix once the onboarding build is live).
 
+## Live web updates and Google Play's Device and Network Abuse policy
+
+Owner, 28 Oct 2026: web releases must reach the app by themselves, without waiting for a Play build and Google's
+review. The app carries the web app's static export (S9). With live web updates (`LiveWeb.java`,
+`LiveWebRules.java`) it also downloads each production release's copy of that export, checks it and uses it from
+the next start. **Off until the owner says yes:** `assets/live-web.json` pins no key, so the app ignores every
+manifest. The platform side is `docs/ops/LIVE-WEB-BUNDLES.md` in authority-closers-platform.
+
+**What may change without Play:** only the web app's own files, which the WebView shows and runs: pages, scripts,
+styles, data, pictures, fonts and media (`LiveWebRules.TYPES`). The app (Java, the manifest, permissions,
+the `SXPhone` and `SXHaptics` bridges, plugins and SDKs) changes only through a Play build.
+
+**Why this is inside the policy** ([Device and Network Abuse](https://support.google.com/googleplay/android-developer/answer/9888379), checked 28 Oct 2026):
+
+| The policy | What the app does |
+| --- | --- |
+| An app may not update itself except through Play's update mechanism. | The APK or bundle never changes. Native updates still come only from Play (in-app updates, `StoreUpdates`). |
+| No executable code (dex, JAR, .so) from outside Play; this doesn't apply to code run by a virtual machine or interpreter that gives indirect access to Android APIs, such as JavaScript in a WebView. | A bundle is web content for the WebView, which reaches the phone only through the bridges the Play build already has. Native code, `.dex`, `.jar`, `.apk`, `.oat`, WebAssembly and unknown files make the whole bundle refused, on the phone (`unpack`) and when it is packed (`sx-web-bundle`). |
+| Interpreted code loaded at run time must not allow policy violations. | Bundles come only from Sales X-Ray's own release pipeline, built from the release's reviewed commit: the same web app as the live site and as the copy inside the Play build. A web release that needs a new native ability says so (`minNative`) and waits for the Play build that adds it. |
+| A listed violation is a WebView with an added JavaScript interface that loads untrusted web content. | Bundles are signed (Ed25519; the private key is only in Infisical, the public key is pinned in the app), bound to the site, named by and checked against their SHA-256, unpacked only inside the app's own folder, and served only at the app's own address. `SXPhone` answers only Sales X-Ray's origins. An unsigned, re-signed, changed or replayed manifest is refused. |
+
+**Safety nets:** a new bundle that doesn't send the page's ready signal (`webReady`) within 15 seconds is rolled back
+to the one before it, then to the app's own copy, and is never fetched again. A start never waits for the network.
+
 ## Installs outside Play: Android developer verification
 
 The "Play Protect" warning appears because Google doesn't know the sideload APK's developer.

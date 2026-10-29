@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Debug builds only: the simulated call for phones without a SIM (SimulateCallReceiver). -->
+<!-- Debug builds only: the simulated call for phones without a SIM (SimulateCallReceiver), and plain http to the
+     emulator's host machine for the live web update test (sx_debug_network.xml). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- For SimulateCallReceiver's voip-start/voip-end: setMode needs it. Debug builds only. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <application>
+    <application android:networkSecurityConfig="@xml/sx_debug_network">
         <receiver
             android:name="com.authorityclosers.salesxray.SimulateCallReceiver"
             android:exported="true" />

@@ -21,6 +21,19 @@ enrolment and review times are from Apple's own pages (checked 28 Oct 2026); lin
 - **`Info.plist`:** `ITSAppUsesNonExemptEncryption = false` (HTTPS only, so no export-compliance questions on each
   upload); `arm64`; iPhone only (no iPad screenshots needed; iPads run it in iPhone mode).
 
+## Live web updates on the iPhone: same path, App Review's limits
+
+- **Today:** this iPhone build opens the live site, so every web release is there at once, with no bundle.
+- **When the bundled iPhone shell lands** (branch `native-spike-20261028`: the export served from the app), it
+  takes the Android app's live web updates as they are: the same signed manifest, pinned key, SHA-256 check,
+  web-files-only unpack, ready signal and rollback (`apps/phone/android/.../LiveWebRules.java`; Ed25519 through
+  CryptoKit's `Curve25519.Signing`). It is not built for the iPhone yet.
+- **Apple's limit:** guideline 2.5.2 says an app may not download or run code "which introduces or changes
+  features or functionality". 4.7 allows HTML5 and JavaScript mini apps that aren't in the binary, under the
+  same guidelines. So on the iPhone, live bundles carry fixes and changes within the CRM's existing features; a
+  release that adds a feature reaches the iPhone with an App Store build. A bundle that needs more of the phone
+  than the installed build has already waits (`minNative`).
+
 ## What the Apple account must give this repo (owner)
 
 1. **Apple Developer Program** membership (99 USD a year). From India, enrolment goes through the **Apple Developer

@@ -50,6 +50,16 @@ The Sales Xray web app (https://salesxray.authorityclosers.com) in a Capacitor 8
   - `RecordingScanner.java`: finding and reading recordings.
   - `RecordingWatchWorker.java`: the background check.
   - `android/app/src/main/assets/sx-phone.js`: the in-app panel.
+- **Live web updates** (owner, 28 Oct 2026: web releases reach the app with no Play build). `LiveWeb.java` reads the
+  site's signed manifest (`/v1/app-web/manifest.json`) on start and on coming back (at most every 5 minutes),
+  checks its Ed25519 signature against the keys pinned in `assets/live-web.json`, downloads the zip, checks its
+  size and SHA-256, unpacks only web files into the app's storage and uses it from the next start. A new bundle
+  that doesn't send the page's `webReady` within 15 seconds is rolled back to the one before it, then to the
+  app's own copy; one that needs a newer app (`minNative` above `LiveWebRules.NATIVE_CONTRACT`) waits for the
+  store build; a start never waits for the network. The rules are in `LiveWebRules.java` (tests:
+  `LiveWebRulesTest`, `Ed25519Test`), the emulator proof is `live-web.yml`, and why Play allows it is in
+  `PLAY-STORE.md`. **Off until the owner says yes:** no key is pinned. Raise `NATIVE_CONTRACT` in the build that
+  adds a bridge method, plugin or permission a web release relies on.
 - **CI build:** `.github/workflows/android.yml` builds two APKs on GitHub-hosted runners for pushes to `main`: "Sales Xray" (live site) and "Sales Xray Dev" (dev site, package `com.authorityclosers.salesxray.dev`, installs beside it). Download them from the run's artifacts. Build the dev one locally with `./gradlew assembleDebug -PsxDev` after pointing `capacitor.config.json` at dev.
 - **Signing:** no key lives here. CI signs with the durable key from this repo's GitHub secrets when the owner has set them; otherwise with the runner's throwaway debug key, and such builds are never published. Versions are 0.3.x with codes from 1001, above the 0.2.x builds the main repo made.
 - **iPhone:** `.github/workflows/iphone.yml` builds a simulator app by hand. No Apple account or signing yet.

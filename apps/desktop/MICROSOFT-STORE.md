@@ -140,6 +140,15 @@ Category: an app (not a game), business/productivity. Expected answers:
 Expected result: the lowest age band in most regions (IARC 3+, PEGI 3, ESRB Everyone), with the "Users Interact"
 notice. IARC sets the final rating; answer the live questionnaire as it is worded.
 
+## Web releases on the desktop app
+
+- The desktop app (Tauri) opens the live site (`tauri.conf.json`), so every web release reaches Windows and Mac at
+  once, with no Store submission and no bundle: nothing to switch on.
+- If it ever carries the web app inside it, it takes the phone apps' signed live web updates (Tauri's protocol
+  handler serving the checked folder; `apps/phone/android/.../LiveWebRules.java` has the rules). Microsoft Store
+  policy 10.2.2 forbids dynamically included code that fundamentally changes or extends the described
+  functionality, so as on the iPhone, new features would go with a Store build.
+
 ## Signed `.exe` outside the Store
 
 The Store route needs no certificate. A signed `.exe` for direct download does:

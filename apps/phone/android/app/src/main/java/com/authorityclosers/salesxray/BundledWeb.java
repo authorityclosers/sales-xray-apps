@@ -6,10 +6,11 @@ import android.net.Uri;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -29,7 +30,10 @@ import org.json.JSONObject;
  * the server as before: same address, same cookies.
  *
  * A bundle older than two weeks, one built for another address, or the
- * seller's own "use the live website" choice turns it off.
+ * seller's own "use the live website" choice turns it off. A live web update
+ * (LiveWeb) is the same kind of copy in the app's own storage, downloaded
+ * after a release; a manifest that confirms a copy is still the current
+ * release keeps it on past the two weeks.
  */
 final class BundledWeb {
 
@@ -46,37 +50,52 @@ final class BundledWeb {
     private final String sha;
     private final String ref;
     private final long builtAtMs;
+    private final long commitAtMs;
+    /** A live web update's folder; null for the copy in the app's assets. */
+    private final File root;
+    /** The live update's release version ("1.3.0"); empty for the app's own copy. */
+    private final String version;
+    private volatile long confirmedAtMs;
 
-    private BundledWeb(Context context, Set<String> files, String host, String serverHost, String sha, String ref, long builtAtMs) {
+    private BundledWeb(Context context, JSONObject manifest, String serverHost, File root, String version) {
         this.context = context.getApplicationContext();
+        JSONArray list = manifest.optJSONArray("files");
+        Set<String> files = new HashSet<>();
+        for (int i = 0; list != null && i < list.length(); i++) files.add(list.optString(i));
         this.files = files;
-        this.host = host;
+        this.host = manifest.optString("host");
         this.serverHost = serverHost;
-        this.sha = sha;
-        this.ref = ref;
-        this.builtAtMs = builtAtMs;
+        this.sha = manifest.optString("sha");
+        this.ref = manifest.optString("ref");
+        this.builtAtMs = manifest.optLong("builtAtMs");
+        this.commitAtMs = manifest.optLong("commitAtMs");
+        this.root = root;
+        this.version = version == null ? "" : version;
     }
 
     /** The bundle this app carries, for the site at {@code serverUrl} (an empty one when there is none). */
     static BundledWeb load(Context context, String serverUrl) {
-        String serverHost = serverUrl == null ? "" : String.valueOf(Uri.parse(serverUrl).getHost());
+        String serverHost = hostOf(serverUrl);
         try (InputStream stream = context.getAssets().open(MANIFEST)) {
-            JSONObject manifest = new JSONObject(read(stream));
-            JSONArray list = manifest.optJSONArray("files");
-            Set<String> files = new HashSet<>();
-            for (int i = 0; list != null && i < list.length(); i++) files.add(list.optString(i));
-            return new BundledWeb(
-                context,
-                files,
-                manifest.optString("host"),
-                serverHost,
-                manifest.optString("sha"),
-                manifest.optString("ref"),
-                manifest.optLong("builtAtMs")
-            );
+            return new BundledWeb(context, new JSONObject(read(stream)), serverHost, null, "");
         } catch (IOException | JSONException error) {
-            return new BundledWeb(context, Collections.emptySet(), "", serverHost, "", "", 0);
+            return new BundledWeb(context, new JSONObject(), serverHost, null, "");
         }
+    }
+
+    /** A live web update unpacked in {@code folder} (LiveWeb), or null when its file list can't be read. */
+    static BundledWeb fromFolder(Context context, File folder, String serverUrl, LiveWebRules.Held held) {
+        try (InputStream stream = new FileInputStream(new File(folder, "sx-web.json"))) {
+            BundledWeb web = new BundledWeb(context, new JSONObject(read(stream)), hostOf(serverUrl), folder, held.version);
+            web.confirmedAtMs = held.confirmedAtMs;
+            return web;
+        } catch (IOException | JSONException error) {
+            return null;
+        }
+    }
+
+    private static String hostOf(String serverUrl) {
+        return serverUrl == null ? "" : String.valueOf(Uri.parse(serverUrl).getHost());
     }
 
     private SharedPreferences prefs() {
@@ -88,7 +107,22 @@ final class BundledWeb {
     }
 
     boolean fresh() {
-        return BundledWebRules.fresh(builtAtMs, System.currentTimeMillis(), MAX_AGE_MS);
+        return LiveWebRules.fresh(builtAtMs, confirmedAtMs, System.currentTimeMillis());
+    }
+
+    /** A manifest said this copy is still the current release (LiveWeb). */
+    void confirmed(long atMs) {
+        confirmedAtMs = Math.max(confirmedAtMs, atMs);
+    }
+
+    /** A live web update (true) or the app's own copy. */
+    boolean update() {
+        return root != null;
+    }
+
+    /** What LiveWeb compares a release with. */
+    LiveWebRules.BuiltIn builtIn() {
+        return new LiveWebRules.BuiltIn(sha, commitAtMs, builtAtMs);
     }
 
     /** Pages come from the phone. */
@@ -111,7 +145,7 @@ final class BundledWeb {
         String file = BundledWebRules.resolve(url.getEncodedPath(), rsc, files);
         if (file == null) return null;
         try {
-            InputStream stream = context.getAssets().open(DIR + file);
+            InputStream stream = root != null ? new FileInputStream(new File(root, file)) : context.getAssets().open(DIR + file);
             String mime = BundledWebRules.mime(file);
             Map<String, String> answer = new HashMap<>();
             answer.put("Cache-Control", file.startsWith("_next/static/") ? "public, max-age=31536000, immutable" : "no-cache");
@@ -138,6 +172,10 @@ final class BundledWeb {
             status.put("ref", ref);
             status.put("builtAtMs", builtAtMs);
             status.put("files", files.size());
+            // Which copy: the app's own ("app") or a live web update ("update", with its release version).
+            status.put("source", root != null ? "update" : "app");
+            status.put("version", version);
+            status.put("confirmedAtMs", confirmedAtMs);
         } catch (JSONException ignored) {}
         return status;
     }
