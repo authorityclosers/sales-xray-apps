@@ -147,6 +147,13 @@
   // This phone's call recorder (RecorderProfile) and the in-app recorder (AppRecorder).
   var recorder = null;
   var rec = null;
+  // Shown before Android's microphone prompt (PLAY-STORE.md, Foreground service (microphone)).
+  var MIC_DISCLOSURE =
+    "Record a conversation\n\n" +
+    "Sales X-Ray uses the microphone only while you record a conversation you start here: a meeting " +
+    "or a talk in person. A notification with Stop shows the whole time. The recording stays on this " +
+    "phone until you tap Analyse. Tell the people you're talking to that you're recording.\n\n" +
+    "Continue to allow the microphone?";
 
   function refresh() {
     var profile = call("recorderStatus")
@@ -501,6 +508,9 @@
       button.addEventListener("click", function () {
         var what = button.getAttribute("data-rec");
         if (what === "start") {
+          // Play's prominent disclosure: before Android's microphone prompt, say what is recorded and
+          // where it goes, and go on only on the seller's yes (both builds; asked until it is allowed).
+          if (!(rec && rec.mic) && !window.confirm(MIC_DISCLOSURE)) return;
           button.disabled = true;
           call("recordStart", {}).then(function (result) {
             rec = result;

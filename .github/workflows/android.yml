@@ -192,25 +192,25 @@ jobs:
           grep -q 'android:name="android.permission.READ_CALL_LOG"' "$direct" || { echo "Direct flavour lost READ_CALL_LOG"; exit 1; }
           # Backup off in the Play build (cloud backup would copy in-app meeting recordings to Google Drive).
           grep -q 'android:allowBackup="false"' "$play" || { echo "Play flavour still allows backup"; exit 1; }
-          # No microphone in the first Play version (owner, 24 Oct 2026); the download-link app keeps the
-          # recorder, and the page's microphone needs both permissions there (BridgeWebChromeClient).
-          for banned in android.permission.RECORD_AUDIO android.permission.FOREGROUND_SERVICE_MICROPHONE com.authorityclosers.salesxray.AppRecorder; do
-            if grep -q "android:name=\"$banned\"" "$play"; then echo "Play flavour still declares $banned"; exit 1; fi
+          # Both builds record a conversation in the app (AppRecorder; owner, 27 Oct 2026: "mic back in the
+          # next update"), and the page's microphone needs both permissions (BridgeWebChromeClient). Play's
+          # microphone declaration covers exactly one microphone service: the recorder.
+          for needed in android.permission.RECORD_AUDIO android.permission.MODIFY_AUDIO_SETTINGS android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_MICROPHONE com.authorityclosers.salesxray.AppRecorder; do
+            for manifest in "$play" "$direct"; do
+              grep -q "android:name=\"$needed\"" "$manifest" || { echo "$manifest lacks $needed"; exit 1; }
+            done
           done
-          if grep -q 'foregroundServiceType="microphone"' "$play"; then echo "Play flavour still has a microphone foreground service"; exit 1; fi
-          if grep -q 'android:name="android.permission.FOREGROUND_SERVICE"' "$play"; then echo "Play flavour still declares FOREGROUND_SERVICE"; exit 1; fi
+          mics=$(grep -c 'foregroundServiceType="microphone"' "$play")
+          [ "$mics" = 1 ] || { echo "Play flavour has $mics microphone foreground services; the declaration covers the recorder only"; exit 1; }
           # No Privacy Sandbox ad permissions in either build (Play Console: "No advertising ID").
           for manifest in "$play" "$direct"; do
             if grep -q 'android:name="android.permission.ACCESS_ADSERVICES_' "$manifest"; then echo "AdServices permission declared in $manifest"; exit 1; fi
-          done
-          for needed in android.permission.RECORD_AUDIO android.permission.MODIFY_AUDIO_SETTINGS com.authorityclosers.salesxray.AppRecorder; do
-            grep -q "android:name=\"$needed\"" "$direct" || { echo "Direct flavour lacks $needed"; exit 1; }
           done
           # No advertising ID in either build (declared to Play as "No advertising ID").
           for manifest in "$play" "$direct"; do
             if grep -q 'android:name="com.google.android.gms.permission.AD_ID"' "$manifest"; then echo "AD_ID declared in $manifest"; exit 1; fi
           done
-          echo "Play flavour: none of them ($play); direct keeps all ($direct)"
+          echo "Play flavour: none of them, recorder kept ($play); direct keeps all ($direct)"
       - name: The Play App Bundle builds (unsigned)
         working-directory: apps/phone/android
         run: |
