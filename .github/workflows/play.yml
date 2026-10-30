@@ -1,7 +1,9 @@
 name: Google Play
 
-# The Play Store build of Sales Xray (the play flavour: no call history, no accessibility call recorder, no all-files
-# access, no battery-exemption request), as a signed App Bundle on a Play track.
+# The Play Store build of Sales Xray (the play flavour: call history only under the Enterprise CRM declaration, no
+# accessibility call recorder, no all-files access, no battery-exemption request), as a signed App Bundle on a Play
+# track. A bundle with call history is uploaded only once the repository variable PLAY_CALL_LOG_DECLARATION says Play
+# Console has the declaration ("submitted" or "approved"); before that the run keeps the signed bundle and stops.
 #
 # Run by hand on main only, in the protected "android-release" environment (the owner approves each
 # run; owner, 23 Oct 2026: the app goes into Play internal testing). The upload key is the app's durable
@@ -125,14 +127,27 @@ jobs:
           name: sales-xray-play-${{ github.run_number }}
           path: apps/phone/android/app/build/outputs/bundle/playRelease/app-play-release.aab
           retention-days: 14
-      - name: No call history, direct calling, accessibility recorder, all-files access or battery request in the bundle
+      - name: No direct calling, accessibility recorder, all-files access or battery request in the bundle; call history only with its declaration
         working-directory: apps/phone/android
+        env:
+          # Set by the orchestrator once Play Console has the Permissions Declaration for READ_CALL_LOG
+          # (docs/play/call-log-declaration.md): "submitted" or "approved". Until then nothing is uploaded.
+          CALL_LOG_DECLARATION: ${{ vars.PLAY_CALL_LOG_DECLARATION }}
         run: |
           # The final merged manifest; only declarations count (the source manifests' comments name them).
           manifest=$(find app/build/intermediates -path "*merged_manifests*playRelease*" -name AndroidManifest.xml | head -1)
           test -n "$manifest"
-          ! grep -E 'android:name="(android\.permission\.(READ_CALL_LOG|CALL_PHONE|MANAGE_EXTERNAL_STORAGE|REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)|[a-z.]*CallRecorderService)"' "$manifest"
-          echo "Play bundle declares none of them ($manifest)"
+          ! grep -E 'android:name="(android\.permission\.(CALL_PHONE|MANAGE_EXTERNAL_STORAGE|REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)|[a-z.]*CallRecorderService)"' "$manifest"
+          # The declaration names READ_CALL_LOG alone: nothing else from Play's call log and SMS group.
+          ! grep -E 'android:name="android\.permission\.(WRITE_CALL_LOG|PROCESS_OUTGOING_CALLS|READ_SMS|SEND_SMS|RECEIVE_SMS|RECEIVE_MMS|RECEIVE_WAP_PUSH|READ_CELL_BROADCASTS)"' "$manifest"
+          grep -q 'android:name="android.permission.READ_CALL_LOG"' "$manifest" || { echo "::error::The bundle lost READ_CALL_LOG, which Play's declaration describes ($manifest)"; exit 1; }
+          case "$CALL_LOG_DECLARATION" in
+            submitted|approved) echo "Call log declaration: $CALL_LOG_DECLARATION" ;;
+            *)
+              echo "::error::This bundle declares READ_CALL_LOG, which goes to Play only with its Permissions Declaration (docs/play/call-log-declaration.md). Nothing was uploaded. The signed bundle is kept as the artifact sales-xray-play-$GITHUB_RUN_NUMBER: upload it in Play Console together with the declaration, then run: gh variable set PLAY_CALL_LOG_DECLARATION --body submitted --repo $GITHUB_REPOSITORY"
+              exit 1 ;;
+          esac
+          echo "Play bundle: call history under the declaration, none of the others ($manifest)"
       - name: Upload to Play (keyless sign-in with the run's GitHub OIDC token)
         env:
           PLAY_WIF_PROVIDER: projects/501399142248/locations/global/workloadIdentityPools/github/providers/sales-xray-apps

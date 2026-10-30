@@ -2,7 +2,9 @@
 
 Submit with the first Play bundle that retains READ_CALL_LOG. Do not upload that bundle without
 this declaration. Play Console submission and approval belong to the orchestrator. Approval has
-not been obtained by this implementation.
+not been obtained by this implementation. The order of the steps is in
+[call-log-submission-checklist.md](call-log-submission-checklist.md). play.yml uploads a bundle with
+READ_CALL_LOG only once the repository variable `PLAY_CALL_LOG_DECLARATION` is `submitted` or `approved`.
 
 Policy: https://support.google.com/googleplay/android-developer/answer/10208820
 Selected exception: **Enterprise archive, business & enterprise customer relationship management
