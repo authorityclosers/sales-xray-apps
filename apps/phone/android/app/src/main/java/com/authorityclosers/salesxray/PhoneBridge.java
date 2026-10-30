@@ -57,6 +57,7 @@ final class PhoneBridge {
     private static final int REQUEST_LOG = 7105;
     private static final int REQUEST_ALERTS = 7106;
     private static final int REQUEST_MIC = 7107;
+    private static final int REQUEST_CONTACTS = 7108;
 
     /** The bridge of the open app, for signals from outside the page (lead alerts). */
     private static volatile PhoneBridge active;
@@ -203,7 +204,7 @@ final class PhoneBridge {
             fetchToken(reply, id);
             return;
         }
-        if (requestCode == REQUEST_ALERTS && pendingReply != null) {
+        if ((requestCode == REQUEST_ALERTS || requestCode == REQUEST_CONTACTS) && pendingReply != null) {
             JavaScriptReplyProxy reply = pendingReply;
             String id = pendingId;
             pendingReply = null;
@@ -531,6 +532,9 @@ final class PhoneBridge {
                     io.execute(() -> reply(reply, asked, setupStatus()));
                     break;
                 }
+                case "requestContacts":
+                    requestContacts(reply, id);
+                    break;
                 case "requestNotifications":
                     requestNotifications(reply, id);
                     break;
@@ -832,6 +836,7 @@ final class PhoneBridge {
             blocked.put("notifications", Build.VERSION.SDK_INT >= 33 && PermissionAsks.blocked(activity, Manifest.permission.POST_NOTIFICATIONS));
             blocked.put("recordings", PermissionAsks.blocked(activity, audioPermission()));
             blocked.put("microphone", PermissionAsks.blocked(activity, Manifest.permission.RECORD_AUDIO));
+            blocked.put("contacts", PermissionAsks.blocked(activity, Manifest.permission.READ_CONTACTS));
             status.put("blocked", blocked);
         } catch (JSONException ignored) {}
         return status;
@@ -839,6 +844,21 @@ final class PhoneBridge {
 
     private static String audioPermission() {
         return Build.VERSION.SDK_INT >= 33 ? Manifest.permission.READ_MEDIA_AUDIO : Manifest.permission.READ_EXTERNAL_STORAGE;
+    }
+
+    /**
+     * Contacts for the permissions checklist after sign-in (owner, 30 Oct 2026, fix 5). Android's own
+     * question; the page reads checks.contacts and blocked.contacts from the reply.
+     */
+    private void requestContacts(JavaScriptReplyProxy reply, String id) {
+        if (PhoneSetup.contactsAllowed(activity)) {
+            io.execute(() -> reply(reply, id, setupStatus()));
+            return;
+        }
+        pendingReply = reply;
+        pendingId = id;
+        PermissionAsks.asked(activity, Manifest.permission.READ_CONTACTS);
+        ActivityCompat.requestPermissions(activity, new String[] { Manifest.permission.READ_CONTACTS }, REQUEST_CONTACTS);
     }
 
     /** Notifications alone (lead alerts and new recordings use them); older Android opens the settings. */
