@@ -21,10 +21,10 @@ android {
         resValue "string", "sx_self_package", "com.authorityclosers.salesxray"
         // -PsxDev builds "Sales Xray Dev": dev's site, installed beside the real app.
         if (project.hasProperty("sxDev")) {
-            applicationIdSuffix = ".dev"
+            applicationIdSuffix = ".devnext"
             versionNameSuffix = "-dev"
             manifestPlaceholders = [appIcon: "@mipmap/ic_launcher", appRoundIcon: "@mipmap/ic_launcher_round", appLabel: "Sales X-Ray Dev"]
-            resValue "string", "sx_self_package", "com.authorityclosers.salesxray.dev"
+            resValue "string", "sx_self_package", "com.authorityclosers.salesxray.devnext"
         }
         // Which store this build is for (the page and the setup checklist read it).
         resValue "string", "sx_store", "direct"
