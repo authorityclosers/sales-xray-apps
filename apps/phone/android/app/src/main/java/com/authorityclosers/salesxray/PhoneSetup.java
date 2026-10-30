@@ -85,6 +85,8 @@ final class PhoneSetup {
             checks.put("autostart", !autostartNeeded || prefs.getBoolean(AUTOSTART, false));
             checks.put("testCall", prefs.getBoolean(TEST_CALL, false));
             checks.put("callLog", CallLogSync.isOn(context));
+            // Present only in builds that ask for contacts: older pages then say "Update" (fix 5).
+            checks.put("contacts", contactsAllowed(context));
             status.put("checks", checks);
             status.put("family", family);
             status.put("model", Build.MODEL == null ? "" : Build.MODEL);
@@ -114,6 +116,10 @@ final class PhoneSetup {
             return false;
         }
         return NotificationManagerCompat.from(context).areNotificationsEnabled();
+    }
+
+    static boolean contactsAllowed(Context context) {
+        return ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED;
     }
 
     static boolean batteryUnrestricted(Context context) {
