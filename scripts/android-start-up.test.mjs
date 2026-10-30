@@ -23,6 +23,30 @@ test("WorkManager's start-up provider is off and the app configures it on first 
   assert.match(app, /public Configuration getWorkManagerConfiguration\(\)/);
 });
 
+test("opening the app starts WorkManager again when capture is on, so a force-stop loses no scheduled work", () => {
+  // A force-stop drops every JobScheduler job; WorkManager's start reschedules them (ForceStopRunnable). With
+  // WorkManager starting on first use, a launch must reach it whenever capture work may be scheduled.
+  const activity = java("MainActivity");
+  const onResume = activity.slice(activity.indexOf("public void onResume()"));
+  assert.match(
+    onResume.slice(0, onResume.indexOf("\n    }\n")),
+    /CAPTURE_JOBS\.execute\(\(\) -> restoreCaptureJobs\(app\)\)/,
+  );
+  const restore = activity.slice(activity.indexOf("private static void restoreCaptureJobs(Context app)"));
+  const body = restore.slice(0, restore.indexOf("\n    }\n"));
+  for (const on of [
+    /AutoCapture\.prefs\(app\)\.getBoolean\("on", false\)/,
+    /CallLogSync\.isOn\(app\)/,
+    /RecordingWatchWorker\.watching\(app\)/,
+  ])
+    assert.match(body, on);
+  assert.ok(
+    body.indexOf("WorkManager.getInstance(app)") >= 0 &&
+      body.indexOf("WorkManager.getInstance(app)") < body.indexOf("AutoCapture.soon(app)"),
+    "WorkManager starts, then capture looks again",
+  );
+});
+
 test("the Facebook SDK starts with sign-in, not with the app", () => {
   assert.match(
     manifest,

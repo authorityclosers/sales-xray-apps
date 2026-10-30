@@ -1,6 +1,7 @@
 package com.authorityclosers.salesxray;
 
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -28,6 +29,7 @@ import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.core.splashscreen.SplashScreen;
 import androidx.webkit.WebSettingsCompat;
+import androidx.work.WorkManager;
 import androidx.webkit.WebViewFeature;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
@@ -37,6 +39,8 @@ import org.json.JSONObject;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.FutureTask;
 
 /** Sales Xray in a Capacitor shell, plus the phone's own call recordings. */
@@ -56,6 +60,8 @@ public class MainActivity extends BridgeActivity {
 
     /** The app is the one in front (call logging tells the seller about new recordings otherwise). */
     static volatile boolean inFront;
+    /** Puts capture's scheduled work back after a force-stop (onResume). */
+    private static final ExecutorService CAPTURE_JOBS = Executors.newSingleThreadExecutor();
 
     /** The splash stays until the page paints, but never longer than this (a slow network). */
     private static final long SPLASH_MAX_MS = 6_000;
@@ -349,6 +355,21 @@ public class MainActivity extends BridgeActivity {
         if (updates != null) updates.resume();
         // Work calls made since the last look reach their leads (UX study item 5).
         CallLogSync.soon(this);
+        // A force-stop (Settings, or HyperOS cleaning the app) drops every scheduled job. WorkManager puts them back
+        // when it starts, and it starts on first use (SalesXrayApp), which a launch alone may never reach.
+        Context app = getApplicationContext();
+        CAPTURE_JOBS.execute(() -> restoreCaptureJobs(app));
+    }
+
+    /**
+     * With call capture, call logging or the recordings watch on: WorkManager starts, rescheduling what a
+     * force-stop dropped, and capture looks again in 30 s, so dialler calls are watched and uploaded again
+     * (capture-gaps review of the cold-start change, 30 Oct 2026). Off the main thread: it reads settings files.
+     */
+    private static void restoreCaptureJobs(Context app) {
+        if (!AutoCapture.prefs(app).getBoolean("on", false) && !CallLogSync.isOn(app) && !RecordingWatchWorker.watching(app)) return;
+        WorkManager.getInstance(app);
+        AutoCapture.soon(app);
     }
 
     @Override
