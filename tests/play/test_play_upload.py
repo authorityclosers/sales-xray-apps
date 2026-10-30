@@ -37,6 +37,14 @@ class ReleaseStatus(unittest.TestCase):
             self.assertEqual(self.play.release_status(track), "draft")
             self.assertEqual(self.play.release_status(track, draft=True), "draft")
 
+    def test_a_completed_alpha_release_also_reaches_internal_testers(self):
+        # The team's phones are internal testers; internal sat at 1.0.43 while alpha moved on.
+        self.assertEqual(self.play.also_tracks("alpha", "completed"), ["internal"])
+        self.assertEqual(self.play.also_tracks("alpha", "draft"), [])
+        for track in ("internal", "beta", "production"):
+            for status in ("completed", "draft"):
+                self.assertEqual(self.play.also_tracks(track, status), [], (track, status))
+
     def test_the_workflows_draft_input_as_it_reaches_the_script(self):
         for raw in ("true", "True", " true ", "1", "yes"):
             self.assertTrue(self.play.draft_requested(raw), raw)
