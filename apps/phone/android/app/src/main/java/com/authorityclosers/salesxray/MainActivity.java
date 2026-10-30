@@ -80,33 +80,40 @@ public class MainActivity extends BridgeActivity {
     /** A lead or Report to open from an alert (a /leads or /review path), once the page is there. */
     private String pendingOpen;
     private boolean pageReady;
+    private volatile int requestsLogged;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         // The splash (the app's ground and mark) stays up until the page has painted, so the
         // seller never sees an empty screen between the two (23 Oct 2026: about 1 s on a Note 8 Pro).
+        StartTimes.mark("activity");
+        boolean early = StartTimes.on("early");
         createdAt = SystemClock.uptimeMillis();
         SplashScreen splash = SplashScreen.installSplashScreen(this);
         splash.setKeepOnScreenCondition(() -> !painted && SystemClock.uptimeMillis() - createdAt < SPLASH_MAX_MS);
+        StartTimes.mark("splash");
         // Capacitor's config with this build's version in the user agent ("SalesXrayApp/1.0.26"), read
         // before the WebView exists; null keeps Capacitor's own config.
         config = AppUserAgent.capConfig(this);
+        StartTimes.mark("capacitor config");
         super.onCreate(savedInstanceState);
+        StartTimes.mark("capacitor bridge and webview");
         SafeArea.apply(this);
-        recordingPicker = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
-            ValueCallback<Uri[]> callback = pickCallback;
-            pickCallback = null;
-            if (callback == null) return;
-            Intent data = result.getData();
-            callback.onReceiveValue(
-                result.getResultCode() == RESULT_OK && data != null ? WebChromeClient.FileChooserParams.parseResult(result.getResultCode(), data) : null
-            );
-        });
+        StartTimes.mark("safe area");
+        if (!early) registerPicker();
         WebView webView = getBridge().getWebView();
         // The app's own copy, or a live web update it downloaded and checked before this start.
-        BundledWeb builtIn = BundledWeb.load(this, LeadAlerts.serverUrl(this));
-        live = LiveWeb.create(this, LeadAlerts.serverUrl(this), builtIn);
-        bundled = live.choose();
+        Object[] copy = WebViewStart.takeWebCopy();
+        if (copy != null) {
+            live = (LiveWeb) copy[0];
+            bundled = (BundledWeb) copy[1];
+        } else {
+            BundledWeb builtIn = BundledWeb.load(this, LeadAlerts.serverUrl(this));
+            StartTimes.mark("bundled web");
+            live = LiveWeb.create(this, LeadAlerts.serverUrl(this), builtIn);
+            bundled = live.choose();
+        }
+        StartTimes.mark("live web");
         // The page's ground before it paints follows the phone's light or dark mode.
         webView.setBackgroundColor(ContextCompat.getColor(this, R.color.sx_ground));
         // The page has its own dark design (prefers-color-scheme follows the DayNight theme), so the
@@ -119,29 +126,19 @@ public class MainActivity extends BridgeActivity {
         FontScale.apply(webView, getResources().getConfiguration().fontScale, PhoneBridge.HOSTS);
         // window.SXHaptics: one haptics engine for the whole app (owner, 25 Oct 2026). See Haptics.
         Haptics.install(webView, PhoneBridge.HOSTS);
-        // Back: through the page's history (it closes sheets and dialogs first); on the first page,
-        // the app goes to the background and stays ready, so opening it again is quick. Capacitor's
-        // own handler did nothing on the first page.
-        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
-            @Override
-            public void handleOnBackPressed() {
-                WebView page = getBridge().getWebView();
-                if (page.canGoBack()) page.goBack();
-                else moveTaskToBack(true);
-            }
-        });
+        StartTimes.mark("page settings");
+        if (!early) addBack();
         connect = new ConnectFlow(this, webView);
         phone = new PhoneBridge(this, webView, connect);
+        StartTimes.mark("phone bridge");
         phone.setBundledWeb(bundled);
         phone.setLiveWeb(live);
         google = new GoogleSignIn(this, webView);
-        updates = new StoreUpdates(this);
-        // Asked once the first screen is up, so Play's sheet never covers the start.
-        webView.postDelayed(updates::start, UPDATE_CHECK_DELAY_MS);
+        if (!early) startUpdates(webView);
+        StartTimes.mark("updates");
         phone.attach();
-        phone.takeLaunch(getIntent());
-        takeOpen(getIntent());
-        takeFix(getIntent());
+        StartTimes.mark("phone attach");
+        if (!early) takeIntent();
         getBridge()
             .setWebViewClient(
                 new BridgeWebViewClient(getBridge()) {
@@ -149,6 +146,10 @@ public class MainActivity extends BridgeActivity {
                     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                         // Pages, screens, scripts and styles from the app's own copy; the rest from the server.
                         WebResourceResponse local = bundled.serve(request);
+                        if (requestsLogged < 4) {
+                            requestsLogged++;
+                            StartTimes.mark("request " + request.getUrl().getPath() + (local != null ? " from the app" : " to the server"));
+                        }
                         return local != null ? local : super.shouldInterceptRequest(view, request);
                     }
 
@@ -163,6 +164,7 @@ public class MainActivity extends BridgeActivity {
                         super.onPageCommitVisible(view, url);
                         qa.committed(view, url);
                         if (painted) return;
+                        StartTimes.mark("page visible " + Uri.parse(url).getPath());
                         // The first page is on screen: the splash goes, and the start time is logged.
                         painted = true;
                         reportFullyDrawn();
@@ -175,6 +177,7 @@ public class MainActivity extends BridgeActivity {
                         super.onPageFinished(view, url);
                         if (!finishedOnce) {
                             finishedOnce = true;
+                            StartTimes.mark("page finished");
                             Log.i(START_LOG, "page loaded " + sinceStart() + " ms after the app started");
                         }
                         phone.inject(view, url);
@@ -239,6 +242,7 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         );
+        StartTimes.mark("clients");
         // Capacitor started loading the site before this client was in place: with the app's own
         // copy on, load the home screen again so it comes from the phone (the live site sends / there).
         String site = LeadAlerts.serverUrl(this);
@@ -248,14 +252,63 @@ public class MainActivity extends BridgeActivity {
             // A web update's first start must say it is up, or the app goes back (LiveWeb).
             live.watch(bundled, this::useWeb);
         }
+        StartTimes.mark("page load asked");
+        if (early) {
+            registerPicker();
+            addBack();
+            startUpdates(webView);
+            takeIntent();
+            StartTimes.mark("after load: picker, back, updates, intent");
+        }
         // Is there a newer web release? Downloaded in the background, used from the next start.
         live.check(true);
-        AppShortcuts.publish(this);
+        if (early) new Thread(() -> AppShortcuts.publish(getApplicationContext()), "sx-shortcuts").start();
+        else AppShortcuts.publish(this);
+        StartTimes.mark("shortcuts");
         CrashReports.tag(this, bundled);
         google.take(getIntent());
         connect.take(getIntent());
         // After Capacitor's SystemBars has painted the theme's colours at start-up.
         webView.post(() -> SystemBarColors.restore(this));
+        StartTimes.mark("activity done");
+    }
+
+    private void registerPicker() {
+        recordingPicker = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+            ValueCallback<Uri[]> callback = pickCallback;
+            pickCallback = null;
+            if (callback == null) return;
+            Intent data = result.getData();
+            callback.onReceiveValue(
+                result.getResultCode() == RESULT_OK && data != null ? WebChromeClient.FileChooserParams.parseResult(result.getResultCode(), data) : null
+            );
+        });
+    }
+
+    private void addBack() {
+        // Back: through the page's history (it closes sheets and dialogs first); on the first page,
+        // the app goes to the background and stays ready, so opening it again is quick. Capacitor's
+        // own handler did nothing on the first page.
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                WebView page = getBridge().getWebView();
+                if (page.canGoBack()) page.goBack();
+                else moveTaskToBack(true);
+            }
+        });
+    }
+
+    private void startUpdates(WebView webView) {
+        updates = new StoreUpdates(this);
+        // Asked once the first screen is up, so Play's sheet never covers the start.
+        webView.postDelayed(updates::start, UPDATE_CHECK_DELAY_MS);
+    }
+
+    private void takeIntent() {
+        phone.takeLaunch(getIntent());
+        takeOpen(getIntent());
+        takeFix(getIntent());
     }
 
     /** A web update didn't start in time: the app went back (LiveWeb), and Home opens again from {@code next}. */
@@ -309,6 +362,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        if (!painted) StartTimes.mark("resume");
         inFront = true;
         if (painted) {
             // Back from the background: how long until the next frame is on screen.
