@@ -169,7 +169,7 @@ jobs:
           cp android/app/build/outputs/apk/play/debug/app-play-debug.apk "dist/sales-xray-android-play-0.3.${{ github.run_number }}-test.apk"
       - name: Point the shell at dev
         run: |
-          node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const config = JSON.parse(fs.readFileSync(file, "utf8")); config.server.url = "https://salesxray-dev.authorityclosers.com"; fs.writeFileSync(file, JSON.stringify(config, null, 2));'
+          # Measurement build (bug #67): the Dev package opens production like the Play app, so its web copy is on.
           npx cap sync android
       - name: Build Sales Xray Dev (test)
         working-directory: apps/phone/android
@@ -312,7 +312,7 @@ jobs:
           SX_BUILD_NUMBER: ${{ github.run_number }}
           SX_SIGNING_PASSWORD: ${{ secrets.SX_ANDROID_SIGNING_PASSWORD }}
         run: |
-          node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const config = JSON.parse(fs.readFileSync(file, "utf8")); config.server.url = "https://salesxray-dev.authorityclosers.com"; fs.writeFileSync(file, JSON.stringify(config, null, 2));'
+          # Measurement build (bug #67): the Dev package opens production like the Play app, so its web copy is on.
           npx cap sync android
           (cd android && ./gradlew --no-daemon --stacktrace assembleDirectRelease -PsxDev)
           cp android/app/build/outputs/apk/direct/release/app-direct-release.apk "dist/sales-xray-dev-android-0.3.${{ github.run_number }}.apk"
