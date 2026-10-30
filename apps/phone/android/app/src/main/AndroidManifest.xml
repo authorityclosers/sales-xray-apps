@@ -105,6 +105,25 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- Nothing starts with every start of the app that the first screen doesn't need (owner bug #67,
+             30 Oct 2026: 0.28 s on the main thread on a Note 8 Pro). WorkManager starts when the app first
+             uses it (SalesXrayApp is its Configuration.Provider); the Facebook SDK when sign-in needs it,
+             with the environment's app ID (NativeSignIn). -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+        <provider
+            android:name="com.facebook.internal.FacebookInitProvider"
+            android:authorities="${applicationId}.FacebookInitProvider"
+            tools:node="remove" />
     </application>
 
     <!-- Permissions -->

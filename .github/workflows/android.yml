@@ -210,6 +210,13 @@ jobs:
           for manifest in "$play" "$direct"; do
             if grep -q 'android:name="com.google.android.gms.permission.AD_ID"' "$manifest"; then echo "AD_ID declared in $manifest"; exit 1; fi
           done
+          # Nothing starts with the app that the first screen doesn't need (bug #67): WorkManager starts on first
+          # use and the Facebook SDK with sign-in, whatever a library's manifest adds.
+          for manifest in "$play" "$direct"; do
+            for banned in androidx.work.WorkManagerInitializer com.facebook.internal.FacebookInitProvider; do
+              if grep -q "android:name=\"$banned\"" "$manifest"; then echo "$banned still starts with the app in $manifest"; exit 1; fi
+            done
+          done
           echo "Play flavour: none of them ($play); direct keeps all ($direct)"
       - name: The Play App Bundle builds (unsigned)
         working-directory: apps/phone/android
