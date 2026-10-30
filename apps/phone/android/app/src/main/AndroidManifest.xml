@@ -152,7 +152,8 @@
     <!-- Download builds only: Play allows call history just for default phone apps. -->
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
-    <!-- The permissions checklist after sign-in (owner, 30 Oct 2026): contacts. Nothing reads them yet. -->
+    <!-- Contacts (owner, 30 Oct 2026): showing lead names on calls, matching a caller to a saved contact or lead;
+         read for nothing else. Asked for in the permissions checklist after sign-in; nothing reads them yet. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- Phone setup (download builds): ask to keep Sales Xray running in the background, so call logging and alerts arrive. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
