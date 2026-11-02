@@ -21,9 +21,9 @@ final class WebViewStart {
 
     private WebViewStart() {}
 
-    /** First thing in the Application, before anything touches WebView. */
-    static void ifOpening(Context context) {
-        if (!opening()) return;
+    /** First thing in the Application, before anything touches WebView. True when the process started for a screen. */
+    static boolean ifOpening(Context context) {
+        if (!opening()) return false;
         try {
             WebViewStartUpConfig config = new WebViewStartUpConfig.Builder(command -> new Thread(command, "sx-webview-start").start()).build();
             WebViewCompat.startUpWebView(
@@ -45,6 +45,7 @@ final class WebViewStart {
         } catch (RuntimeException error) {
             Log.w(TAG, "WebView did not start early: " + error.getClass().getSimpleName());
         }
+        return true;
     }
 
     /** Android started this process for a screen in front (a launch, a notification's tap). */

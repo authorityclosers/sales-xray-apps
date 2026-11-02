@@ -14,13 +14,20 @@ final class TelemetryRules {
     private TelemetryRules() {}
 
     /**
+     * A screen this long after its process started wasn't what the process started for (Android creates that screen
+     * within about half a second; Redmi 13, 2 Nov 2026), whatever the process's importance said.
+     */
+    static final long SCREEN_AFTER_START_MAX_MS = 10_000;
+
+    /**
      * sx.app_launch's cold start: what the seller waited for the first paint. From the process start when Android
      * started the process to show this screen; otherwise from the screen's creation, because a lead alert or a
      * background job may have started the process long before the seller opened the app (a tester's phone, 28 Oct to
      * 2 Nov 2026: such starts logged the 60 s cap, while the page itself was up in under 1.4 s every time).
      */
     static long coldLaunchMs(long processStartMs, long screenCreatedMs, long paintedMs, boolean processForScreen) {
-        return Math.max(0, paintedMs - (processForScreen ? processStartMs : screenCreatedMs));
+        boolean fromProcess = processForScreen && screenCreatedMs - processStartMs <= SCREEN_AFTER_START_MAX_MS;
+        return Math.max(0, paintedMs - (fromProcess ? processStartMs : screenCreatedMs));
     }
 
     /** The phone's RAM, rounded up to a common size: 2, 3, 4, 6, 8 or 12plus (GB). */

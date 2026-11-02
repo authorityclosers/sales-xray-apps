@@ -73,6 +73,8 @@ public class TelemetryRulesTest {
         // A lead alert started the process 40 minutes before the seller opened the app: the screen's 900 ms, not the cap.
         long screen = processStart + 40 * 60_000;
         assertEquals(900, TelemetryRules.coldLaunchMs(processStart, screen, screen + 900, false));
+        // Marked as started for a screen, but the screen came 40 minutes later: still the screen's 900 ms.
+        assertEquals(900, TelemetryRules.coldLaunchMs(processStart, screen, screen + 900, true));
         // A clock that went nowhere is never negative.
         assertEquals(0, TelemetryRules.coldLaunchMs(processStart, screen, screen - 5, false));
     }

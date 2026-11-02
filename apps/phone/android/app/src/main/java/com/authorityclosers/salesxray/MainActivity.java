@@ -93,7 +93,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        newProcess = SalesXrayApp.startedForScreen();
+        newProcess = SalesXrayApp.opensForStart();
         // The app's own copy, or a live web update it downloaded and checked before this start: read from the
         // phone's storage while Capacitor creates the WebView, not after it (bug #67).
         FutureTask<BundledWeb> web = new FutureTask<>(this::chooseWeb);
