@@ -6,7 +6,7 @@ The orchestrator submits this to Play Console. Nothing in it has been uploaded y
 ## The package
 | Item | Where |
 | --- | --- |
-| PR that adds READ_CALL_LOG to Play and flips the CI checks | authorityclosers/sales-xray-apps PR #12 (merge it only at step 3) |
+| PR that adds READ_CALL_LOG to Play and flips the CI checks | authorityclosers/sales-xray-apps PR #12 (merge it at step 2 of "In order") |
 | 45-second declaration video (mp4, 44.97 s, recorded 29 Oct on the Redmi 13 against staging v1.8.0) | Drive "Sales X-Ray Play listing": [sales-xray-call-log-declaration.mp4](https://drive.google.com/file/d/1RZT2OClpx3frYw1nCHUApKGwz7cQw7sp/view) |
 | Form answers, field by field | [call-log-form-answers.md](call-log-form-answers.md) |
 | Data safety changes | call-log-declaration.md → "Data safety changes"; auto-capture-compliance.md table |
