@@ -152,6 +152,22 @@ public class CaptureRulesTest {
         assertTrue(CaptureRules.notifyAgain(stamp - 60_000, 1, 2, stamp));
         assertTrue(CaptureRules.notifyAgain(stamp - CaptureRules.RENOTIFY_MS, 1, 1, stamp));
     }
+    @Test public void refusedRecordingsSayTheServersOwnReason() {
+        assertEquals(CaptureRules.REFUSED_HOURS, CaptureRules.refused(409, "This call is outside work hours."));
+        assertEquals(CaptureRules.REFUSED_EARLY, CaptureRules.refused(409, "This call was made before this lead was added."));
+        assertEquals(CaptureRules.REFUSED_OTHER, CaptureRules.refused(409, "This number must match exactly one of your leads."));
+        assertEquals(CaptureRules.REFUSED_OTHER, CaptureRules.refused(422, "This recording's number or time cannot be matched."));
+        assertEquals(CaptureRules.REFUSED_OTHER, CaptureRules.refused(404, ""));
+        // A later scan may take these: never remembered.
+        assertNull(CaptureRules.refused(409, "This call belongs to another workspace or seller."));
+        assertNull(CaptureRules.refused(500, "This call is outside work hours."));
+        String[] hours = CaptureRules.refusedNotice(CaptureRules.REFUSED_HOURS, "+12025550123");
+        assertEquals("Call with +12025550123 not uploaded", hours[0]);
+        assertEquals("Recorded outside work hours.", hours[1]);
+        assertEquals("Made before this lead was added.", CaptureRules.refusedNotice(CaptureRules.REFUSED_EARLY, "+12025550123")[1]);
+        // One reason is never shown for another, and the rest stay silent.
+        assertNull(CaptureRules.refusedNotice(CaptureRules.REFUSED_OTHER, "+12025550123"));
+    }
     @Test public void blockedBackgroundNetworkIsToldFromOffline() {
         assertEquals(CaptureRules.NET_OK, CaptureRules.netState(true, false, true));
         assertEquals(CaptureRules.NET_BLOCKED, CaptureRules.netState(true, true, false));
