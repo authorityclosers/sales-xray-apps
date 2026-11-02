@@ -23,7 +23,8 @@ device management.** Sales X-Ray is not a default phone, SMS or assistant handle
 
 ## Step 4 — Video link (paste)
 https://drive.google.com/file/d/1RZT2OClpx3frYw1nCHUApKGwz7cQw7sp/view
-(44.97 s, shared "Anyone with the link"; local copy `C:\Users\Suyash\Downloads\sales-xray-call-log-declaration.mp4`.)
+(42.2 s, 1920×1080, captions and English voice-over; shared "Anyone with the link"; local copy
+`C:\Users\Suyash\Downloads\sales-xray-call-log-declaration.mp4`.)
 
 ## Step 5 — Restricted content access
 Choose **All or some functionality is restricted**.
