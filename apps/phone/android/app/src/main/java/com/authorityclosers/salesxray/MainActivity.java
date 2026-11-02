@@ -372,6 +372,8 @@ public class MainActivity extends BridgeActivity {
      * (capture-gaps review of the cold-start change, 30 Oct 2026). Off the main thread: it reads settings files.
      */
     private static void restoreCaptureJobs(Context app) {
+        // Dials with no outcome get theirs from the recordings folder, uploads on or off (OutcomeBackfill).
+        OutcomeBackfill.soon(app);
         if (!AutoCapture.prefs(app).getBoolean("on", false) && !CallLogSync.isOn(app) && !RecordingWatchWorker.watching(app)) return;
         WorkManager.getInstance(app);
         AutoCapture.soon(app);

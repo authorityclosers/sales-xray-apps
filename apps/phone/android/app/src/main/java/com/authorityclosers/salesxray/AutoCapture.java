@@ -75,6 +75,7 @@ final class AutoCapture {
                     .setRequiredNetworkType(wifi ? NetworkType.UNMETERED : NetworkType.CONNECTED).build()).build());
         // Held and waiting calls go back in the queue on this first look.
         now(c);
+        OutcomeBackfill.now(c);
     }
     /** Only consent loss, blocked notices or a sign-out on this phone turn uploads off, and the seller is told. */
     static void stop(Context c, String reason) {
