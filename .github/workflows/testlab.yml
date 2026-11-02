@@ -134,10 +134,21 @@ jobs:
       - name: Access yet? Choose today's devices
         id: access
         run: |
-          # The catalogue read needs Test Lab access: until the owner's grant is in place it is refused, and the run
-          # stops here, green, having used nothing.
+          # First the keyless sign-in itself: GitHub's token exchanged for play-publisher's. A refusal here is the
+          # federation's (which workflows it trusts), and no Test Lab grant fixes it, so it is told apart.
+          if ! gcloud auth print-access-token > /dev/null 2> "$RUNNER_TEMP/token.log"; then
+            why="the keyless sign-in was refused ($(grep -oE 'unauthorized_client|invalid_grant|attribute condition|PERMISSION_DENIED|getAccessToken' "$RUNNER_TEMP/token.log" | head -1))"
+            echo "::warning title=Test Lab::$why; nothing ran"
+            echo "Test Lab: $why; nothing ran." >> "$GITHUB_STEP_SUMMARY"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Then the catalogue read, which needs Test Lab access: until the owner's grant is in place it is refused, and
+          # the run stops here, green, having used nothing. The reason goes to the run's annotations (gh run view).
           if ! gcloud firebase test android models list --format=json > "$RUNNER_TEMP/models.json" 2> "$RUNNER_TEMP/access.log"; then
-            echo "No Test Lab access in $PROJECT yet for the keyless identity: nothing ran. $(grep -oE 'PERMISSION_DENIED|403|not been used|disabled' "$RUNNER_TEMP/access.log" | head -1)" >> "$GITHUB_STEP_SUMMARY"
+            why="no Test Lab access in $PROJECT yet for play-publisher ($(grep -oE 'PERMISSION_DENIED|403|has not been used|disabled|not found' "$RUNNER_TEMP/access.log" | head -1))"
+            echo "::notice title=Test Lab::$why; nothing ran"
+            echo "Test Lab: $why; nothing ran." >> "$GITHUB_STEP_SUMMARY"
             echo "ok=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi

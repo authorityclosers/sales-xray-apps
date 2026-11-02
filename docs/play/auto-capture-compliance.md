@@ -12,9 +12,35 @@ standing-consent `notice.text` and upload-policy `privacy_details`, followed by:
 > 60 seconds to Undo before upload. Audio is encrypted in transit and can be deleted from Calls.
 > Turn this off in Settings at any time.
 
-Nothing is prechecked. Not now and Back leave uploads off. Enabling starts from now; no historical
-backfill. Wi-Fi only is the default (Android unmetered constraint plus an active Wi-Fi transport check); Any network is explicit.
+Nothing is prechecked. Not now and Back leave uploads off. The first turn-on starts from now; no historical
+backfill. Turning uploads on again for the same seller and workspace asks, with nothing chosen, whether to also
+upload the lead call recordings saved while uploads were off ("Upload them" / "Skip them", at most 3 days back,
+each with its own 60-second Undo); Skip starts from now. Calls already waiting or held when uploads went off are
+kept and go once uploads are on again. Turn uploads on first checks the account's write eligibility (the same
+check the edge makes before audio) and says "complete your profile" instead of turning on.
+Wi-Fi only is the default (Android unmetered constraint plus an active Wi-Fi transport check); Any network is explicit.
 Maximum file size: 100,000,000 bytes. WorkManager may delay execution, especially on HyperOS.
+
+## Held calls and notices (Redmi real-call test, 30 Oct 2026)
+A call the server or phone can't take yet waits on the phone ("held") with its reason, and the seller is told by a
+notification on the "Call uploads that need you" channel (at most once per reason every 6 hours, or when more calls
+wait) and on the capture-health card in Settings → Privacy → Calls:
+- contact profile incomplete (the edge's write-eligibility 403): opens Settings → Profile; uploads stay on and the
+  call goes by itself once eligibility answers 204;
+- call minutes used up (409 at upload): uploads stay on; the watch reads the workspace allowance and sends the call
+  once minutes exist;
+- signed out, another workspace, folder grant gone, background network blocked: uploads stay on and resume by
+  themselves; nothing goes to another workspace or seller;
+- only standing-consent loss (off, or its terms changed), blocked upload notices (no Undo) or a sign-out on this
+  phone turn uploads off, and each of these also notifies.
+
+## Background network (Android 15+ / HyperOS)
+Android 15+ cuts a cached app off the network (netpolicy `blocked=APP_BACKGROUND`). A capture worker that finds its
+network blocked asks for a JobScheduler job with a network constraint (expedited on Android 12+, falling back to a
+regular job when out of quota), which lifts the block while it runs, and waits up to 90 seconds instead of failing.
+No foreground service, foreground-service type or permission is added: the Play bundle has none (play.yml refuses
+them without a declaration). If the phone still blocks uploads for 15 minutes, the seller is told to set battery use
+to No restrictions.
 
 The Play app does not create call recordings: the phone dialler does. A readable persisted folder
 grant is required. No MANAGE_EXTERNAL_STORAGE, CALL_PHONE, microphone/recording foreground service,
@@ -39,8 +65,8 @@ analytics, authentication or crash-reporting SDKs.
 Recordings follow the current server upload policy displayed before consent (standard policy up to
 7 days, unless an explicitly approved training policy applies). Reports and CRM history follow
 the existing workspace policy. Do not promise a new retention period. Pending native job metadata
-is local, contains no audio copy or credential, and is excluded from cloud backup by the existing
-manifest. SAF revocation blocks audio reads. Withdrawal blocks new automatic upload and plan starts;
+(including why a call is held and the server's refusal reason) is local, contains no audio copy or credential, and
+is excluded from cloud backup by the existing manifest. SAF revocation blocks audio reads. Withdrawal blocks new automatic upload and plan starts;
 server upload completion checks cover withdrawal during transfer.
 
 ## OEM evidence and limits

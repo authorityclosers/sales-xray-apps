@@ -1,6 +1,7 @@
 package com.authorityclosers.salesxray;
 
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -28,6 +29,7 @@ import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.core.splashscreen.SplashScreen;
 import androidx.webkit.WebSettingsCompat;
+import androidx.work.WorkManager;
 import androidx.webkit.WebViewFeature;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
@@ -36,6 +38,10 @@ import java.util.Arrays;
 import org.json.JSONObject;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
 
 /** Sales Xray in a Capacitor shell, plus the phone's own call recordings. */
 public class MainActivity extends BridgeActivity {
@@ -54,6 +60,8 @@ public class MainActivity extends BridgeActivity {
 
     /** The app is the one in front (call logging tells the seller about new recordings otherwise). */
     static volatile boolean inFront;
+    /** Puts capture's scheduled work back after a force-stop (onResume). */
+    private static final ExecutorService CAPTURE_JOBS = Executors.newSingleThreadExecutor();
 
     /** The splash stays until the page paints, but never longer than this (a slow network). */
     private static final long SPLASH_MAX_MS = 6_000;
@@ -61,6 +69,8 @@ public class MainActivity extends BridgeActivity {
     private static final long UPDATE_CHECK_DELAY_MS = 4000;
     private static final String START_LOG = "SXStart";
     private long createdAt;
+    /** Android started the process for this screen; otherwise an alert or a job had it running already. */
+    private boolean newProcess;
     private boolean painted;
     private boolean finishedOnce;
 
@@ -83,6 +93,11 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        newProcess = SalesXrayApp.opensForStart();
+        // The app's own copy, or a live web update it downloaded and checked before this start: read from the
+        // phone's storage while Capacitor creates the WebView, not after it (bug #67).
+        FutureTask<BundledWeb> web = new FutureTask<>(this::chooseWeb);
+        new Thread(web, "sx-web-copy").start();
         // The splash (the app's ground and mark) stays up until the page has painted, so the
         // seller never sees an empty screen between the two (23 Oct 2026: about 1 s on a Note 8 Pro).
         createdAt = SystemClock.uptimeMillis();
@@ -103,10 +118,7 @@ public class MainActivity extends BridgeActivity {
             );
         });
         WebView webView = getBridge().getWebView();
-        // The app's own copy, or a live web update it downloaded and checked before this start.
-        BundledWeb builtIn = BundledWeb.load(this, LeadAlerts.serverUrl(this));
-        live = LiveWeb.create(this, LeadAlerts.serverUrl(this), builtIn);
-        bundled = live.choose();
+        bundled = await(web);
         // The page's ground before it paints follows the phone's light or dark mode.
         webView.setBackgroundColor(ContextCompat.getColor(this, R.color.sx_ground));
         // The page has its own dark design (prefers-color-scheme follows the DayNight theme), so the
@@ -166,8 +178,10 @@ public class MainActivity extends BridgeActivity {
                         // The first page is on screen: the splash goes, and the start time is logged.
                         painted = true;
                         reportFullyDrawn();
-                        Log.i(START_LOG, "first paint " + sinceStart() + " ms after the app started (" + (SystemClock.uptimeMillis() - createdAt) + " ms after the screen opened; " + (bundled.on() ? "pages from the app" : "pages from the server") + ")");
-                        DeviceTelemetry.start(MainActivity.this, true, sinceStart(), bundled.on());
+                        long now = SystemClock.uptimeMillis();
+                        Log.i(START_LOG, "first paint " + sinceStart() + " ms after the app started (" + (now - createdAt) + " ms after the screen opened; " + (newProcess ? "started for this screen" : "already running") + "; " + (bundled.on() ? "pages from the app" : "pages from the server") + ")");
+                        long launch = TelemetryRules.coldLaunchMs(Process.getStartUptimeMillis(), createdAt, now, newProcess);
+                        DeviceTelemetry.start(MainActivity.this, true, launch, bundled.on());
                     }
 
                     @Override
@@ -258,6 +272,22 @@ public class MainActivity extends BridgeActivity {
         webView.post(() -> SystemBarColors.restore(this));
     }
 
+    /** Which copy of the web app this start serves; sets {@link #live}. Any thread. */
+    private BundledWeb chooseWeb() {
+        String site = LeadAlerts.serverUrl(this);
+        live = LiveWeb.create(this, site, BundledWeb.load(this, site));
+        return live.choose();
+    }
+
+    /** The copy {@code web} chose; chosen here if that read failed. */
+    private BundledWeb await(FutureTask<BundledWeb> web) {
+        try {
+            return web.get();
+        } catch (ExecutionException | InterruptedException error) {
+            return chooseWeb();
+        }
+    }
+
     /** A web update didn't start in time: the app went back (LiveWeb), and Home opens again from {@code next}. */
     private void useWeb(BundledWeb next) {
         bundled = next;
@@ -330,6 +360,21 @@ public class MainActivity extends BridgeActivity {
         if (updates != null) updates.resume();
         // Work calls made since the last look reach their leads (UX study item 5).
         CallLogSync.soon(this);
+        // A force-stop (Settings, or HyperOS cleaning the app) drops every scheduled job. WorkManager puts them back
+        // when it starts, and it starts on first use (SalesXrayApp), which a launch alone may never reach.
+        Context app = getApplicationContext();
+        CAPTURE_JOBS.execute(() -> restoreCaptureJobs(app));
+    }
+
+    /**
+     * With call capture, call logging or the recordings watch on: WorkManager starts, rescheduling what a
+     * force-stop dropped, and capture looks again in 30 s, so dialler calls are watched and uploaded again
+     * (capture-gaps review of the cold-start change, 30 Oct 2026). Off the main thread: it reads settings files.
+     */
+    private static void restoreCaptureJobs(Context app) {
+        if (!AutoCapture.prefs(app).getBoolean("on", false) && !CallLogSync.isOn(app) && !RecordingWatchWorker.watching(app)) return;
+        WorkManager.getInstance(app);
+        AutoCapture.soon(app);
     }
 
     @Override
@@ -360,7 +405,8 @@ public class MainActivity extends BridgeActivity {
 
     /** Screens an alert or a long-press shortcut may open: Leads, Calls, Chats and Home. */
     static boolean opensInApp(String path) {
-        for (String start : new String[] { "/leads", "/analysis/calls", "/chats", "/dashboard" }) {
+        // /settings: call-upload notices open Profile or Privacy → Calls (AutoCapture.attention).
+        for (String start : new String[] { "/leads", "/analysis/calls", "/chats", "/dashboard", "/settings" }) {
             if (path.equals(start) || path.startsWith(start + "/") || path.startsWith(start + "#") || path.startsWith(start + "?")) return true;
         }
         return false;
@@ -381,7 +427,10 @@ public class MainActivity extends BridgeActivity {
     /** Opens the alert's lead or Report in the page (a fresh mark each time, so the same one opens again). */
     private void deliverOpen() {
         if (pendingOpen == null || !pageReady) return;
-        String path = pendingOpen + (pendingOpen.contains("#") ? "&" : "#") + "n=" + System.currentTimeMillis();
+        // A plain anchor (#calls-setup) is a place on the page, not a list of marks: it stays as it is.
+        int hash = pendingOpen.indexOf('#');
+        String path = hash >= 0 && !pendingOpen.substring(hash).contains("=") ? pendingOpen
+            : pendingOpen + (hash >= 0 ? "&" : "#") + "n=" + System.currentTimeMillis();
         pendingOpen = null;
         Uri parsed = Uri.parse("https://x" + path.replace('#', '?'));
         if (ReviewAlertRules.isPath(path)) ReviewAlerts.clear(this);

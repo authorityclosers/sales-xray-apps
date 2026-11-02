@@ -50,6 +50,35 @@ public class ConnectRulesTest {
     }
 
     @Test
+    public void theCustomerDomainIsSalesXrayBesideTheOldHost() {
+        // The app's own list (ConnectFlow, SXPhone, sign-in and lead alerts read it): app.salesxray.in serves
+        // the same web app as the old host, which stays (salesxray.in, 2 Nov 2026). Exact host, https, no port.
+        Set<String> hosts = PhoneBridge.HOSTS;
+        String sxin = "https://app.salesxray.in";
+        assertEquals(PROD, ConnectRules.originOf(PROD + "/leads?tab=sources", hosts));
+        assertEquals(sxin, ConnectRules.originOf(sxin + "/leads?tab=sources", hosts));
+        assertTrue(ConnectRules.isSalesXray(sxin, hosts));
+        assertEquals(
+            sxin + "/organisation?tab=integrations#connect=whatsapp&handoff=" + HANDOFF,
+            ConnectRules.page(sxin, "provider=whatsapp&handoff=" + HANDOFF, hosts)
+        );
+        assertFalse(ConnectRules.opens(sxin + "/leads"));
+        for (String other : new String[] {
+            "https://app.salesxray.in.example",
+            "http://app.salesxray.in",
+            "https://app.salesxray.in:444",
+            "https://app.salesxray.in:443",
+            "https://salesxray.in",
+            "https://api.salesxray.in",
+            "https://www.salesxray.in",
+        }) {
+            assertNull(other, ConnectRules.originOf(other + "/leads", hosts));
+            assertFalse(other, ConnectRules.isSalesXray(other, hosts));
+            assertNull(other, ConnectRules.page(other, "provider=meta&handoff=" + HANDOFF, hosts));
+        }
+    }
+
+    @Test
     public void aReturnOpensItsConnectsOwnPageWithTheHandOff() {
         assertEquals(
             PROD + "/leads?tab=sources#connect=meta&handoff=" + HANDOFF,

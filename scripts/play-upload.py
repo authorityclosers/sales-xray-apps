@@ -18,6 +18,9 @@ every alpha upload is a fresh closed-track release, so Play makes its pre-launch
 with managed publishing off, sends it to review without Console clicks (orchestrator, 27 Oct 2026:
 no report had ever run while alpha uploads were drafts). PLAY_DRAFT=true leaves an alpha release as a
 draft instead; open testing (beta) and production are always drafts for the owner to roll out.
+A completed alpha release also goes to internal testing in the same edit (orchestrator, 30 Oct 2026):
+the team's phones are internal testers, and internal sat at 1.0.43 for three days while every release
+went to alpha alone, where no one had it installed. Internal testing has no review, so it lands first.
 Google's libraries load inside the functions that use them, so the release rules run in tests alone.
 """
 
@@ -45,6 +48,11 @@ def release_status(track: str, draft: bool = False) -> str:
     if track == "internal" or (track == "alpha" and not draft):
         return "completed"
     return "draft"
+
+
+def also_tracks(track: str, status: str) -> list[str]:
+    """The other tracks that get the same release: internal testing, for a completed alpha release."""
+    return ["internal"] if track == "alpha" and status == "completed" else []
 
 
 def draft_requested(raw: str | None) -> bool:
@@ -126,11 +134,15 @@ def main() -> int:
         release["inAppUpdatePriority"] = priority
     if notes:
         release["releaseNotes"] = [{"language": os.environ.get("PLAY_NOTES_LANGUAGE", "en-IN"), "text": notes[:500]}]
-    edits.tracks().update(
-        packageName=PACKAGE, editId=edit, track=track, body={"track": track, "releases": [release]}
-    ).execute()
+    extra = also_tracks(track, release["status"])
+    for name in (track, *extra):
+        edits.tracks().update(
+            packageName=PACKAGE, editId=edit, track=name, body={"track": name, "releases": [release]}
+        ).execute()
     sent = commit(edits, edit)
     print(f"uploaded version code {code} to the {track} track ({release['status']}, update priority {priority})")
+    for name in extra:
+        print(f"the same release went to the {name} track")
     if release["status"] == "completed" and track != "internal" and not sent:
         print("it waits in Play Console: send the pending changes for review there to release it")
     return 0

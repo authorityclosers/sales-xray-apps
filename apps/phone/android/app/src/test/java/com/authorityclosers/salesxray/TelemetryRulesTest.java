@@ -66,6 +66,20 @@ public class TelemetryRulesTest {
     }
 
     @Test
+    public void coldLaunchCountsOnlyWhatTheSellerWaitedFor() {
+        long processStart = 1_000_000;
+        // Started for the screen: the process start counts, and the screen came 300 ms later.
+        assertEquals(1_250, TelemetryRules.coldLaunchMs(processStart, processStart + 300, processStart + 1_250, true));
+        // A lead alert started the process 40 minutes before the seller opened the app: the screen's 900 ms, not the cap.
+        long screen = processStart + 40 * 60_000;
+        assertEquals(900, TelemetryRules.coldLaunchMs(processStart, screen, screen + 900, false));
+        // Marked as started for a screen, but the screen came 40 minutes later: still the screen's 900 ms.
+        assertEquals(900, TelemetryRules.coldLaunchMs(processStart, screen, screen + 900, true));
+        // A clock that went nowhere is never negative.
+        assertEquals(0, TelemetryRules.coldLaunchMs(processStart, screen, screen - 5, false));
+    }
+
+    @Test
     public void framesCountSlowFrozenAndP90() {
         TelemetryRules.FrameStats stats = new TelemetryRules.FrameStats();
         for (int i = 0; i < 90; i++) stats.add(8_000_000L);

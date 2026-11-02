@@ -1,0 +1,106 @@
+name: Phone journeys
+
+# The bug radar's seller journeys in the Android app's own WebView, on an emulator (tests/phone-journeys): the dry run
+# before the testing Redmis walk them every night from the laptop (orchestrator for the owner, 28 Oct 2026), and a lane
+# of its own. The journeys and the report come from the platform repository at platform_ref; its review fixtures run
+# on this runner, and the Dev app's requests to its site are answered from them, so nothing reaches dev or production
+# and no account is used. It runs on pull requests that change the runner, and by hand.
+on:
+  pull_request:
+    paths:
+      - tests/phone-journeys/**
+      - .github/workflows/phone-journeys.yml
+  workflow_dispatch:
+    inputs:
+      platform_ref:
+        description: "Platform ref that has scripts/ci/wb_journeys_lib.mjs (main once v1.1.0 is live)"
+        type: string
+        default: main
+      android_run:
+        description: "The Android run whose Dev test APK to use; empty for the latest green run on main"
+        type: string
+        default: ""
+      api:
+        description: "Android version, as an API level"
+        type: string
+        default: "34"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Check out the platform (the journeys, the review fixtures, the report)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: authorityclosers/authority-closers-platform
+          ref: ${{ inputs.platform_ref || 'main' }}
+          path: platform
+          persist-credentials: false
+      - name: Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+      - name: The review fixtures on this runner
+        working-directory: platform
+        run: |
+          corepack enable && corepack prepare pnpm@11.19.0 --activate
+          pnpm install --frozen-lockfile --filter @ac/sales-xray-web...
+          cd apps/sales-xray-web
+          AC_SALES_XRAY_REVIEW=1 NEXT_TELEMETRY_DISABLED=1 nohup node node_modules/next/dist/bin/next dev --turbopack \
+            --hostname 127.0.0.1 --port 18216 > "$RUNNER_TEMP/fixtures.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null --max-time 120 http://127.0.0.1:18216/review-fixture/shell && break
+            sleep 5
+          done
+          curl -sf -o /dev/null --max-time 120 http://127.0.0.1:18216/review-fixture/shell || { tail -40 "$RUNNER_TEMP/fixtures.log"; exit 1; }
+          echo "fixtures up"
+      - name: The Dev app (its test APK)
+        env:
+          ASKED: ${{ inputs.android_run }}
+        run: |
+          run=$ASKED
+          [ -n "$run" ] || run=$(gh run list -R "$GITHUB_REPOSITORY" --workflow android.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          number=$(gh run view "$run" -R "$GITHUB_REPOSITORY" --json number --jq .number)
+          gh run download "$run" -R "$GITHUB_REPOSITORY" -n "sales-xray-android-$number-test" -D apks
+          apk=$(ls apks/sales-xray-dev-android-*-test.apk | grep -v device-tests | head -1)
+          test -n "$apk"
+          echo "APK=$apk" >> "$GITHUB_ENV"
+          echo "Dev app from Android run $run (#$number)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Playwright for Android (no browsers)
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm install --no-save --no-audit --no-fund --prefix tests/phone-journeys playwright@1.58.2
+      - name: Let the emulator use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: The journeys in the Dev app, Android ${{ inputs.api || '34' }}
+        run: bash tests/phone-journeys/emulator.sh "${{ inputs.api || '34' }}" "$APK" platform phone-run
+      - name: The report, as the radar's
+        if: always()
+        run: |
+          [ -f phone-run/part-0.json ] || exit 0
+          node platform/scripts/ci/wb_radar.mjs merge phone-run
+          sed -n '/Seller journeys/,/Top /p' phone-run/report.md >> "$GITHUB_STEP_SUMMARY"
+          grep -E 'journey-broken|tap-error' phone-run/report.md | head -20 >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Keep the run
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: phone-journeys-${{ inputs.api || '34' }}
+          path: |
+            phone-run
+            emulator.log
+          retention-days: 14

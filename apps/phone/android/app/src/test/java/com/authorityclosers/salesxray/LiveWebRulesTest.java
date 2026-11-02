@@ -120,6 +120,26 @@ public class LiveWebRulesTest {
     }
 
     @Test
+    public void theTwoProductionHostsNeverTakeEachOthersManifest() throws Exception {
+        // app.salesxray.in pins the production key too (salesxray.in, 2 Nov 2026). Until the platform signs bundles
+        // for it, its manifest names the old host: refused quietly, and the app keeps the web it has.
+        String sxin = "app.salesxray.in";
+        String forOld = payload(SUM_P, SHA_A, 7, 1, NOW - DAY);
+        assertRefused("host", envelope(releaseKey, forOld), pinned, sxin);
+        assertRefused("host", envelope(releaseKey, forOld.replace(HOST, "salesxray.in")), pinned, sxin);
+        String forSxin = forOld.replace(HOST, sxin);
+        LiveWebRules.Manifest manifest = LiveWebRules.open(envelope(releaseKey, forSxin), pinned, sxin);
+        assertEquals(sxin, manifest.host);
+        assertRefused("host", envelope(releaseKey, forSxin), pinned, HOST);
+        // A bundle unpacked for one host is not used for the other.
+        List<String> files = goodFiles();
+        Set<String> unpacked = new HashSet<>(files);
+        unpacked.add("sx-web.json");
+        LiveWebRules.checkUnpacked(unpacked, webJson(sxin, SHA_A, files), manifest);
+        assertUnpackedRefused(unpacked, webJson(HOST, SHA_A, files), manifest);
+    }
+
+    @Test
     public void malformedManifestsAreRefused() throws Exception {
         assertRefused("format", "not json", pinned, HOST);
         assertRefused("format", "{}", pinned, HOST);

@@ -17,14 +17,17 @@ public class CaptureUploadWorker extends Worker {
     public CaptureUploadWorker(@NonNull Context c, @NonNull WorkerParameters p) { super(c, p); }
     JSONObject gate(Context c, CaptureApi api, JSONObject job) throws Exception {
         JSONObject book = api.book();
-        if (!AutoCapture.noticesAllowed(c)) { AutoCapture.stop(c); throw new CaptureApi.Failure(409); }
+        if (!AutoCapture.noticesAllowed(c)) throw new CaptureApi.Hold(CaptureRules.NOTICES);
+        if (!AutoCapture.prefs(c).getBoolean("on", false)) throw new CaptureApi.Hold(CaptureRules.OFF);
         if (!AutoCapture.enabled(c, book) || !CaptureRules.identity(book).equals(job.optString("identity")))
-            throw new CaptureApi.Failure(403);
+            throw new CaptureApi.Hold(CaptureRules.WORKSPACE);
+        // The job was inside the upload window when it was made (turning uploads off and on keeps it);
+        // the number must still be this seller's lead.
         if (CaptureRules.number(job.getString("name"), job.getLong("saved"), System.currentTimeMillis(),
-            AutoCapture.prefs(c).getLong("since", Long.MAX_VALUE), TimeZone.getDefault(), book) == null)
-            throw new CaptureApi.Failure(409);
+            0, TimeZone.getDefault(), book) == null)
+            throw new CaptureApi.Hold(CaptureRules.REVIEW);
         JSONObject policy = api.policy();
-        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) { AutoCapture.stop(c); throw new CaptureApi.Failure(409); }
+        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) throw new CaptureApi.Hold(CaptureRules.CONSENT);
         if (AutoCapture.prefs(c).getBoolean("wifiOnly", true)) {
             ConnectivityManager network = c.getSystemService(ConnectivityManager.class);
             NetworkCapabilities active = network.getNetworkCapabilities(network.getActiveNetwork());
@@ -40,12 +43,12 @@ public class CaptureUploadWorker extends Worker {
         for (Uri tree : RecordingFolder.trees(c)) {
             if (uri.getAuthority().equals(tree.getAuthority()) && RecordingFolderRules.inside(DocumentsContract.getTreeDocumentId(tree), DocumentsContract.getDocumentId(uri))) granted = true;
         }
-        if (!granted) throw new CaptureApi.Failure(403);
+        if (!granted) throw new CaptureApi.Hold(CaptureRules.FOLDER);
         try (Cursor cursor = c.getContentResolver().query(uri, new String[] {
             DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         }, null, null, null)) {
             if (cursor == null || !cursor.moveToFirst() || cursor.getLong(0) != job.getLong("size") ||
-                cursor.getLong(1) != job.getLong("saved")) throw new CaptureApi.Failure(409);
+                cursor.getLong(1) != job.getLong("saved")) throw new CaptureApi.Hold(CaptureRules.REVIEW);
         }
         return new FilterInputStream(c.getContentResolver().openInputStream(uri)) {
             @Override public int read(byte[] b, int off, int len) throws IOException {
@@ -58,15 +61,19 @@ public class CaptureUploadWorker extends Worker {
     @NonNull public Result doWork() {
         Context c = getApplicationContext(); String id = getInputData().getString("id");
         JSONObject job = null;
+        CaptureApi api = null;
+        CaptureNet.begin();
         try {
             job = AutoCapture.job(c, id);
             if (id == null || !job.has("id")) return Result.success();
             if (Arrays.asList("cancelled", "held", "report_ready").contains(job.optString("state"))) return Result.success();
             if (System.currentTimeMillis() < job.optLong("due")) return Result.retry();
             if (System.currentTimeMillis() - job.optLong("stamp") > CaptureRules.KEEP_MS) {
-                AutoCapture.save(c, job, "held"); return Result.success();
+                AutoCapture.hold(c, job, CaptureRules.EXPIRED); return Result.success();
             }
-            CaptureApi api = api(c);
+            // A cached app has no network on Android 15+ until the system runs a job for it (CaptureNet).
+            if (!CaptureNet.await(c, this)) return Result.retry();
+            api = api(c);
             JSONObject policy = gate(c, api, job);
             // No bytes before the Undo state has been read again.
             synchronized (AutoCapture.class) {
@@ -84,7 +91,7 @@ public class CaptureUploadWorker extends Worker {
                         digest.update(buffer, 0, n);
                     }
                 }
-                if (count != job.getLong("size")) throw new CaptureApi.Failure(409);
+                if (count != job.getLong("size")) throw new CaptureApi.Hold(CaptureRules.REVIEW);
                 StringBuilder hex = new StringBuilder();
                 for (byte b : digest.digest()) hex.append(String.format(Locale.ROOT, "%02x", b & 255));
                 job.put("sha", hex.toString()); AutoCapture.save(c, job, "uploading");
@@ -107,14 +114,14 @@ public class CaptureUploadWorker extends Worker {
                         "application/octet-stream", id, true, job.getString("sha"), policy.getString("policy_sha256"));
                 }
             }
-            if (!job.getString("sha").equals(progress.optString("source_sha256"))) throw new CaptureApi.Failure(409);
+            if (!job.getString("sha").equals(progress.optString("source_sha256"))) throw new CaptureApi.Hold(CaptureRules.REVIEW);
             api.json("POST", "/v1/lead-desk/leads/" + job.getString("leadId") + "/recordings", new JSONObject()
                 .put("command_id", CaptureRules.id(id, "attach", 0)).put("submission_id", sid)
                 .put("call_event_id", job.getString("eventId")), null, false);
             if (progress.optBoolean("has_report")) { AutoCapture.save(c, job, "report_ready"); return Result.success(); }
             if (Arrays.asList("failed", "cancelled").contains(progress.optString("local_state")) ||
                 Arrays.asList("held", "cancelled", "completed").contains(progress.optString("state"))) {
-                AutoCapture.save(c, job, "held"); return Result.success();
+                AutoCapture.hold(c, job, CaptureRules.REVIEW); return Result.success();
             }
             if (progress.optBoolean("automatic_progression")) { AutoCapture.save(c, job, "analysing"); return Result.retry(); }
             if (!"completed".equals(progress.optString("local_state"))) return Result.retry();
@@ -130,11 +137,17 @@ public class CaptureUploadWorker extends Worker {
             AutoCapture.save(c, job, "analysing");
             AutoCapture.notice(c, id, "Call with " + job.optString("leadName", "lead") + " uploaded for analysis", "Open the lead to see its report when ready.", false);
             return Result.retry();
+        } catch (CaptureApi.Hold hold) {
+            AutoCapture.hold(c, job, hold.reason);
+            return Result.success();
         } catch (CaptureApi.Failure error) {
-            if (error.code >= 500 || error.code == 429 || error.code == 408) return Result.retry();
-            if (error.code == 401 || error.code == 403) AutoCapture.stop(c);
-            try { if (job != null) AutoCapture.save(c, job, "held"); } catch (Exception ignored) { }
+            // A profile 403 or an allowance 409 holds the call, tells the seller and retries once fixed;
+            // only a consent loss turns uploads off (CaptureRules.refusal, stops).
+            String reason = AutoCapture.explain(api, error);
+            if (CaptureRules.RETRY.equals(reason)) return Result.retry();
+            AutoCapture.hold(c, job, reason);
             return Result.success();
         } catch (Exception error) { return Result.retry(); }
+        finally { CaptureNet.end(); }
     }
 }
