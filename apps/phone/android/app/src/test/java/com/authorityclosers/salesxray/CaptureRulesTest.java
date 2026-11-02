@@ -152,6 +152,13 @@ public class CaptureRulesTest {
         assertTrue(CaptureRules.notifyAgain(stamp - 60_000, 1, 2, stamp));
         assertTrue(CaptureRules.notifyAgain(stamp - CaptureRules.RENOTIFY_MS, 1, 1, stamp));
     }
+    @Test public void uploadNoticesOpenTheirLead() {
+        String lead = "00000000-0000-4000-8000-000000000001";
+        assertEquals("/leads#lead=" + lead, CaptureRules.leadPath(lead));
+        assertEquals("/leads", CaptureRules.leadPath(null));
+        assertEquals("/leads", CaptureRules.leadPath(""));
+        assertEquals("/leads", CaptureRules.leadPath(lead + "&call=1"));
+    }
     @Test public void blockedBackgroundNetworkIsToldFromOffline() {
         assertEquals(CaptureRules.NET_OK, CaptureRules.netState(true, false, true));
         assertEquals(CaptureRules.NET_BLOCKED, CaptureRules.netState(true, true, false));
