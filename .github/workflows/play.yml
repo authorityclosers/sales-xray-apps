@@ -133,6 +133,8 @@ jobs:
           # Set by the orchestrator once Play Console has the Permissions Declaration for READ_CALL_LOG
           # (docs/play/call-log-declaration.md): "submitted" or "approved". Until then nothing is uploaded.
           CALL_LOG_DECLARATION: ${{ vars.PLAY_CALL_LOG_DECLARATION }}
+          TRACK: ${{ inputs.track }}
+          PLAY_DRAFT: ${{ inputs.draft && 'true' || 'false' }}
         run: |
           # The final merged manifest; only declarations count (the source manifests' comments name them).
           manifest=$(find app/build/intermediates -path "*merged_manifests*playRelease*" -name AndroidManifest.xml | head -1)
@@ -144,8 +146,15 @@ jobs:
           case "$CALL_LOG_DECLARATION" in
             submitted|approved) echo "Call log declaration: $CALL_LOG_DECLARATION" ;;
             *)
-              echo "::error::This bundle declares READ_CALL_LOG, which goes to Play only with its Permissions Declaration (docs/play/call-log-declaration.md). Nothing was uploaded. The signed bundle is kept as the artifact sales-xray-play-$GITHUB_RUN_NUMBER: upload it in Play Console together with the declaration, then run: gh variable set PLAY_CALL_LOG_DECLARATION --body submitted --repo $GITHUB_REPOSITORY"
-              exit 1 ;;
+              # Play Console shows the declaration form only once a release holds the bundle, and a draft alpha
+              # release reaches no tester (play-upload.py: no internal copy for a draft), so that draft alone goes
+              # up before the declaration (orchestrator, 3 Nov 2026: a 14 MB bundle cannot be uploaded by hand here).
+              if [ "$TRACK" = alpha ] && [ "$PLAY_DRAFT" = true ]; then
+                echo "::notice::No call log declaration yet: this goes up as a draft alpha release only, which reaches no tester. Fill the Permissions Declaration in Play Console and send it, then run: gh variable set PLAY_CALL_LOG_DECLARATION --body submitted --repo $GITHUB_REPOSITORY"
+              else
+                echo "::error::This bundle declares READ_CALL_LOG, which goes to Play only with its Permissions Declaration (docs/play/call-log-declaration.md). Nothing was uploaded. The signed bundle is kept as the artifact sales-xray-play-$GITHUB_RUN_NUMBER: run this workflow with track alpha and draft on to put it in Play Console for the declaration, then run: gh variable set PLAY_CALL_LOG_DECLARATION --body submitted --repo $GITHUB_REPOSITORY"
+                exit 1
+              fi ;;
           esac
           echo "Play bundle: call history under the declaration, none of the others ($manifest)"
       - name: Upload to Play (keyless sign-in with the run's GitHub OIDC token)
