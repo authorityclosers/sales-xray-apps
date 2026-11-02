@@ -28,7 +28,7 @@ public class CaptureUploadWorker extends Worker {
             throw new CaptureApi.Hold(CaptureRules.REVIEW);
         JSONObject policy = api.policy();
         if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) throw new CaptureApi.Hold(CaptureRules.CONSENT);
-        if (AutoCapture.prefs(c).getBoolean("wifiOnly", true)) {
+        if (AutoCapture.prefs(c).getBoolean("wifiOnly", CaptureRules.WIFI_ONLY_DEFAULT)) {
             ConnectivityManager network = c.getSystemService(ConnectivityManager.class);
             NetworkCapabilities active = network.getNetworkCapabilities(network.getActiveNetwork());
             if (active == null || !active.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || network.isActiveNetworkMetered())

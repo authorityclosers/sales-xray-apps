@@ -152,6 +152,10 @@ public class CaptureRulesTest {
         assertTrue(CaptureRules.notifyAgain(stamp - 60_000, 1, 2, stamp));
         assertTrue(CaptureRules.notifyAgain(stamp - CaptureRules.RENOTIFY_MS, 1, 1, stamp));
     }
+    @Test public void uploadsUseAnyNetworkUnlessTheSellerPicksWifiOnly() {
+        // Owner, bug 120 (3 Nov 2026): any network by default; Settings keeps Wi-Fi only.
+        assertFalse(CaptureRules.WIFI_ONLY_DEFAULT);
+    }
     @Test public void blockedBackgroundNetworkIsToldFromOffline() {
         assertEquals(CaptureRules.NET_OK, CaptureRules.netState(true, false, true));
         assertEquals(CaptureRules.NET_BLOCKED, CaptureRules.netState(true, true, false));

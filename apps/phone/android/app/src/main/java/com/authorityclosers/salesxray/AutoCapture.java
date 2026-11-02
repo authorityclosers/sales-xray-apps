@@ -40,7 +40,7 @@ final class AutoCapture {
             p.getLong("netBlockedAt", 0), System.currentTimeMillis());
         Integer calls = held.get(health);
         return new JSONObject().put("supported", true).put("on", on)
-            .put("wifiOnly", p.getBoolean("wifiOnly", true)).put("health", health)
+            .put("wifiOnly", p.getBoolean("wifiOnly", CaptureRules.WIFI_ONLY_DEFAULT)).put("health", health)
             .put("healthCalls", calls == null ? pending : calls).put("pending", pending).put("held", new JSONObject(held))
             .put("offSinceMs", !on && p.getLong("offAt", 0) > 0 ? p.getLong("offAt", 0) : JSONObject.NULL);
     }
@@ -62,7 +62,7 @@ final class AutoCapture {
         }
         if (!on && wasOn) edit.putLong("offAt", now).putString("stopped", CaptureRules.OFF);
         if (on) edit.remove("offAt").remove("stopped").remove("paused");
-        boolean changedNetwork = wifi != p.getBoolean("wifiOnly", true);
+        boolean changedNetwork = wifi != p.getBoolean("wifiOnly", CaptureRules.WIFI_ONLY_DEFAULT);
         edit.putBoolean("on", on).putString("identity", identity).putBoolean("wifiOnly", wifi).commit();
         WorkManager work = WorkManager.getInstance(c);
         if (!on) { work.cancelAllWorkByTag("sx-auto-capture"); PhoneBridge.signalActive("recordings"); return; }
@@ -312,7 +312,7 @@ final class AutoCapture {
         return states;
     }
     static void enqueue(Context c, String id, long delay) {
-        boolean wifi = prefs(c).getBoolean("wifiOnly", true);
+        boolean wifi = prefs(c).getBoolean("wifiOnly", CaptureRules.WIFI_ONLY_DEFAULT);
         WorkManager.getInstance(c).enqueueUniqueWork("sx-capture:" + id, ExistingWorkPolicy.KEEP,
             new OneTimeWorkRequest.Builder(CaptureUploadWorker.class).addTag("sx-auto-capture")
                 .setInputData(new Data.Builder().putString("id", id).build())

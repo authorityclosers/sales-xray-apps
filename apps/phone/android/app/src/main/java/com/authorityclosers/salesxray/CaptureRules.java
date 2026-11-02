@@ -14,6 +14,8 @@ final class CaptureRules {
     static final long MAX_BYTES = 100_000_000L;
     static final long UNDO_MS = 60_000L;
     static final long KEEP_MS = 3L * 24 * 60 * 60 * 1000;
+    /** Uploads use any network unless the seller picks Wi-Fi only (owner, bug 120, 3 Nov 2026: "everyone has 5G"). */
+    static final boolean WIFI_ONLY_DEFAULT = false;
 
     // Why a call waits on the phone (Redmi real-call test, 30 Oct 2026: each of these lost a call silently).
     // The watch retries the recoverable ones by itself once their cause is gone; the seller is told about all of them.
