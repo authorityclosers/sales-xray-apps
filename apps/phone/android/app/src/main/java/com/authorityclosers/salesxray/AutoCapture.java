@@ -331,10 +331,13 @@ final class AutoCapture {
         if (manager == null) return;
         if (android.os.Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(
             new NotificationChannel("auto_capture", "Automatic call uploads", NotificationManager.IMPORTANCE_LOW));
+        // Every caller saved the job first: its tap opens that call's lead, not the Leads list (lab, 2 Nov 2026).
+        String lead;
+        try { lead = job(c, id).optString("leadId", null); } catch (JSONException unreadable) { lead = null; }
         NotificationCompat.Builder n = new NotificationCompat.Builder(c, "auto_capture")
             .setSmallIcon(R.drawable.ic_stat_sx).setContentTitle(title).setContentText(text).setSilent(true)
             .setContentIntent(PendingIntent.getActivity(c, id.hashCode(), new Intent(c, MainActivity.class)
-                .putExtra(LeadAlerts.EXTRA_OPEN, "/leads").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+                .putExtra(LeadAlerts.EXTRA_OPEN, CaptureRules.leadPath(lead)).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         if (undo) n.addAction(0, "Undo", PendingIntent.getBroadcast(c, id.hashCode(), new Intent(c, CaptureUndoReceiver.class)
             .setData(Uri.parse("sx-capture:" + id)).putExtra("id", id), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         try { manager.notify(id.hashCode(), n.build()); } catch (SecurityException ignored) { }
