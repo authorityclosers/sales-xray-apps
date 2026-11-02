@@ -64,6 +64,10 @@ final class CallLogSync {
     private static final String IN_APP = "in_app";
     private static final String UNKNOWN = "unknown";
     private static final String IGNORED = "ignored";
+    /** The first read after logging was first turned on runs until this moment: it fills dials 30 days back. */
+    private static final String BACKFILL_UNTIL = "backfill_until";
+    /** That first read finished on this phone; it never runs again. */
+    private static final String BACKFILLED = "backfilled";
     private static final long UNKNOWN_KEEP_MS = 7L * 24 * 60 * 60 * 1000;
     private static final int UNKNOWN_MAX = 30;
     private static final long RESUME_GAP_MS = 60_000;
@@ -110,8 +114,11 @@ final class CallLogSync {
 
     /**
      * Turns logging on or off. Turning it on starts from now, so calls made
-     * before, or while it was off, are never sent. With more than one SIM it
-     * stays off until the work SIM is chosen.
+     * while it was off are never sent. The first time on this phone, one read
+     * goes 30 days back to fill in the outcome of the app's own dials (owner via
+     * the orchestrator, 2 Nov 2026); past a week it sends calls out only, and
+     * Sales X-Ray logs none of them as calls of their own. With more than one
+     * SIM it stays off until the work SIM is chosen.
      */
     static boolean setOn(Context context, boolean on, String sim) {
         SharedPreferences prefs = prefs(context);
@@ -120,7 +127,12 @@ final class CallLogSync {
         if (on && chosen.isEmpty() && sims(context).length() > 1) return false;
         SharedPreferences.Editor edit = prefs.edit().putBoolean(ON, on);
         if (on) {
-            if (!prefs.getBoolean(ON, false)) edit.putLong(SINCE, System.currentTimeMillis()).putString(STATE, "never");
+            long now = System.currentTimeMillis();
+            if (!prefs.getBoolean(ON, false) && !prefs.getBoolean(BACKFILLED, false)) {
+                edit.putLong(SINCE, now - OutcomeRules.FILL_MS).putLong(BACKFILL_UNTIL, now).putString(STATE, "never");
+            } else if (!prefs.getBoolean(ON, false)) {
+                edit.putLong(SINCE, now).putString(STATE, "never");
+            }
             if (prefs.getString(DEVICE, null) == null) edit.putString(DEVICE, UUID.randomUUID().toString());
             edit.putString(SIM, chosen).putString(SIM_ALT, subscriptionOf(context, chosen));
         }
@@ -332,13 +344,15 @@ final class CallLogSync {
         }
         long now = System.currentTimeMillis();
         if (!person.equals(prefs.getString(PERSON, person))) {
-            // Someone else signed in on this phone: their logging starts now.
-            prefs.edit().putString(PERSON, person).putLong(SINCE, now).apply();
+            // Someone else signed in on this phone: their logging starts now, with no look back.
+            prefs.edit().putString(PERSON, person).putLong(SINCE, now).remove(BACKFILL_UNTIL).apply();
             return state(context, "ok");
         }
         prefs.edit().putString(PERSON, person).apply();
 
         long since = prefs.getLong(SINCE, now);
+        long until = prefs.getLong(BACKFILL_UNTIL, 0);
+        boolean backfill = until > 0 && since < until;
         String sim = prefs.getString(SIM, "");
         String alt = prefs.getString(SIM_ALT, "");
         String inApp = prefs.getString(IN_APP, "");
@@ -348,6 +362,7 @@ final class CallLogSync {
         JSONArray unknown = unknown(context);
         String notLeads = prefs.getString(IGNORED, "");
         long newest = since;
+        int rows = 0;
         String[] columns = {
             CallLog.Calls._ID,
             CallLog.Calls.NUMBER,
@@ -367,13 +382,13 @@ final class CallLogSync {
                     CallLog.Calls.DATE + " ASC"
                 )
         ) {
-            int rows = 0;
             while (cursor != null && rows < MAX_ROWS && cursor.moveToNext()) {
                 rows++;
                 long date = cursor.getLong(2);
                 newest = Math.max(newest, date);
                 String direction = CallLogRules.direction(cursor.getInt(4));
                 if (direction == null) continue;
+                if (backfill && !OutcomeRules.backfillRow(direction, date, now)) continue;
                 if (!CallLogRules.inWorkHours(date, workDays, workStart, workEnd)) continue;
                 String account = cursor.isNull(5) ? "" : cursor.getString(5);
                 if (!CallLogRules.onWorkSim(account, sim, alt)) continue;
@@ -417,6 +432,7 @@ final class CallLogSync {
             try {
                 body.put("device_id", device);
                 body.put("calls", new JSONArray(calls.subList(start, Math.min(calls.size(), start + BATCH))));
+                if (backfill) body.put("backfill", true);
             } catch (JSONException error) {
                 return state(context, "error");
             }
@@ -432,14 +448,16 @@ final class CallLogSync {
             }
         }
         RecordingQueue.add(context, waiting);
-        prefs
+        SharedPreferences.Editor done = prefs
             .edit()
             .putString(UNKNOWN, unknown.toString())
             .putLong(SINCE, newest)
             .putLong(LAST_SYNC, now)
             .putInt(LAST_LOGGED, logged)
-            .putString(STATE, "ok")
-            .apply();
+            .putString(STATE, "ok");
+        // The first read reached its end (or the history did): it never runs again.
+        if (until > 0 && (newest >= until || rows < MAX_ROWS)) done.remove(BACKFILL_UNTIL).putBoolean(BACKFILLED, true);
+        done.apply();
         return logged;
     }
 
