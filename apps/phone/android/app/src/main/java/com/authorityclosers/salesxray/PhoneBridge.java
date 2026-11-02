@@ -42,9 +42,15 @@ import org.json.JSONObject;
  */
 final class PhoneBridge {
 
+    /**
+     * Sales X-Ray's own sites: the SXPhone bridge, Connect, Google sign-in, lead alerts, font scale and
+     * haptics take only these (exact host, https). app.salesxray.in serves the same web app beside the old
+     * host, which stays (salesxray.in, 2 Nov 2026); the app still starts on the old host.
+     */
     static final Set<String> HOSTS = new HashSet<>(
         Arrays.asList(
             "salesxray.authorityclosers.com",
+            "app.salesxray.in",
             "salesxray-staging.authorityclosers.com",
             "salesxray-dev.authorityclosers.com"
         )
