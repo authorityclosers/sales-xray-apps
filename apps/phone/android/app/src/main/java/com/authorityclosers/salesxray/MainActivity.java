@@ -15,7 +15,6 @@ import android.util.Log;
 import android.view.Choreographer;
 import android.view.ViewGroup;
 import android.webkit.ValueCallback;
-import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -112,10 +111,8 @@ public class MainActivity extends BridgeActivity {
             ValueCallback<Uri[]> callback = pickCallback;
             pickCallback = null;
             if (callback == null) return;
-            Intent data = result.getData();
-            callback.onReceiveValue(
-                result.getResultCode() == RESULT_OK && data != null ? WebChromeClient.FileChooserParams.parseResult(result.getResultCode(), data) : null
-            );
+            // Every file of a multiple pick, not only a single one (U1).
+            callback.onReceiveValue(RecordingPicker.picked(result.getResultCode(), result.getData()));
         });
         WebView webView = getBridge().getWebView();
         bundled = await(web);
