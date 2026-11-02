@@ -68,9 +68,20 @@ test("the screen reads its web copy on another thread while Capacitor creates th
 test("WebView's engine starts first, and only for a screen", () => {
   const app = java("SalesXrayApp");
   const onCreate = app.slice(app.indexOf("public void onCreate()"));
-  const calls = [...onCreate.matchAll(/^\s+(\w+(?:\.\w+)*)\(/gm)].map((m) => m[1]);
+  const calls = [...onCreate.matchAll(/^\s+(?:\w+\s*=\s*)?(\w+(?:\.\w+)*)\(/gm)].map((m) => m[1]);
   assert.deepEqual(calls.slice(0, 2), ["super.onCreate", "WebViewStart.ifOpening"]);
   const start = java("WebViewStart");
   assert.match(start, /importance <= ActivityManager\.RunningAppProcessInfo\.IMPORTANCE_FOREGROUND/);
   assert.match(start, /WebViewCompat\.startUpWebView\(/);
+});
+
+test("a cold start counts from the process start only for the screen the process started for", () => {
+  // A tester's 60 s cold starts were the age of a process an alert or a job had started (2 Nov 2026).
+  assert.match(java("SalesXrayApp"), /startedForScreen = WebViewStart\.ifOpening\(this\);/);
+  const activity = java("MainActivity");
+  const onCreate = activity.slice(activity.indexOf("public void onCreate(Bundle"));
+  assert.match(onCreate, /^\s+newProcess = SalesXrayApp\.opensForStart\(\);/m);
+  assert.match(activity, /long launch = TelemetryRules\.coldLaunchMs\(Process\.getStartUptimeMillis\(\), createdAt, now, newProcess\);/);
+  assert.match(activity, /DeviceTelemetry\.start\(MainActivity\.this, true, launch, /);
+  assert.doesNotMatch(activity, /DeviceTelemetry\.start\(MainActivity\.this, true, sinceStart\(\)/);
 });
