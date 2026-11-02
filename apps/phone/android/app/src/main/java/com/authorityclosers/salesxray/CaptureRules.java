@@ -70,6 +70,12 @@ final class CaptureRules {
         return null;
     }
 
+    /** Where a call's upload notice opens: its lead's sheet, as lead alerts open it (any stage), else Leads. */
+    static String leadPath(String leadId) {
+        if (leadId == null || !leadId.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")) return "/leads";
+        return "/leads#lead=" + leadId;
+    }
+
     static boolean consent(JSONObject consent, String policy) {
         return consent != null && "on".equals(consent.optString("state")) &&
             consent.optBoolean("can_start") && policy != null && policy.length() == 64 &&

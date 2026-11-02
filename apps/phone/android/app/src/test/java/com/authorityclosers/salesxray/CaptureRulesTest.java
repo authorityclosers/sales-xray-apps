@@ -168,6 +168,13 @@ public class CaptureRulesTest {
         // One reason is never shown for another, and the rest stay silent.
         assertNull(CaptureRules.refusedNotice(CaptureRules.REFUSED_OTHER, "+12025550123"));
     }
+    @Test public void uploadNoticesOpenTheirLead() {
+        String lead = "00000000-0000-4000-8000-000000000001";
+        assertEquals("/leads#lead=" + lead, CaptureRules.leadPath(lead));
+        assertEquals("/leads", CaptureRules.leadPath(null));
+        assertEquals("/leads", CaptureRules.leadPath(""));
+        assertEquals("/leads", CaptureRules.leadPath(lead + "&call=1"));
+    }
     @Test public void blockedBackgroundNetworkIsToldFromOffline() {
         assertEquals(CaptureRules.NET_OK, CaptureRules.netState(true, false, true));
         assertEquals(CaptureRules.NET_BLOCKED, CaptureRules.netState(true, true, false));
