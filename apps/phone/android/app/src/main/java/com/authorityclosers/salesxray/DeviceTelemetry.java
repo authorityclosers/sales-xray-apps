@@ -89,7 +89,10 @@ final class DeviceTelemetry {
         }
     }
 
-    /** sx.app_launch: cold (process start to first paint) or warm (resume to the next frame). */
+    /**
+     * sx.app_launch: cold (process start, or the screen's creation in a process already running, to first paint;
+     * TelemetryRules.coldLaunchMs) or warm (resume to the next frame).
+     */
     static void start(Context context, boolean cold, long ms, boolean pagesFromApp) {
         JSONObject fields = new JSONObject();
         try {

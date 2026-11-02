@@ -69,6 +69,8 @@ public class MainActivity extends BridgeActivity {
     private static final long UPDATE_CHECK_DELAY_MS = 4000;
     private static final String START_LOG = "SXStart";
     private long createdAt;
+    /** Android started the process for this screen; otherwise an alert or a job had it running already. */
+    private boolean newProcess;
     private boolean painted;
     private boolean finishedOnce;
 
@@ -91,6 +93,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        newProcess = SalesXrayApp.opensForStart();
         // The app's own copy, or a live web update it downloaded and checked before this start: read from the
         // phone's storage while Capacitor creates the WebView, not after it (bug #67).
         FutureTask<BundledWeb> web = new FutureTask<>(this::chooseWeb);
@@ -175,8 +178,10 @@ public class MainActivity extends BridgeActivity {
                         // The first page is on screen: the splash goes, and the start time is logged.
                         painted = true;
                         reportFullyDrawn();
-                        Log.i(START_LOG, "first paint " + sinceStart() + " ms after the app started (" + (SystemClock.uptimeMillis() - createdAt) + " ms after the screen opened; " + (bundled.on() ? "pages from the app" : "pages from the server") + ")");
-                        DeviceTelemetry.start(MainActivity.this, true, sinceStart(), bundled.on());
+                        long now = SystemClock.uptimeMillis();
+                        Log.i(START_LOG, "first paint " + sinceStart() + " ms after the app started (" + (now - createdAt) + " ms after the screen opened; " + (newProcess ? "started for this screen" : "already running") + "; " + (bundled.on() ? "pages from the app" : "pages from the server") + ")");
+                        long launch = TelemetryRules.coldLaunchMs(Process.getStartUptimeMillis(), createdAt, now, newProcess);
+                        DeviceTelemetry.start(MainActivity.this, true, launch, bundled.on());
                     }
 
                     @Override
