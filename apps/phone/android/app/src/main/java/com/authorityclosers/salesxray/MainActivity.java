@@ -151,6 +151,7 @@ public class MainActivity extends BridgeActivity {
         phone.takeLaunch(getIntent());
         takeOpen(getIntent());
         takeFix(getIntent());
+        ShareIn.take(this, getIntent(), this::openNewAnalysis);
         getBridge()
             .setWebViewClient(
                 new BridgeWebViewClient(getBridge()) {
@@ -238,6 +239,12 @@ public class MainActivity extends BridgeActivity {
                 public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                     // "Add the recording" opens in the phone's call recordings folder (#54).
                     if (!RecordingPicker.wantsAudio(params)) return super.onShowFileChooser(view, callback, params);
+                    // A recording shared to the app for a lead (ShareIn's Attach to a lead) is this pick.
+                    Uri[] shared = ShareIn.takeAttach();
+                    if (shared != null) {
+                        callback.onReceiveValue(shared);
+                        return true;
+                    }
                     if (pickCallback != null) pickCallback.onReceiveValue(null);
                     pickCallback = callback;
                     try {
@@ -323,6 +330,13 @@ public class MainActivity extends BridgeActivity {
         takeOpen(intent);
         deliverOpen();
         takeFix(intent);
+        ShareIn.take(this, intent, this::openNewAnalysis);
+    }
+
+    /** Attach to a lead (ShareIn): New analysis, once the page is there. */
+    private void openNewAnalysis() {
+        pendingOpen = "/analysis/new";
+        deliverOpen();
     }
 
     /** The "no recording" notification's tap: open its fix (RecordingReason). */
@@ -371,6 +385,8 @@ public class MainActivity extends BridgeActivity {
     private static void restoreCaptureJobs(Context app) {
         // Dials with no outcome get theirs from the recordings folder, uploads on or off (OutcomeBackfill).
         OutcomeBackfill.soon(app);
+        // No scan runs with uploads off: the phone still says what it would scan (sx.capture_scan).
+        if (!AutoCapture.prefs(app).getBoolean("on", false)) CaptureScanReport.sendOff(app);
         if (!AutoCapture.prefs(app).getBoolean("on", false) && !CallLogSync.isOn(app) && !RecordingWatchWorker.watching(app)) return;
         WorkManager.getInstance(app);
         AutoCapture.soon(app);

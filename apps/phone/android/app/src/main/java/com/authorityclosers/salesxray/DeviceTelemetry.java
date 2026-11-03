@@ -44,6 +44,7 @@ final class DeviceTelemetry {
     private static final String PROFILE_DAY = "profile_day";
     private static final String STATE_AT = "state_at_ms";
     private static final String PERMISSIONS = "permissions";
+    private static final String CAPTURE_SCAN = "capture_scan";
     private static final int MAX_EVENTS = 50;
     private static final long STATE_EVERY_MS = 10 * 60 * 1000L;
 
@@ -67,6 +68,7 @@ final class DeviceTelemetry {
 
     static void setConsent(Context context, boolean on) {
         prefs(context).edit().putBoolean(CONSENT, on).apply();
+        if (!on) prefs(context).edit().remove(CAPTURE_SCAN).apply();
         if (!on) {
             synchronized (LOCK) {
                 EVENTS.clear();
@@ -147,6 +149,20 @@ final class DeviceTelemetry {
     }
 
     /** What the page sends: every waiting event, plus the device and its state when due. */
+    /**
+     * sx.capture_scan (CaptureScanReport): the latest scan's, kept on disk, since scans run in the
+     * background while the page may be closed; the next drain sends it.
+     */
+    static void captureScan(Context context, JSONObject fields) {
+        if (!on(context)) return;
+        JSONObject event = new JSONObject();
+        try {
+            event.put("name", "sx.capture_scan");
+            event.put("fields", fields);
+        } catch (JSONException ignored) {}
+        prefs(context).edit().putString(CAPTURE_SCAN, event.toString()).apply();
+    }
+
     static JSONObject drain(Context context) {
         JSONObject result = new JSONObject();
         JSONArray events = new JSONArray();
@@ -155,6 +171,15 @@ final class DeviceTelemetry {
             dueSnapshots(context);
             synchronized (LOCK) {
                 while (!EVENTS.isEmpty()) events.put(EVENTS.pollFirst());
+            }
+            String scan = prefs(context).getString(CAPTURE_SCAN, null);
+            if (scan != null) {
+                prefs(context).edit().remove(CAPTURE_SCAN).apply();
+                try {
+                    events.put(new JSONObject(scan));
+                } catch (JSONException unreadable) {
+                    // Never written as anything else: drop it.
+                }
             }
         }
         try {

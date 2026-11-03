@@ -29,6 +29,10 @@ final class RecorderRules {
         "Recordings/Call recordings",
         "Record/PhoneRecord",
         "Recordings/PhoneRecord",
+        // Asked for on 3 Nov 2026 (OxygenOS 16, the owner's OnePlus), not yet seen on a phone: sx.capture_scan's
+        // media_folder will say where it saves.
+        "Recordings/Call",
+        "Music/Recordings/Call",
     };
     static final String[] VIVO = { "Recordings/Record/Call", "Record/Call" };
     static final String[] HUAWEI = { "Sounds/CallRecord", "Recordings/CallRecord", "record" };
