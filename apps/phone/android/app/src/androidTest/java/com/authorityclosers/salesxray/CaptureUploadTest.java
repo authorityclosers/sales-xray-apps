@@ -173,4 +173,36 @@ public class CaptureUploadTest {
         assertTrue(CaptureNet.await(c, worker()));
         assertTrue(android.os.SystemClock.elapsedRealtime() - started < 1000);
     }
+    @Test public void aRefusedRecordingIsToldOnceAndNeverPostedAgain() throws Exception {
+        android.app.NotificationManager manager = c.getSystemService(android.app.NotificationManager.class);
+        int notice = ("refused:" + ID).hashCode();
+        CaptureApi.Failure hours = new CaptureApi.Failure(409, "This call is outside work hours.");
+        assertTrue(AutoCapture.refused(c, ID, "+12025550123", hours));
+        assertTrue(AutoCapture.prefs(c).getString("refused:" + ID, "").startsWith(CaptureRules.REFUSED_HOURS + ":"));
+        assertTrue(shown(manager, notice));
+        manager.cancel(notice);
+        // The next scan meets the same file: skipped, and not told again.
+        assertTrue(AutoCapture.refused(c, ID, "+12025550123", hours));
+        assertFalse(shown(manager, notice));
+        // Another workspace's call: not remembered, the next scan may take it.
+        assertFalse(AutoCapture.refused(c, "other", "+12025550123",
+            new CaptureApi.Failure(409, "This call belongs to another workspace or seller.")));
+        assertFalse(AutoCapture.prefs(c).contains("refused:other"));
+        AutoCapture.forgetOldRefusals(c, System.currentTimeMillis());
+        assertTrue(AutoCapture.prefs(c).contains("refused:" + ID));
+        AutoCapture.forgetOldRefusals(c, System.currentTimeMillis() + CaptureRules.KEEP_MS + 60_000);
+        assertFalse(AutoCapture.prefs(c).contains("refused:" + ID));
+        manager.cancelAll();
+    }
+    /** Whether the notice is up within 2 s (so a notice that stays away takes the full 2 s). */
+    static boolean shown(android.app.NotificationManager manager, int id) throws InterruptedException {
+        boolean up = false;
+        for (int i = 0; i < 20; i++) {
+            up = false;
+            for (android.service.notification.StatusBarNotification n : manager.getActiveNotifications()) up |= n.getId() == id;
+            if (up) return true;
+            Thread.sleep(100);
+        }
+        return up;
+    }
 }

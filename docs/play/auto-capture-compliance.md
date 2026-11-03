@@ -34,6 +34,17 @@ wait) and on the capture-health card in Settings → Privacy → Calls:
 - only standing-consent loss (off, or its terms changed), blocked upload notices (no Undo) or a sign-out on this
   phone turn uploads off, and each of these also notifies.
 
+A recording the server won't make a call from is never uploaded and never sent again. The phone remembers it by
+file and reason for 3 days, the longest it reads recordings. When the reason is one the seller should know, it says
+so once, silently (no sound or vibration), on the "Automatic call uploads" channel. Those notices are grouped, so an
+evening of them folds into one stack:
+- "Recorded outside work hours." The workspace's work hours stay the owner's privacy rule: calls outside them are
+  never captured.
+- "Made before this lead was added."
+Other refusals stay silent: a private call, a number that matches no lead or several, a recording that belongs to
+another call. A call in another workspace isn't remembered, so the phone can take it once it is back in its own
+workspace.
+
 ## Background network (Android 15+ / HyperOS)
 Android 15+ cuts a cached app off the network (netpolicy `blocked=APP_BACKGROUND`). A capture worker that finds its
 network blocked asks for a JobScheduler job with a network constraint (expedited on Android 12+, falling back to a

@@ -14,7 +14,11 @@ import org.json.*;
 final class AutoCapture {
     static final String PREFS = "sx_auto_capture";
     static final String DISCLOSURE = "Sales X-Ray reads call history only while you are signed in to an organisation workspace, to log the number, time, duration and direction of calls with that workspace's leads. Other calls are not uploaded. You can turn work-call logging off at any time.";
-    private static final int ATTENTION_ID = 7400;
+    // 7400 is ReviewAlerts' alert: the most urgent capture notice and a review alert replaced each other.
+    private static final int ATTENTION_ID = 7500;
+    // Refused recordings fold into one stack under this summary (simulation lab, 2 Nov 2026).
+    private static final int REFUSED_SUMMARY_ID = 7600;
+    private static final String REFUSED_GROUP = "sx_capture_refused";
     private static final long NETWORK_NOTICE_MS = 15L * 60 * 1000;
     static boolean noticesAllowed(Context c) {
         if (!androidx.core.app.NotificationManagerCompat.from(c).areNotificationsEnabled()) return false;
@@ -136,6 +140,7 @@ final class AutoCapture {
                 prefs(c).edit().remove("job:" + old.optString("id")).commit();
             }
         }
+        forgetOldRefusals(c, now);
         if (expired > 0) attention(c, CaptureRules.EXPIRED, expired);
         for (RecordingFolder.Document doc : RecordingFolder.files(c, Math.max(prefs(c).getLong("since", now), now - CaptureRules.KEEP_MS))) {
             if (!audio(doc)) continue;
@@ -144,7 +149,7 @@ final class AutoCapture {
             if (number == null) continue;
             long stamp = RecordingMatch.read(doc.name, TimeZone.getDefault()).stampMs;
             String id = CaptureRules.id(CaptureRules.identity(book), number, stamp);
-            if (prefs(c).contains("job:" + id)) continue;
+            if (prefs(c).contains("job:" + id) || prefs(c).contains("refused:" + id)) continue;
             long seconds;
             MediaMetadataRetriever media = new MediaMetadataRetriever();
             try {
@@ -158,6 +163,8 @@ final class AutoCapture {
                 .put("command_id", id).put("number", number).put("started_at", CallLogRules.iso(stamp))
                 .put("duration_seconds", seconds), id, false);
             } catch (CaptureApi.Failure rejected) {
+                if (refused(c, id, number, rejected)) continue;
+                // Another workspace's call: the next scan (back in this workspace) may take it.
                 if (rejected.code == 409 || rejected.code == 422 || rejected.code == 404) continue;
                 throw rejected;
             }
@@ -326,6 +333,53 @@ final class AutoCapture {
         job.put("state", state);
         prefs(c).edit().putString("job:" + job.getString("id"), job.toString()).commit();
         PhoneBridge.signalActive("recordings");
+    }
+    /**
+     * A recording the server won't make a call from: remembered by file and reason so no later scan posts it again,
+     * and told once, quietly, when the reason is one the seller should know (outside work hours, before the lead).
+     * False when a later scan may succeed (another workspace).
+     */
+    static boolean refused(Context c, String id, String number, CaptureApi.Failure rejected) {
+        String reason = CaptureRules.refused(rejected.code, rejected.detail);
+        if (reason == null) return false;
+        SharedPreferences p = prefs(c);
+        if (p.contains("refused:" + id)) return true;
+        p.edit().putString("refused:" + id, reason + ":" + System.currentTimeMillis()).commit();
+        String[] words = CaptureRules.refusedNotice(reason, number);
+        if (words != null) refusedNotice(c, id, words);
+        return true;
+    }
+    /** Refusals older than the recordings any scan reads (KEEP_MS) are forgotten. */
+    static void forgetOldRefusals(Context c, long now) {
+        SharedPreferences p = prefs(c);
+        SharedPreferences.Editor edit = p.edit();
+        for (Map.Entry<String, ?> entry : p.getAll().entrySet()) {
+            if (!entry.getKey().startsWith("refused:")) continue;
+            String value = String.valueOf(entry.getValue());
+            long at;
+            try { at = Long.parseLong(value.substring(value.lastIndexOf(':') + 1)); } catch (NumberFormatException bad) { at = 0; }
+            if (now - at > CaptureRules.KEEP_MS) edit.remove(entry.getKey());
+        }
+        edit.commit();
+    }
+    /** Silent, on the upload channel, and grouped: an evening of refused calls folds into one stack. */
+    private static void refusedNotice(Context c, String id, String[] words) {
+        NotificationManager manager = c.getSystemService(NotificationManager.class);
+        if (manager == null) return;
+        if (android.os.Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(
+            new NotificationChannel("auto_capture", "Automatic call uploads", NotificationManager.IMPORTANCE_LOW));
+        PendingIntent open = PendingIntent.getActivity(c, REFUSED_SUMMARY_ID, new Intent(c, MainActivity.class)
+            .putExtra(LeadAlerts.EXTRA_OPEN, "/leads").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Builder one = new NotificationCompat.Builder(c, "auto_capture")
+            .setSmallIcon(R.drawable.ic_stat_sx).setContentTitle(words[0]).setContentText(words[1]).setSilent(true)
+            .setAutoCancel(true).setGroup(REFUSED_GROUP).setContentIntent(open);
+        NotificationCompat.Builder summary = new NotificationCompat.Builder(c, "auto_capture")
+            .setSmallIcon(R.drawable.ic_stat_sx).setContentTitle("Lead calls not uploaded").setContentText(words[1]).setSilent(true)
+            .setAutoCancel(true).setGroup(REFUSED_GROUP).setGroupSummary(true).setContentIntent(open);
+        try {
+            manager.notify(("refused:" + id).hashCode(), one.build());
+            manager.notify(REFUSED_SUMMARY_ID, summary.build());
+        } catch (SecurityException ignored) { }
     }
     static void notice(Context c, String id, String title, String text, boolean undo) {
         NotificationManager manager = c.getSystemService(NotificationManager.class);

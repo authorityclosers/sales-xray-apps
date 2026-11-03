@@ -49,6 +49,29 @@ final class CaptureRules {
         return book.optString("tenant_id") + ":" + book.optString("person_id");
     }
 
+    // Why the server made no call from a recording (POST /recording-call). Remembered: never posted again.
+    static final String REFUSED_HOURS = "hours";
+    static final String REFUSED_EARLY = "before_lead";
+    static final String REFUSED_OTHER = "refused";
+
+    /** A recording the server won't make a call from, by its {"detail"} words; null when a later scan may succeed. */
+    static String refused(int code, String detail) {
+        if (code != 404 && code != 409 && code != 422) return null;
+        String words = detail == null ? "" : detail.toLowerCase(Locale.ROOT);
+        if (words.contains("another workspace")) return null;
+        if (words.contains("outside work hours")) return REFUSED_HOURS;
+        if (words.contains("before this lead was added")) return REFUSED_EARLY;
+        return REFUSED_OTHER;
+    }
+
+    /** One quiet notice for a refusal the seller can act on or should know of ({title, text}); null stays silent. */
+    static String[] refusedNotice(String reason, String number) {
+        String title = "Call with " + (number == null || number.isEmpty() ? "a lead" : number) + " not uploaded";
+        if (REFUSED_HOURS.equals(reason)) return new String[] { title, "Recorded outside work hours." };
+        if (REFUSED_EARLY.equals(reason)) return new String[] { title, "Made before this lead was added." };
+        return null;
+    }
+
     /** Where a call's upload notice opens: its lead's sheet, as lead alerts open it (any stage), else Leads. */
     static String leadPath(String leadId) {
         if (leadId == null || !leadId.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")) return "/leads";
