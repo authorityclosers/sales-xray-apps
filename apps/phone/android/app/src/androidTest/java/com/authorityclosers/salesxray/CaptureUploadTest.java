@@ -155,11 +155,18 @@ public class CaptureUploadTest {
         assertEquals(0, fake.uploads); assertEquals(0, fake.plans);
         assertEquals("held", AutoCapture.job(c, ID).getString("state"));
     }
-    @Test public void terminalFileChecksHoldWithoutStartingAPlanOrRepeatingUpload() throws Exception {
+    // The server held the uploaded call by its own rules (a short call): received, never "upload it by hand".
+    @Test public void aCallTheServerEndsAfterItsUploadIsReceivedNotHeld() throws Exception {
+        android.app.NotificationManager manager = c.getSystemService(android.app.NotificationManager.class);
+        manager.cancelAll();
         worker().doWork(); assertEquals(1, fake.uploads);
         fake.held = true; worker().doWork();
-        assertEquals("held", AutoCapture.job(c, ID).getString("state"));
+        assertEquals("received", AutoCapture.job(c, ID).getString("state"));
+        assertFalse(AutoCapture.job(c, ID).has("hold"));
         worker().doWork(); assertEquals(1, fake.uploads); assertEquals(0, fake.plans);
+        // No "A call needs you" notice for it.
+        for (android.service.notification.StatusBarNotification n : manager.getActiveNotifications())
+            assertNotEquals(String.valueOf(n.getNotification().extras.getCharSequence("android.title")), "A call needs you");
     }
     @Test public void undoMeansNoUploadOrPlan() throws Exception {
         new CaptureUndoReceiver().onReceive(c, new android.content.Intent().putExtra("id", ID));

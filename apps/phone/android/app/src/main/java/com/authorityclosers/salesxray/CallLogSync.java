@@ -44,9 +44,11 @@ import org.json.JSONObject;
  * one of the seller's leads, and sends just those to Sales Xray on the seller's
  * own session. The leads' numbers come fresh from Sales Xray each time and are
  * not kept on the phone. A number that matches no lead never leaves the phone.
- * Calls placed from a lead in the app are skipped: the after-call sheet logs
- * those. A logged call that connected then waits for its recording
- * (RecordingQueue).
+ * A call placed from a lead in the app goes marked as the app's own: it gives
+ * that Call-button dial the phone's own seconds and is never a second call,
+ * and it goes again until Sales Xray says it timed the dial, which the app
+ * logs only when the seller comes back to it (orchestrator, 3 Nov 2026). A
+ * logged call that connected then waits for its recording (RecordingQueue).
  */
 final class CallLogSync {
 
@@ -62,6 +64,8 @@ final class CallLogSync {
     private static final String LAST_LOGGED = "last_logged";
     private static final String STATE = "state";
     private static final String IN_APP = "in_app";
+    /** The in-app calls' rows still to time their dial (CallLogRules.keepPending). */
+    private static final String IN_APP_PENDING = "in_app_pending";
     private static final String UNKNOWN = "unknown";
     private static final String IGNORED = "ignored";
     /** The first read after logging was first turned on runs until this moment: it fills dials 30 days back. */
@@ -234,6 +238,15 @@ final class CallLogSync {
         }
     }
 
+    /** The in-app calls' rows still to time their dial; none when the kept list can't be read. */
+    private static JSONArray pending(SharedPreferences prefs) {
+        try {
+            return new JSONArray(prefs.getString(IN_APP_PENDING, "[]"));
+        } catch (JSONException error) {
+            return new JSONArray();
+        }
+    }
+
     /** "Not a lead": never offer this number again. */
     static void ignore(Context context, String number) {
         String key = CallLogRules.key(number);
@@ -254,7 +267,7 @@ final class CallLogSync {
         }
     }
 
-    /** A call placed from a lead in the app: its after-call sheet logs it, so this skips it. */
+    /** A call placed from a lead in the app: its row goes marked as the app's own, to time its dial. */
     static void rememberInApp(Context context, String number, long startedMs) {
         synchronized (LOCK) {
             SharedPreferences prefs = prefs(context);
@@ -361,6 +374,9 @@ final class CallLogSync {
         Map<String, JSONObject> sentRows = new HashMap<>();
         JSONArray unknown = unknown(context);
         String notLeads = prefs.getString(IGNORED, "");
+        // The in-app calls' rows read now, and those read before that have not timed their dial yet.
+        List<JSONObject> ownRows = new ArrayList<>();
+        JSONArray pending = pending(prefs);
         long newest = since;
         int rows = 0;
         String[] columns = {
@@ -403,13 +419,18 @@ final class CallLogSync {
                     }
                     continue;
                 }
-                if ("outgoing".equals(direction) && CallLogRules.placedInApp(inApp, key, date)) continue;
+                // A call placed from a lead in the app: it times that dial, never a call of its own.
+                boolean own = "outgoing".equals(direction) && CallLogRules.placedInApp(inApp, key, date);
                 JSONObject call = new JSONObject();
                 call.put("log_id", String.valueOf(cursor.getLong(0)));
                 call.put("number", number);
                 call.put("started_at", CallLogRules.iso(date));
                 call.put("duration_seconds", Math.max(0, Math.min(14400, cursor.getLong(3))));
                 call.put("direction", direction);
+                if (own) {
+                    call.put("in_app", true);
+                    ownRows.add(new JSONObject(call.toString()).put("startedMs", date));
+                }
                 calls.add(call);
                 sentRows.put(
                     String.valueOf(cursor.getLong(0)),
@@ -423,9 +444,14 @@ final class CallLogSync {
         } catch (RuntimeException | JSONException error) {
             return state(context, "error");
         }
+        for (int i = 0; i < pending.length(); i++) {
+            JSONObject item = pending.optJSONObject(i);
+            if (item != null && !sentRows.containsKey(item.optString("log_id"))) calls.add(CallLogRules.sendable(item));
+        }
 
         int logged = 0;
         List<JSONObject> waiting = new ArrayList<>();
+        JSONArray timed = new JSONArray();
         String device = deviceId(context);
         for (int start = 0; start < calls.size(); start += BATCH) {
             JSONObject body = new JSONObject();
@@ -443,6 +469,8 @@ final class CallLogSync {
                 JSONObject answer = new JSONObject(sent.body);
                 logged += answer.optInt("logged");
                 waiting.addAll(CallLogRules.waitingCalls(answer.optJSONArray("calls"), sentRows));
+                JSONArray dials = answer.optJSONArray("timed");
+                for (int i = 0; dials != null && i < dials.length(); i++) timed.put(dials.optString(i));
             } catch (JSONException ignored) {
                 // Sent; the count is only for the screen.
             }
@@ -451,6 +479,7 @@ final class CallLogSync {
         SharedPreferences.Editor done = prefs
             .edit()
             .putString(UNKNOWN, unknown.toString())
+            .putString(IN_APP_PENDING, CallLogRules.keepPending(pending, ownRows, timed, now).toString())
             .putLong(SINCE, newest)
             .putLong(LAST_SYNC, now)
             .putInt(LAST_LOGGED, logged)

@@ -88,7 +88,7 @@ public class CaptureUploadWorker extends Worker {
         try {
             job = AutoCapture.job(c, id);
             if (id == null || !job.has("id")) return Result.success();
-            if (Arrays.asList("cancelled", "held", "report_ready").contains(job.optString("state"))) return Result.success();
+            if (Arrays.asList("cancelled", "held", "report_ready", "received").contains(job.optString("state"))) return Result.success();
             if (System.currentTimeMillis() < job.optLong("due")) return Result.retry();
             if (System.currentTimeMillis() - job.optLong("stamp") > CaptureRules.KEEP_MS) {
                 AutoCapture.hold(c, job, CaptureRules.EXPIRED); return Result.success();
@@ -144,9 +144,13 @@ public class CaptureUploadWorker extends Worker {
                 .put("command_id", CaptureRules.id(id, "attach", 0)).put("submission_id", sid)
                 .put("call_event_id", job.getString("eventId")), null, false);
             if (progress.optBoolean("has_report")) { AutoCapture.save(c, job, "report_ready"); return Result.success(); }
+            // The server has this call's recording (its hash matched above) and its own rules ended it without a
+            // report: a short call (transcript and lead details only), a held plan, a run that failed there. Nothing
+            // here is for the seller to upload by hand (FGS session on the Redmi, 3 Nov 2026: a 42 s call held as
+            // ai_short_call said "A call needs you · upload its recording by hand" after "uploaded for analysis").
             if (Arrays.asList("failed", "cancelled").contains(progress.optString("local_state")) ||
                 Arrays.asList("held", "cancelled", "completed").contains(progress.optString("state"))) {
-                AutoCapture.hold(c, job, CaptureRules.REVIEW); return Result.success();
+                AutoCapture.save(c, job, "received"); return Result.success();
             }
             if (progress.optBoolean("automatic_progression")) { AutoCapture.save(c, job, "analysing"); return Result.retry(); }
             if (!"completed".equals(progress.optString("local_state"))) return Result.retry();
