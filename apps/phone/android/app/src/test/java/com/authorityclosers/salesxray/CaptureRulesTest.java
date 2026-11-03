@@ -46,6 +46,18 @@ public class CaptureRulesTest {
         assertEquals(CaptureRules.id("workspace:seller", "12025550123", stamp), CaptureRules.id("workspace:seller", "12025550123", stamp));
         assertNotEquals(CaptureRules.id("workspace:seller", "12025550123", stamp), CaptureRules.id("other:seller", "12025550123", stamp));
     }
+    // A recording shared from the Phone app (ShareIn) carries the call history's number, held to the same rule.
+    @Test public void aSharedCallsNumberIsExactlyOneLead() throws Exception {
+        JSONArray numbers = book().getJSONArray("numbers");
+        assertEquals("+12025550123", CaptureRules.leadNumber("+1 202-555-0123", numbers));
+        assertEquals("+12025550123", CaptureRules.leadNumber("0012025550123", numbers));
+        assertNull(CaptureRules.leadNumber("5550123", numbers));
+        assertNull(CaptureRules.leadNumber("+12025550124", numbers));
+        assertNull(CaptureRules.leadNumber(null, numbers));
+        assertNull(CaptureRules.leadNumber("+12025550123", null));
+        // Two leads with the same number: neither.
+        assertNull(CaptureRules.leadNumber("+12025550123", new JSONArray().put("+12025550123").put("0012025550123")));
+    }
     @Test public void internationalNumbersNeverMatchBySuffixAlone() {
         assertFalse(CaptureRules.samePhone("442025550123", "+12025550123"));
         assertTrue(CaptureRules.samePhone("0012025550123", "+12025550123"));

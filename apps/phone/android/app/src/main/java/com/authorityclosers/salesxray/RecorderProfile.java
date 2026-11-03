@@ -134,6 +134,8 @@ final class RecorderProfile {
             status.put("recording", RecorderRules.recording(profile, setting, newest, System.currentTimeMillis()));
             status.put("newestMs", newest > 0 ? newest : JSONObject.NULL);
             status.put("otherDialers", otherDialers(context, dialer, family));
+            // A recording shared from the Phone app lands here (ShareIn): the web offers Share for a private one.
+            status.put("shareTarget", true);
             status.put("appRecorder", AppRecorder.state(context));
             status.put("callRecorder", CallRecorderService.status(context));
         } catch (JSONException ignored) {}

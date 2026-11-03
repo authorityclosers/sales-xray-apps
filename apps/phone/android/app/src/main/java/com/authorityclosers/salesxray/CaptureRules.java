@@ -108,21 +108,26 @@ final class CaptureRules {
         String matched = null;
         org.json.JSONArray numbers = book.optJSONArray("numbers");
         for (String raw : parsed.numbers) {
-            // A short suffix must never authorize a longer phone number.
-            String key = CallLogRules.key(raw);
-            if (key.length() < 10) return null;
-            String found = null;
-            for (int i = 0; numbers != null && i < numbers.length(); i++) {
-                String lead = numbers.optString(i);
-                if (samePhone(raw, lead)) {
-                    if (found != null && !found.equals(lead)) return null;
-                    found = lead;
-                }
-            }
+            String found = leadNumber(raw, numbers);
             if (found == null || (matched != null && !matched.equals(found))) return null;
             matched = found;
         }
         return matched;
+    }
+
+    /** The one lead number {@code raw} is; null for none, several, or a suffix too short to tell. */
+    static String leadNumber(String raw, org.json.JSONArray numbers) {
+        // A short suffix must never authorize a longer phone number.
+        if (raw == null || CallLogRules.key(raw).length() < 10) return null;
+        String found = null;
+        for (int i = 0; numbers != null && i < numbers.length(); i++) {
+            String lead = numbers.optString(i);
+            if (samePhone(raw, lead)) {
+                if (found != null && !found.equals(lead)) return null;
+                found = lead;
+            }
+        }
+        return found;
     }
 
     static String id(String scope, String source, long stamp) {

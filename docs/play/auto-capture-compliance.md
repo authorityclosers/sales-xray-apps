@@ -45,6 +45,13 @@ Other refusals stay silent: a private call, a number that matches no lead or sev
 another call. A call in another workspace isn't remembered, so the phone can take it once it is back in its own
 workspace.
 
+## Recordings shared from the Phone app (3 Nov 2026)
+Google's Phone app keeps call recordings inside itself, so no folder grant reaches them. The seller can share one from the call's recording (its Share, then Sales X-Ray). The app takes `ACTION_SEND` / `SEND_MULTIPLE` of `audio/*` only; it adds no permission.
+1. It copies each file into its own storage. That storage is excluded from backup, and copies go after 3 days.
+2. Where work-call logging is on, it finds the seller's call in the call history by the recording's length (ShareRules). Only that call's number and time go to the server, and only when the number is one of the seller's leads.
+3. It asks once ("Add this recording to your call?"). Then the upload follows the same rules as a recording found in the folder: standing consent, 60 seconds to Undo, work hours and before-lead refusals.
+4. With no match, or uploads off, Attach to a lead opens New analysis with the file chosen. New analysis has its own consent.
+
 ## Background network (Android 15+ / HyperOS)
 Android 15+ cuts a cached app off the network (netpolicy `blocked=APP_BACKGROUND`). A capture worker that finds its
 network blocked asks for a JobScheduler job with a network constraint (expedited on Android 12+, falling back to a

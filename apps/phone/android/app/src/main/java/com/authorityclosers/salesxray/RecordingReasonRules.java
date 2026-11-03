@@ -54,6 +54,31 @@ final class RecordingReasonRules {
         return nowMs < lastAtMs || nowMs - lastAtMs >= ASK_AGAIN_MS;
     }
 
+    /**
+     * Google's Phone app (owner, 3 Nov 2026): "dialer" when another Phone app here saves recordings
+     * Sales X-Ray reads ({@code switchTo}), else "share" (the call's recording, then its Share).
+     */
+    static String privateFix(String switchTo) {
+        return switchTo == null || switchTo.isEmpty() ? "share" : "dialer";
+    }
+
+    /** Title, message and button for Google's Phone app, with the switch when there is one. */
+    static String[] privateWords(String switchTo) {
+        if (switchTo != null && !switchTo.isEmpty())
+            return new String[] {
+                "This phone's Phone app keeps recordings private",
+                "Google's Phone app keeps call recordings inside itself. " + switchTo + " on this phone saves them where "
+                    + "Sales X-Ray adds them by itself: make it your Phone app, and turn on its call recording.",
+                "Switch to " + switchTo,
+            };
+        return new String[] {
+            "This phone's Phone app keeps recordings private",
+            "Google's Phone app keeps call recordings inside itself. To add this one, open the call in the Phone app, "
+                + "tap its recording's Share, then Sales X-Ray.",
+            "Open the Phone app",
+        };
+    }
+
     /** What the one button does: "folder", "recorder", "appSettings", or null (nothing to fix). */
     static String fix(Reason reason) {
         switch (reason) {
