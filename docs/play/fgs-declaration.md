@@ -51,16 +51,20 @@ app is on screen, and an upload begins after a call ends in the phone's dialer, 
   bundle in Play Console as a **draft alpha release, which reaches no tester**, so the declaration form appears.
   Any other run keeps the signed bundle as an artifact and stops.
 
-## Order (orchestrator = O, owner = OWNER)
-1. O: wait until v1.37's after-release Play build (with 27a8a62) has shipped. Then merge this PR when CI is green.
-   Merging earlier makes the gate refuse every Play build until the declaration is filed.
-2. O: Actions → Google Play → Run workflow on main: track **alpha**, **draft on**, `web_ref` = production web.
-3. O (browser): Play Console → App content → **Foreground service permissions** → Data sync → paste the answers
+## Order (orchestrator = O, this declaration session = D, owner = OWNER)
+Merging this PR holds every later Play build to a draft until Google approves, as call log did. So sellers get the
+pending fixes first (orchestrator, 3 Nov 2026):
+1. O: ship the v1.37 Play build (run 41655952688 on 6369bc9, apps #29 and #30).
+2. O: after #31 (in-app dial timing, 02f0a9a) passes its Redmi proof, dispatch one more Play build with it.
+3. O: only then, merge this PR when CI is green.
+4. D: Actions → Google Play → Run workflow on main: track **alpha**, **draft on**, `web_ref` = production web. The
+   draft reaches no tester; it makes Play Console show the declaration.
+5. D (browser): Play Console → App content → **Foreground service permissions** → Data sync → paste the answers
    below with the video link → Save. Check that Publishing overview lists the change.
-4. **OWNER:** Publishing overview → **Send changes for review**.
-5. O, right after: `gh variable set PLAY_FGS_DECLARATION --body submitted --repo authorityclosers/sales-xray-apps`.
+6. **OWNER:** Publishing overview → **Send changes for review**.
+7. O, right after: `gh variable set PLAY_FGS_DECLARATION --body submitted --repo authorityclosers/sales-xray-apps`.
    After approval: `--body approved`. Avoid new alpha uploads while the review runs.
-6. If refused: revert the PR, delete the variable, send the next bundle without the service. Uploads fall back to
+8. If refused: revert the PR, delete the variable, send the next bundle without the service. Uploads fall back to
    CaptureNet.
 
 ## Play Console answers (paste)
