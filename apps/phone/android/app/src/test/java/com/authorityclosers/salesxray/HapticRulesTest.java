@@ -16,6 +16,10 @@ public class HapticRulesTest {
         assertEquals(Feel.LONG_PRESS, HapticRules.feel("warning"));
         assertEquals(Feel.REJECT, HapticRules.feel("error"));
         assertEquals(Feel.URGENT, HapticRules.feel(" Urgent "));
+        // Switches and held rows (native feel, 3 Nov 2026), in the token's spelling or a CSS-like one.
+        assertEquals(Feel.TOGGLE_ON, HapticRules.feel("toggleOn"));
+        assertEquals(Feel.TOGGLE_OFF, HapticRules.feel("toggle-off"));
+        assertEquals(Feel.LONG_PRESS, HapticRules.feel("long_press"));
         // The bridge's older kinds keep working; anything unknown is a tap.
         assertEquals(Feel.CONFIRM, HapticRules.feel("done"));
         assertEquals(Feel.LONG_PRESS, HapticRules.feel("press"));
@@ -41,6 +45,10 @@ public class HapticRulesTest {
         for (String token : HapticRules.TOKENS) {
             assertTrue(token, script.contains(token + ":function(){play(\"" + token + "\")}"));
         }
-        assertTrue(script.contains("tokens:Object.freeze([\"tap\",\"success\",\"warning\",\"error\",\"urgent\"])"));
+        assertTrue(
+            script.contains(
+                "tokens:Object.freeze([\"tap\",\"success\",\"warning\",\"error\",\"urgent\",\"toggleOn\",\"toggleOff\",\"longPress\"])"
+            )
+        );
     }
 }

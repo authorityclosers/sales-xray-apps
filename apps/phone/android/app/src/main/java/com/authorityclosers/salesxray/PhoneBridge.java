@@ -42,6 +42,24 @@ import org.json.JSONObject;
  */
 final class PhoneBridge {
 
+    /** What the page says about its own screen (MainActivity): back, pull to refresh, safe areas, and that it is up. */
+    interface Screen {
+        /** Its router depth: 0 at a tab root, so Back leaves the app with Android's own animation (BackRules). */
+        void backDepth(int depth);
+
+        /** Whether a pull to refresh may start where the touch that just began is (PullRefresh). */
+        void pull(boolean mayPull);
+
+        /** It refreshed its data after a pull. */
+        void refreshed();
+
+        /** Whether it draws under the bars and pads itself (SafeArea). */
+        void safeArea(boolean pagePads);
+
+        /** It has started (the web app's root layout, once it has hydrated). */
+        void webReady();
+    }
+
     /**
      * Sales X-Ray's own sites: the SXPhone bridge, Connect, Google sign-in, lead alerts, font scale and
      * haptics take only these (exact host, https). app.salesxray.in serves the same web app beside the old
@@ -85,6 +103,7 @@ final class PhoneBridge {
     private BundledWeb bundled;
     /** Live web updates (LiveWeb): the page's ready signal goes there. */
     private LiveWeb live;
+    private Screen screen;
     private JavaScriptReplyProxy pushReply;
     private String pushId;
     private JavaScriptReplyProxy logReply;
@@ -110,6 +129,10 @@ final class PhoneBridge {
 
     void setLiveWeb(LiveWeb live) {
         this.live = live;
+    }
+
+    void setScreen(Screen screen) {
+        this.screen = screen;
     }
 
     /** The app's own copy of the web app, and its live updates. */
@@ -375,7 +398,31 @@ final class PhoneBridge {
                     // update has proved it starts (LiveWeb), so it isn't rolled back.
                     LiveWeb target = live;
                     if (target != null) main.post(target::ready);
+                    if (screen != null) main.post(screen::webReady);
                     reply(reply, id, new JSONObject().put("nativeContract", LiveWebRules.NATIVE_CONTRACT));
+                    break;
+                }
+                case "backDepth": {
+                    // The page's router depth on each navigation (0 at a tab root): Back is the page's, or Android's.
+                    int depth = args.optInt("depth", BackRules.UNKNOWN);
+                    if (screen != null) main.post(() -> screen.backDepth(depth));
+                    reply(reply, id, new JSONObject());
+                    break;
+                }
+                case "pull": {
+                    // sx-phone.js on every touchstart: no reply, one message per touch.
+                    boolean mayPull = args.optBoolean("ok");
+                    if (screen != null) main.post(() -> screen.pull(mayPull));
+                    break;
+                }
+                case "refreshed":
+                    if (screen != null) main.post(screen::refreshed);
+                    reply(reply, id, new JSONObject());
+                    break;
+                case "safeArea": {
+                    boolean pagePads = args.optBoolean("page");
+                    if (screen != null) main.post(() -> screen.safeArea(pagePads));
+                    reply(reply, id, new JSONObject().put("page", pagePads));
                     break;
                 }
                 case "checkRecording": {
@@ -541,8 +588,8 @@ final class PhoneBridge {
                     requestNotifications(reply, id);
                     break;
                 case "theme": {
-                    // The seller's Light, Dark or System pick in Sales X-Ray (owner, 24 Oct 2026).
-                    String mode = NightMode.set(activity, args.optString("mode", "system"));
+                    // The seller's Light or Dark pick in Sales X-Ray, sent on every load and on each change (ThemeRules).
+                    String mode = NightMode.set(activity, args.optString("mode", "light"));
                     reply(reply, id, new JSONObject().put("mode", mode).put("dark", NightMode.dark(activity)));
                     break;
                 }

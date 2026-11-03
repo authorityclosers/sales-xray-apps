@@ -2,4 +2,7 @@
 <resources>
     <!-- The app's ground and mark (Liquid Glass, 22 Oct 2026): the splash and the page before it paints. -->
     <color name="sx_ground">#F2F3F7</color>
+    <!-- Pull to refresh (PullRefresh): the brand's teal arrow on a raised circle. -->
+    <color name="sx_pull_arrow">#0B4A44</color>
+    <color name="sx_pull_circle">#FFFFFF</color>
 </resources>

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="sx_ground">#000000</color>
+    <color name="sx_pull_arrow">#3DEBB0</color>
+    <color name="sx_pull_circle">#1C1C1E</color>
 </resources>
