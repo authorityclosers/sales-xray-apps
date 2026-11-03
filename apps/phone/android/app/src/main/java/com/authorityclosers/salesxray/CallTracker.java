@@ -126,7 +126,7 @@ final class CallTracker {
         // The after-call sheet logs this call, so the call-history sync skips it.
         CallLogSync.rememberInApp(activity, number, System.currentTimeMillis());
         boolean direct = granted(activity, Manifest.permission.CALL_PHONE);
-        Uri uri = Uri.fromParts("tel", number, null);
+        Uri uri = Uri.fromParts("tel", CaptureRules.dialable(number), null);
         try {
             activity.startActivity(new Intent(direct ? Intent.ACTION_CALL : Intent.ACTION_DIAL, uri));
         } catch (RuntimeException error) {

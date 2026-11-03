@@ -90,9 +90,25 @@ final class CaptureRules {
         if (a.startsWith("00")) a = a.substring(2);
         if (b.startsWith("00")) b = b.substring(2);
         if (a.equals(b)) return a.length() >= 10;
+        // An Indian toll-free or shared-cost number (1800, 1860) is dialled and logged without +91, while
+        // the lead may hold it with +91 (phone QA, 3 Nov 2026: Jio care's 1800 line never reached its lead).
+        if (tollFree(a) && b.equals("91" + a) || tollFree(b) && a.equals("91" + b)) return true;
         // Indian national/trunk spellings are explicit; foreign country codes never collapse to a suffix.
         if (a.length() == 11 && a.startsWith("0")) a = a.substring(1);
         return a.length() == 10 && b.length() == 12 && b.startsWith("91") && b.substring(2).equals(a);
+    }
+
+    /** An Indian toll-free or shared-cost number's national digits (1800 or 1860, then 6 or 7 digits). */
+    static boolean tollFree(String digits) {
+        return (digits.length() == 10 || digits.length() == 11) && (digits.startsWith("1800") || digits.startsWith("1860"));
+    }
+
+    /** The number to dial: an Indian toll-free one without +91, which its line doesn't take; others as they are. */
+    static String dialable(String number) {
+        if (number == null) return "";
+        String digits = number.replaceAll("[^0-9]", "");
+        if (number.trim().startsWith("+") && digits.startsWith("91") && tollFree(digits.substring(2))) return digits.substring(2);
+        return number;
     }
 
     static String number(String name, long saved, long now, long since, TimeZone zone, JSONObject book) {
