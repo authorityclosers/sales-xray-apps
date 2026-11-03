@@ -5,14 +5,26 @@ makes call recording uploads reliable. Play Console submission and **Send** belo
 been sent to Google.
 
 ## What the app does
-- **Before:** call recordings upload only when the seller opens the app. When the app is cached, HyperOS and
-  Android 15 cut its network (netpolicy `blocked=APP_BACKGROUND`, capture gap 3, Redmi 13, 30 Oct 2026). The
-  WorkManager worker's first request then fails, and only a system job (CaptureNet) sometimes lets it through.
+- **Before:** call recordings often upload only when the seller opens the app. A cached app is frozen or stopped by
+  HyperOS, and Android 15 cuts its network (netpolicy `blocked=APP_BACKGROUND`, capture gap 3, Redmi 13,
+  30 Oct 2026). The WorkManager worker's first request then fails, and only a system job (CaptureNet) sometimes lets
+  it through.
 - **Now:** while a recording's bytes are being uploaded, `CaptureUploadWorker` runs as WorkManager's foreground
   service with type `dataSync` (`CaptureForeground`).
   - The notification is quiet: the "Automatic call uploads" channel, low importance, no sound. It reads
     **"Uploading 1 call recording"** and disappears when the server has the recording.
   - The 60-second Undo wait, the folder scan every 15 minutes and the analysis polls never run in the foreground.
+- **Proven on the Redmi 13 (3 Nov 2026, staging build of this PR, app cached, no screen):**
+  - A real 42 s call went from the phone's dialler to Jio's toll-free IVR (the fictional lead "Test Jio care IVR").
+  - "Waiting for upload" appeared at 17:43:50 IST.
+  - For 45 s after that (17:44:49 to 17:45:34), `dumpsys activity services` showed:
+    - `SystemForegroundService` `isForeground=true types=0x00000001` (dataSync);
+    - notification flags `FOREGROUND_SERVICE|SILENT`;
+    - start allowed as `SYSTEM_ALLOW_LISTED` (the battery exemption).
+  - Then "uploaded for analysis" appeared, and the upload notification was gone.
+  - What the service adds on this phone: the battery exemption already let the cached app use the network
+    (netpolicy `effective=NONE`). The foreground service keeps the process at foreground-service priority for the
+    whole upload, so HyperOS can't freeze or stop it partway. The Play answers below say exactly this.
 - **Limit:** Android 12+ starts a foreground service from the background only when an exemption applies. Here that
   means the seller has taken Sales X-Ray off battery optimisation (Settings > Apps > Sales X-Ray > Battery saver >
   No restrictions), which the app's setup checklist already asks for. Without it the start is refused and the
@@ -39,14 +51,15 @@ app is on screen, and an upload begins after a call ends in the phone's dialer, 
   bundle in Play Console as a **draft alpha release, which reaches no tester**, so the declaration form appears.
   Any other run keeps the signed bundle as an artifact and stops.
 
-## Order
-1. Orchestrator: merge the PR when CI is green.
-2. Orchestrator: Actions → Google Play → Run workflow: track **alpha**, **draft on**, `web_ref` = production web.
-3. Orchestrator (browser): Play Console → App content → **Foreground service permissions** → fill in the answers
-   below with the video link → Save.
-4. **Owner:** Publishing overview → **Send changes for review**.
-5. Orchestrator: `gh variable set PLAY_FGS_DECLARATION --body submitted --repo authorityclosers/sales-xray-apps`.
-   After approval: `--body approved`.
+## Order (orchestrator = O, owner = OWNER)
+1. O: wait until v1.37's after-release Play build (with 27a8a62) has shipped. Then merge this PR when CI is green.
+   Merging earlier makes the gate refuse every Play build until the declaration is filed.
+2. O: Actions → Google Play → Run workflow on main: track **alpha**, **draft on**, `web_ref` = production web.
+3. O (browser): Play Console → App content → **Foreground service permissions** → Data sync → paste the answers
+   below with the video link → Save. Check that Publishing overview lists the change.
+4. **OWNER:** Publishing overview → **Send changes for review**.
+5. O, right after: `gh variable set PLAY_FGS_DECLARATION --body submitted --repo authorityclosers/sales-xray-apps`.
+   After approval: `--body approved`. Avoid new alpha uploads while the review runs.
 6. If refused: revert the PR, delete the variable, send the next bundle without the service. Uploads fall back to
    CaptureNet.
 
@@ -64,51 +77,44 @@ app is on screen, and an upload begins after a call ends in the phone's dialer, 
 > uploaded.
 
 **User impact if the task is deferred:**
-> The seller's call does not reach the lead or produce its report until they next open the app. On Android 15 and
-> HyperOS a cached app has no network, so a deferred upload does not run by itself; managers see the seller's calls
-> as missing, and the seller cannot review the call before the next one. Phone diallers may also remove older
-> recordings, losing the call.
+> The seller's call does not reach the lead or produce its report until they next open the app. Android and phone
+> makers' battery managers freeze or stop a background app, so a deferred upload often does not finish by itself;
+> managers see the seller's calls as missing, and the seller cannot review the call before the next one. Phone
+> diallers may also remove older recordings, losing the call.
 
 **User impact if the task is interrupted:**
 > The server accepts a recording in a single request, so an interrupted upload starts again from the beginning and
 > uses the seller's mobile data a second time. If the recording is removed before the next try, the call is lost.
 
-**Video:** link to the 30–45 s video below (Drive, "Anyone with the link").
+**Video:** https://drive.google.com/file/d/1-Nw3jmtCcPWWrjkev7vqlJaDwjliF-9d/view (shared "Anyone with the link").
 
-## Video script (30–45 s, captions and voice-over as in the call-log video)
-| Time | Screen | Caption |
-| --- | --- | --- |
-| 0–6 s | Sales X-Ray › Settings › Privacy › Calls: automatic uploads On | "The seller turned on automatic call uploads" |
-| 6–12 s | Leads: Alex Example; the phone dialer's call with the lead ends | "A call with a lead ends in the phone's dialer" |
-| 12–18 s | Home button; Sales X-Ray is not on screen | "Sales X-Ray is closed" |
-| 18–24 s | Notification shade: "Call with Alex Example waiting for upload · Undo" | "60 seconds to Undo" |
-| 24–34 s | Notification: **"Uploading 1 call recording"** (ongoing, quiet), then "uploaded for analysis" | "Uploading in the foreground, then gone" |
-| 34–42 s | Open Sales X-Ray › Alex Example: the call shows its recording and analysis | "The call is on the lead" |
+## The video (recorded 3 Nov 2026)
+- Drive "Sales X-Ray Play listing":
+  [sales-xray-fgs-declaration.mp4](https://drive.google.com/file/d/1-Nw3jmtCcPWWrjkev7vqlJaDwjliF-9d/view),
+  37.9 s, 1920×1080, H.264 + AAC, sha256 `41903092…626dbb`.
+- Local copy: `C:/Users/Suyash/Downloads/sales-xray-fgs-declaration.mp4`.
+- Redmi 13, staging build of this PR (run 41630391859, apps b507e6e), Example Sales, fictional lead "Test Jio care
+  IVR". The "Staging" label is kept.
+- Six captioned steps with an ElevenLabs English voice-over (the tutorials narrator):
+  1. The seller turns on automatic call uploads (the disclosure, then Turn on).
+  2. A real call with the lead ends in the phone's dialer; Sales X-Ray is not on screen.
+  3. "Call with Test Jio care IVR waiting for upload" (60 s to Undo).
+  4. **"Uploading 1 call recording"**: the foreground service.
+  5. The upload is done and the service stops; its notification goes away.
+  6. "Call with Test Jio care IVR uploaded for analysis".
+- The notification shots show only Sales X-Ray's card, cut from the pulled-down shade. Other apps' notifications are
+  never shown.
 
-Voice-over (about 90 words):
-> "Sales X-Ray is a sales CRM. This seller turned on automatic call uploads. A call with a lead has just ended in the
-> phone's own dialer, and Sales X-Ray is closed. After a 60-second chance to undo, the app uploads the recording as a
-> foreground service. The notification shows exactly that: Uploading 1 call recording. When the upload finishes, the
-> service stops and the notification goes. The call is now on the lead, ready for analysis."
-
-## Capture steps (Redmi 13, staging app from this PR, fictional data)
-1. Install the Staging Android QA artifact of this PR's head. Sign in as `admin+playdecl@` → Example Sales, lead
-   Alex Example (+1 202 555 0123) or another fictional lead.
-2. On the phone:
-   - Sales X-Ray Staging › Battery saver › **No restrictions**;
-   - Autostart on;
-   - in the app: uploads on, Any network, recordings folder `MIUI/sound_recorder/call_rec`.
-3. Lock portrait (`cmd window user-rotation lock 0`). Start `screenrecord --size 720x1640`.
-4. Simulate the dialler's recording (no real call; recipe in memory reference-dialler-capture-sim):
-   - push a short clip to `/sdcard/MIUI/sound_recorder/call_rec/` named `<00+cc+number>(<same>)_yyyyMMddHHmmss.mp3`,
-     with a stamp inside work hours (Mon–Sat 10:30–19:00 IST) and after the lead was added;
-   - `touch` the file so the saved time is after the stamp;
-   - seed the matching call-log row (`content insert`, outgoing, 40 s).
-5. Press Home. Wait until `dumpsys netpolicy` shows the UID `blocked=APP_BACKGROUND`, which proves the app is cached.
-6. Wait for the 15-minute watch, or run WorkManager's job with `cmd jobscheduler run -f`. Pull the shade down for
-   "waiting for upload", then **"Uploading 1 call recording"**.
-7. Proof (keep it with the video): `dumpsys activity services com.authorityclosers.salesxray.staging` shows
-   `SystemForegroundService` with `isForeground=true` and `foregroundServiceType=0x00000001` (dataSync) during the
-   upload; the call shows on the lead.
-8. Edit like the call-log video (`build_hq.py`: crop the system bars, captions, ElevenLabs voice). Keep the
-   "Staging" label. Upload to Drive "Sales X-Ray Play listing" and share as "Anyone with the link".
+## Re-recording (if Google asks for another take)
+1. Install this PR's Staging Android QA artifact. Sign in as `admin+playdecl@` → Example Sales.
+2. Setup: Phone, Notifications and Recordings folder allowed; Battery **No restrictions**; Settings › Privacy ›
+   Automatic call uploads → **Turn uploads on** (Any network).
+3. Lock portrait (`cmd window user-rotation lock 0`). Record with `screenrecord --size 720x1640`.
+4. Call the lead's number from the dialer inside work hours (Mon–Sat 10:30–19:00 IST). Jio's toll-free IVR
+   18008899999, dialled without +91, connects with no person on the line. Hang up from the phone after about 45 s.
+   Press Home.
+5. The folder check runs about every 15 minutes; a forced job run is ignored. When "waiting for upload" appears,
+   record the shade (`cmd statusbar expand-notifications`) for about 3 minutes.
+6. Keep the proof: a loop on the phone that logs `dumpsys activity services <package>` lines with
+   `SystemForegroundService|isForeground=|types=` every 0.5 s.
+7. Edit: crop the system bars from phone shots and only Sales X-Ray's card from the shade; captions; voice-over.
