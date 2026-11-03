@@ -1,5 +1,7 @@
 package com.authorityclosers.salesxray;
 
+import android.app.Activity;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -8,6 +10,8 @@ import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.webkit.WebChromeClient;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * "Add the recording" (Redmi audit #54): Android's own file picker opened on
@@ -46,6 +50,21 @@ final class RecordingPicker {
         Uri folder = folder(context);
         if (folder != null && Build.VERSION.SDK_INT >= 26) intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, folder);
         return intent;
+    }
+
+    /**
+     * The picked files, for the page: every file of a multiple pick, else the one file, else none. A
+     * multiple pick answers with clip items and no single file (U1: ticking several added nothing).
+     */
+    static Uri[] picked(int resultCode, Intent data) {
+        if (resultCode != Activity.RESULT_OK || data == null) return null;
+        List<Uri> items = new ArrayList<>();
+        ClipData clip = data.getClipData();
+        if (clip != null) {
+            for (int i = 0; i < clip.getItemCount(); i++) items.add(clip.getItemAt(i).getUri());
+        }
+        List<Uri> files = PickRules.files(items, data.getData());
+        return files.isEmpty() ? null : files.toArray(new Uri[0]);
     }
 
     /** The first of this phone's recorder folders that exists, as a picker address. */
