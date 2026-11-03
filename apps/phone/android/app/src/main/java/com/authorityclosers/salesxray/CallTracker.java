@@ -123,7 +123,7 @@ final class CallTracker {
             finishing = false;
             inCall = false;
         }
-        // The after-call sheet logs this call, so the call-history sync skips it.
+        // The page logs this call; its call-history row only times that dial.
         CallLogSync.rememberInApp(activity, number, System.currentTimeMillis());
         boolean direct = granted(activity, Manifest.permission.CALL_PHONE);
         Uri uri = Uri.fromParts("tel", CaptureRules.dialable(number), null);

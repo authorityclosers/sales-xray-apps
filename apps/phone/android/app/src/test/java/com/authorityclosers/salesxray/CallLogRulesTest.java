@@ -5,6 +5,9 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.Arrays;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.junit.Test;
 
 /** UX study item 5: which call-history rows are work calls with a lead. */
@@ -53,6 +56,35 @@ public class CallLogRulesTest {
         assertFalse(CallLogRules.placedInApp(stored, "9876543210", now + 10 * 60_000));
         assertFalse(CallLogRules.placedInApp(stored, "9123456789", now));
         assertFalse(CallLogRules.placedInApp(null, "9876543210", now));
+    }
+
+    @Test
+    public void anInAppCallsRowGoesAgainUntilItTimedItsDial() throws Exception {
+        // Orchestrator, 3 Nov 2026: the row times the app's own dial, which the page logs only
+        // when the seller comes back, so it goes again until Sales Xray says it timed it.
+        long now = 1_760_000_000_000L;
+        JSONObject first = new JSONObject()
+            .put("log_id", "701").put("number", "+919876543210").put("started_at", "x")
+            .put("duration_seconds", 95).put("direction", "outgoing").put("in_app", true)
+            .put("startedMs", now - 60_000);
+        JSONObject second = new JSONObject(first.toString())
+            .put("log_id", "702").put("startedMs", now - 30_000);
+        JSONObject old = new JSONObject(first.toString())
+            .put("log_id", "690").put("startedMs", now - CallLogRules.IN_APP_RESEND_MS - 1);
+        JSONArray kept = CallLogRules.keepPending(
+            new JSONArray().put(old).put(first),
+            Arrays.asList(first, second),
+            new JSONArray().put("701"),
+            now
+        );
+        // 701 timed its dial, 690 is too old: only 702 goes again, once.
+        assertEquals(1, kept.length());
+        assertEquals("702", kept.getJSONObject(0).getString("log_id"));
+        // Sent as Sales Xray takes it: the phone's own note of when it started stays here.
+        JSONObject sent = CallLogRules.sendable(kept.getJSONObject(0));
+        assertTrue(sent.getBoolean("in_app"));
+        assertFalse(sent.has("startedMs"));
+        assertEquals(95, sent.getInt("duration_seconds"));
     }
 
     @Test
@@ -128,7 +160,7 @@ public class CallLogRulesTest {
         assertEquals(ignored, CallLogRules.addIgnored(ignored, "9123456789", 200));
         assertEquals("2\n3", CallLogRules.addIgnored("1\n2", "3", 2));
 
-        org.json.JSONArray list = CallLogRules.keepUnknown(new org.json.JSONArray(), "+91 91234 56789", "9123456789", now - 3_600_000, "outgoing", 40, now, 7 * day, 30);
+        JSONArray list = CallLogRules.keepUnknown(new JSONArray(), "+91 91234 56789", "9123456789", now - 3_600_000, "outgoing", 40, now, 7 * day, 30);
         list = CallLogRules.keepUnknown(list, "09123456789", "9123456789", now - 60_000, "missed", 0, now, 7 * day, 30);
         list = CallLogRules.keepUnknown(list, "9988776655", "9988776655", now - 8 * day, "incoming", 30, now, 7 * day, 30);
         assertEquals(1, list.length());
