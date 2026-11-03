@@ -137,6 +137,8 @@ dependencies {
     // Plain-JVM tests read and write JSON (Android's own org.json is only a stub there).
     testImplementation "org.json:json:20240303"
     androidTestImplementation "androidx.work:work-testing:2.10.0"
+    // The pipeline simulator answers Android's folder picker (PipelineSimTest).
+    androidTestImplementation "androidx.test.uiautomator:uiautomator:2.3.0"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
