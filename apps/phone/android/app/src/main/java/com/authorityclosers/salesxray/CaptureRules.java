@@ -49,6 +49,12 @@ final class CaptureRules {
         return book.optString("tenant_id") + ":" + book.optString("person_id");
     }
 
+    /** Where a call's upload notice opens: its lead's sheet, as lead alerts open it (any stage), else Leads. */
+    static String leadPath(String leadId) {
+        if (leadId == null || !leadId.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")) return "/leads";
+        return "/leads#lead=" + leadId;
+    }
+
     static boolean consent(JSONObject consent, String policy) {
         return consent != null && "on".equals(consent.optString("state")) &&
             consent.optBoolean("can_start") && policy != null && policy.length() == 64 &&
@@ -67,9 +73,14 @@ final class CaptureRules {
     }
 
     static String number(String name, long saved, long now, long since, TimeZone zone, JSONObject book) {
+        return number(name, saved, now, since, zone, book, KEEP_MS);
+    }
+
+    /** The lead number a recording's name holds, for a recording at most {@code maxAgeMs} old. */
+    static String number(String name, long saved, long now, long since, TimeZone zone, JSONObject book, long maxAgeMs) {
         RecordingMatch.Name parsed = RecordingMatch.read(name, zone);
         if (parsed.stampMs <= 0 || parsed.stampMs < since || parsed.stampMs > now ||
-            now - parsed.stampMs > KEEP_MS || saved < parsed.stampMs ||
+            now - parsed.stampMs > maxAgeMs || saved < parsed.stampMs ||
             saved > parsed.stampMs + 4 * 60 * 60 * 1000L + 180_000 || now - saved < UNDO_MS) return null;
         String matched = null;
         org.json.JSONArray numbers = book.optJSONArray("numbers");
