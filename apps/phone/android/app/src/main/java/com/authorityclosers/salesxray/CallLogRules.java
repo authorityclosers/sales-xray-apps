@@ -3,9 +3,12 @@ package com.authorityclosers.salesxray;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -30,6 +33,8 @@ final class CallLogRules {
     static final long IN_APP_BEFORE_MS = 15_000;
     static final long IN_APP_AFTER_MS = 120_000;
     static final long IN_APP_KEEP_MS = 24L * 60 * 60 * 1000;
+    /** An in-app call's row goes again until Sales Xray says it timed its dial, this long at most. */
+    static final long IN_APP_RESEND_MS = 4L * 60 * 60 * 1000;
 
     private CallLogRules() {}
 
@@ -243,6 +248,47 @@ final class CallLogRules {
             kept.append(lines[i]).append('\n');
         }
         return kept.append(line).toString();
+    }
+
+    /**
+     * The in-app calls' rows to send again (orchestrator, 3 Nov 2026): each times its
+     * Call-button dial on Sales Xray, which may log the dial only when the seller comes back
+     * to the app. Those it says it timed ({@code timed}, log ids) and those older than
+     * {@link #IN_APP_RESEND_MS} are dropped; each log id once, the newest row kept.
+     */
+    static JSONArray keepPending(JSONArray pending, List<JSONObject> added, JSONArray timed, long now) {
+        Set<String> done = new HashSet<>();
+        for (int i = 0; timed != null && i < timed.length(); i++) done.add(timed.optString(i));
+        Map<String, JSONObject> kept = new LinkedHashMap<>();
+        List<JSONObject> all = new ArrayList<>();
+        for (int i = 0; pending != null && i < pending.length(); i++) {
+            JSONObject item = pending.optJSONObject(i);
+            if (item != null) all.add(item);
+        }
+        if (added != null) all.addAll(added);
+        for (JSONObject item : all) {
+            String id = item.optString("log_id");
+            if (id.isEmpty() || done.contains(id)) continue;
+            if (now - item.optLong("startedMs") > IN_APP_RESEND_MS) continue;
+            kept.put(id, item);
+        }
+        JSONArray next = new JSONArray();
+        for (JSONObject item : kept.values()) next.put(item);
+        return next;
+    }
+
+    /** The row as Sales Xray takes it: without the phone's own note of when it started. */
+    static JSONObject sendable(JSONObject pending) {
+        JSONObject row = new JSONObject();
+        try {
+            for (String name : new String[] { "log_id", "number", "started_at", "duration_seconds", "direction" }) {
+                if (pending.has(name)) row.put(name, pending.get(name));
+            }
+            row.put("in_app", true);
+        } catch (JSONException ignored) {
+            // Keys and values here are always valid.
+        }
+        return row;
     }
 
     /** True when this outgoing row is a call the seller placed from a lead in the app. */
