@@ -139,7 +139,7 @@ jobs:
           path: platform
           persist-credentials: false
       - name: The web app inside the app (its static export, served from the phone; S9)
-        run: bash scripts/build-web-shell.sh "$GITHUB_WORKSPACE/platform" android/app/src/main/assets/web salesxray.authorityclosers.com
+        run: bash scripts/build-web-shell.sh "$GITHUB_WORKSPACE/platform" android/app/src/main/assets/web salesxray-staging.authorityclosers.com
       - name: Sync the web shell into Android (live site)
         run: npx cap sync android
       - name: Unit tests
@@ -169,7 +169,7 @@ jobs:
           cp android/app/build/outputs/apk/play/debug/app-play-debug.apk "dist/sales-xray-android-play-0.3.${{ github.run_number }}-test.apk"
       - name: Point the shell at dev
         run: |
-          node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const config = JSON.parse(fs.readFileSync(file, "utf8")); config.server.url = "https://salesxray-dev.authorityclosers.com"; fs.writeFileSync(file, JSON.stringify(config, null, 2));'
+          node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const config = JSON.parse(fs.readFileSync(file, "utf8")); config.server.url = "https://salesxray-staging.authorityclosers.com"; fs.writeFileSync(file, JSON.stringify(config, null, 2));'
           npx cap sync android
       - name: Build Sales Xray Dev (test)
         working-directory: apps/phone/android
