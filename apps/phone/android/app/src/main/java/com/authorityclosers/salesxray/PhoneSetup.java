@@ -152,10 +152,17 @@ final class PhoneSetup {
     static String screen(Activity activity, String what) {
         String app = activity.getPackageName();
         switch (what) {
-            case "battery":
-                if (start(activity, new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + app)))) return "battery";
+            case "battery": {
+                // Bug 147: the Play build can't ask Android's question, which then closes before it shows.
+                boolean canAsk = ContextCompat.checkSelfPermission(activity,
+                    Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS) == PackageManager.PERMISSION_GRANTED;
+                String route = PermissionRules.batteryScreen(canAsk, family(), Build.VERSION.SDK_INT);
+                if (PermissionRules.BATTERY_ASK.equals(route)
+                    && start(activity, new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + app)))) return "battery";
+                if (PermissionRules.BATTERY_APP_INFO.equals(route) && appDetails(activity)) return "appSettings";
                 if (start(activity, new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))) return "battery";
                 return appDetails(activity) ? "appSettings" : null;
+            }
             case "autostart":
                 for (String[] screen : AUTOSTART_SCREENS) {
                     Intent intent = new Intent().setComponent(new ComponentName(screen[0], screen[1]));

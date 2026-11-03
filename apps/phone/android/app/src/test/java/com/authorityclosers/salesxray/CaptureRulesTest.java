@@ -152,6 +152,10 @@ public class CaptureRulesTest {
         assertTrue(CaptureRules.notifyAgain(stamp - 60_000, 1, 2, stamp));
         assertTrue(CaptureRules.notifyAgain(stamp - CaptureRules.RENOTIFY_MS, 1, 1, stamp));
     }
+    @Test public void uploadsUseAnyNetworkUnlessTheSellerPicksWifiOnly() {
+        // Owner, bug 120 (3 Nov 2026): any network by default; Settings keeps Wi-Fi only.
+        assertFalse(CaptureRules.WIFI_ONLY_DEFAULT);
+    }
     @Test public void refusedRecordingsSayTheServersOwnReason() {
         assertEquals(CaptureRules.REFUSED_HOURS, CaptureRules.refused(409, "This call is outside work hours."));
         assertEquals(CaptureRules.REFUSED_EARLY, CaptureRules.refused(409, "This call was made before this lead was added."));

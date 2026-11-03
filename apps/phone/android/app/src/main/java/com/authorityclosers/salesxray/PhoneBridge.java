@@ -431,7 +431,7 @@ final class PhoneBridge {
                 case "autoCaptureSetup": {
                     final String asked = id;
                     final boolean on = args.optBoolean("on");
-                    final boolean wifi = args.optBoolean("wifiOnly", true);
+                    final boolean wifi = args.optBoolean("wifiOnly", CaptureRules.WIFI_ONLY_DEFAULT);
                     io.execute(() -> {
                         try {
                             if (!on) {

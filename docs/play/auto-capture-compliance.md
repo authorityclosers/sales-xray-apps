@@ -18,7 +18,7 @@ upload the lead call recordings saved while uploads were off ("Upload them" / "S
 each with its own 60-second Undo); Skip starts from now. Calls already waiting or held when uploads went off are
 kept and go once uploads are on again. Turn uploads on first checks the account's write eligibility (the same
 check the edge makes before audio) and says "complete your profile" instead of turning on.
-Wi-Fi only is the default (Android unmetered constraint plus an active Wi-Fi transport check); Any network is explicit.
+Any network is the default (owner, bug 120, 3 Nov 2026). Wi-Fi only is the seller's choice in Settings → Privacy → Calls; it adds Android's unmetered constraint plus an active Wi-Fi transport check. A choice already saved on a phone stays as it is.
 Maximum file size: 100,000,000 bytes. WorkManager may delay execution, especially on HyperOS.
 
 ## Held calls and notices (Redmi real-call test, 30 Oct 2026)
