@@ -22,10 +22,12 @@ public class CaptureUploadWorker extends Worker {
         if (!AutoCapture.enabled(c, book) || !CaptureRules.identity(book).equals(job.optString("identity")))
             throw new CaptureApi.Hold(CaptureRules.WORKSPACE);
         // The job was inside the upload window when it was made (turning uploads off and on keeps it);
-        // the number must still be this seller's lead.
-        if (CaptureRules.number(job.getString("name"), job.getLong("saved"), System.currentTimeMillis(),
-            0, TimeZone.getDefault(), book) == null)
-            throw new CaptureApi.Hold(CaptureRules.REVIEW);
+        // the number must still be this seller's lead. A shared recording has the call's number, not a file name's.
+        String lead = job.optBoolean("shared")
+            ? CaptureRules.leadNumber(job.getString("number"), book.optJSONArray("numbers"))
+            : CaptureRules.number(job.getString("name"), job.getLong("saved"), System.currentTimeMillis(),
+                0, TimeZone.getDefault(), book);
+        if (lead == null) throw new CaptureApi.Hold(CaptureRules.REVIEW);
         JSONObject policy = api.policy();
         if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) throw new CaptureApi.Hold(CaptureRules.CONSENT);
         if (AutoCapture.prefs(c).getBoolean("wifiOnly", CaptureRules.WIFI_ONLY_DEFAULT)) {
@@ -39,6 +41,7 @@ public class CaptureUploadWorker extends Worker {
     }
     InputStream source(Context c, JSONObject job) throws Exception {
         Uri uri = Uri.parse(job.getString("source"));
+        if (job.optBoolean("shared")) return shared(c, job, uri);
         boolean granted = false;
         for (Uri tree : RecordingFolder.trees(c)) {
             if (uri.getAuthority().equals(tree.getAuthority()) && RecordingFolderRules.inside(DocumentsContract.getTreeDocumentId(tree), DocumentsContract.getDocumentId(uri))) granted = true;
@@ -51,6 +54,19 @@ public class CaptureUploadWorker extends Worker {
                 cursor.getLong(1) != job.getLong("saved")) throw new CaptureApi.Hold(CaptureRules.REVIEW);
         }
         return new FilterInputStream(c.getContentResolver().openInputStream(uri)) {
+            @Override public int read(byte[] b, int off, int len) throws IOException {
+                if (isStopped() || !AutoCapture.prefs(c).getBoolean("on", false)) throw new IOException("stopped");
+                return super.read(b, off, len);
+            }
+        };
+    }
+    /** A recording the seller shared (ShareIn): only the app's own copy of it, unchanged since it was matched. */
+    private InputStream shared(Context c, JSONObject job, Uri uri) throws Exception {
+        File file = "file".equals(uri.getScheme()) && uri.getPath() != null ? new File(uri.getPath()) : null;
+        if (file == null || !ShareIn.owns(c, file)) throw new CaptureApi.Hold(CaptureRules.REVIEW);
+        if (!file.isFile()) throw new CaptureApi.Hold(CaptureRules.FOLDER);
+        if (file.length() != job.getLong("size") || file.lastModified() != job.getLong("saved")) throw new CaptureApi.Hold(CaptureRules.REVIEW);
+        return new FilterInputStream(new FileInputStream(file)) {
             @Override public int read(byte[] b, int off, int len) throws IOException {
                 if (isStopped() || !AutoCapture.prefs(c).getBoolean("on", false)) throw new IOException("stopped");
                 return super.read(b, off, len);

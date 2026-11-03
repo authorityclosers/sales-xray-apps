@@ -41,6 +41,15 @@
                 <data android:scheme="${applicationId}" />
             </intent-filter>
 
+            <!-- A call recording shared from the Phone app or a recorder (ShareIn.java): Google's Phone app
+                 keeps its recordings inside itself, and its Share is how one reaches the seller's lead. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+
         </activity>
 
         <!-- Facebook sign-in inside the app (NativeSignIn.java). The SDK starts with the app ID

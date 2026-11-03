@@ -232,6 +232,8 @@ public class CaptureUploadTest {
         assertTrue(AutoCapture.prefs(c).getString("refused:" + ID, "").startsWith(CaptureRules.REFUSED_HOURS + ":"));
         assertTrue(shown(manager, notice));
         manager.cancel(notice);
+        // Android takes the cancel in its own time: wait for it, so the check below can't see the first notice.
+        assertTrue(gone(manager, notice));
         // The next scan meets the same file: skipped, and not told again.
         assertTrue(AutoCapture.refused(c, ID, "+12025550123", hours));
         assertFalse(shown(manager, notice));
@@ -244,6 +246,53 @@ public class CaptureUploadTest {
         AutoCapture.forgetOldRefusals(c, System.currentTimeMillis() + CaptureRules.KEEP_MS + 60_000);
         assertFalse(AutoCapture.prefs(c).contains("refused:" + ID));
         manager.cancelAll();
+    }
+    /** The real source check, with the own API mocked: a shared recording (ShareIn) is read only from the app's copy. */
+    public static class SharedWorker extends CaptureUploadWorker {
+        public SharedWorker(Context c, WorkerParameters p) { super(c, p); }
+        @Override CaptureApi api(Context c) { return fake; }
+    }
+    JSONObject sharedJob(File file) throws Exception {
+        return AutoCapture.job(c, ID).put("shared", true).put("name", file.getName())
+            .put("source", android.net.Uri.fromFile(file).toString()).put("saved", file.lastModified()).put("size", file.length());
+    }
+    // Owner, 3 Nov 2026: Google's Phone app keeps recordings; the seller shares one, matched to the call.
+    @Test public void aSharedRecordingUploadsFromTheAppsOwnCopyOnly() throws Exception {
+        File dir = ShareIn.dir(c);
+        assertTrue(dir.isDirectory() || dir.mkdirs());
+        File copy = new File(dir, "00000000-0000-4000-8000-000000000009.wav");
+        try (OutputStream out = new FileOutputStream(copy)) { out.write(new byte[32044]); }
+        try {
+            // No number or clock in the shared name: the call history's number is what counts.
+            AutoCapture.prefs(c).edit().putString("job:" + ID, sharedJob(copy).toString()).commit();
+            TestWorkerBuilder.from(c, SharedWorker.class, Executors.newSingleThreadExecutor())
+                .setInputData(new Data.Builder().putString("id", ID).build()).build().doWork();
+            assertEquals(1, fake.uploads);
+            // A "shared" job pointing anywhere else is never read.
+            fake.uploaded = false; fake.uploads = 0;
+            JSONObject elsewhere = sharedJob(recording).put("state", "waiting");
+            elsewhere.remove("sha");
+            AutoCapture.prefs(c).edit().putString("job:" + ID, elsewhere.toString()).commit();
+            TestWorkerBuilder.from(c, SharedWorker.class, Executors.newSingleThreadExecutor())
+                .setInputData(new Data.Builder().putString("id", ID).build()).build().doWork();
+            assertEquals(0, fake.uploads);
+            assertEquals("held", AutoCapture.job(c, ID).getString("state"));
+            assertTrue(ShareIn.owns(c, copy));
+            assertFalse(ShareIn.owns(c, recording));
+            assertFalse(ShareIn.owns(c, new File(dir, "../escape.wav")));
+        } finally {
+            copy.delete();
+        }
+    }
+    /** Whether the notice has gone within 2 s. */
+    static boolean gone(android.app.NotificationManager manager, int id) throws InterruptedException {
+        for (int i = 0; i < 20; i++) {
+            boolean up = false;
+            for (android.service.notification.StatusBarNotification n : manager.getActiveNotifications()) up |= n.getId() == id;
+            if (!up) return true;
+            Thread.sleep(100);
+        }
+        return false;
     }
     /** Whether the notice is up within 2 s (so a notice that stays away takes the full 2 s). */
     static boolean shown(android.app.NotificationManager manager, int id) throws InterruptedException {

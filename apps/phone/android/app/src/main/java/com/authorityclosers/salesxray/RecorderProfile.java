@@ -134,10 +134,29 @@ final class RecorderProfile {
             status.put("recording", RecorderRules.recording(profile, setting, newest, System.currentTimeMillis()));
             status.put("newestMs", newest > 0 ? newest : JSONObject.NULL);
             status.put("otherDialers", otherDialers(context, dialer, family));
+            // A recording shared from the Phone app lands here (ShareIn): the web offers Share for a private one.
+            status.put("shareTarget", true);
+            // No known folder here: the one the media index shows call recordings in, for "Pick your recordings folder".
+            if (allMissing(folders)) {
+                String found = mediaFolder(context);
+                if (found != null) status.put("mediaFolder", found);
+            }
             status.put("appRecorder", AppRecorder.state(context));
             status.put("callRecorder", CallRecorderService.status(context));
         } catch (JSONException ignored) {}
         return status;
+    }
+
+    /** The busiest folder holding call recordings saved in the last 30 days, per the media index; null when none. */
+    static String mediaFolder(Context context) {
+        return CaptureScanRules.busiest(CaptureScanReport.mediaFolders(context, System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000));
+    }
+
+    private static boolean allMissing(JSONArray folders) {
+        for (int i = 0; i < folders.length(); i++) {
+            if (!"missing".equals(folders.optJSONObject(i) == null ? null : folders.optJSONObject(i).optString("state"))) return false;
+        }
+        return true;
     }
 
     private static boolean coveredBy(List<String> picked, String folder) {

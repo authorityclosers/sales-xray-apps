@@ -48,8 +48,11 @@ final class RecordingReason {
             status.optBoolean("folderPickSupported"),
             status.optBoolean("canRead", true)
         );
-        String[] words = RecordingReasonRules.words(reason);
-        String fix = RecordingReasonRules.fix(reason);
+        String switchTo = reason == RecordingReasonRules.Reason.PRIVATE_DIALER ? folderDialer(status) : null;
+        String[] words = reason == RecordingReasonRules.Reason.PRIVATE_DIALER
+            ? RecordingReasonRules.privateWords(switchTo) : RecordingReasonRules.words(reason);
+        String fix = reason == RecordingReasonRules.Reason.PRIVATE_DIALER
+            ? RecordingReasonRules.privateFix(switchTo) : RecordingReasonRules.fix(reason);
         JSONObject missing = new JSONObject();
         try {
             missing.put("reason", reason.name().toLowerCase(Locale.ROOT));
@@ -91,10 +94,35 @@ final class RecordingReason {
         }
     }
 
-    /** The one tap: the recordings folder picker, the dialler's recording setting, or the app's settings. */
+    /** The one tap: the recordings folder picker, the dialler's recording setting, the app's settings, or the Phone app. */
     static void fix(AppCompatActivity activity, String fix, Runnable pickFolder) {
         if ("folder".equals(fix)) pickFolder.run();
         else if ("recorder".equals(fix) || "appSettings".equals(fix)) PhoneSetup.screen(activity, fix);
+        else if ("dialer".equals(fix)) RecorderProfile.open(activity, "defaultDialer");
+        else if ("share".equals(fix)) openCallHistory(activity);
+    }
+
+    /** Another Phone app here that saves recordings to a folder (RecorderProfile's otherDialers), or null. */
+    private static String folderDialer(JSONObject status) {
+        org.json.JSONArray others = status.optJSONArray("otherDialers");
+        for (int i = 0; others != null && i < others.length(); i++) {
+            JSONObject other = others.optJSONObject(i);
+            if (other != null && other.optBoolean("savesToFolder") && !other.optString("label").isEmpty()) return other.optString("label");
+        }
+        return null;
+    }
+
+    /** The Phone app's call history, where each call's recording and its Share are; else its dial pad. */
+    private static void openCallHistory(AppCompatActivity activity) {
+        try {
+            activity.startActivity(new Intent(Intent.ACTION_VIEW, android.provider.CallLog.Calls.CONTENT_URI));
+        } catch (android.content.ActivityNotFoundException | SecurityException none) {
+            try {
+                activity.startActivity(new Intent(Intent.ACTION_DIAL));
+            } catch (android.content.ActivityNotFoundException | SecurityException nothing) {
+                // No Phone app to open: the dialog said where the recording is.
+            }
+        }
     }
 
     private static void notify(Context context, String title, String body, String fix) {

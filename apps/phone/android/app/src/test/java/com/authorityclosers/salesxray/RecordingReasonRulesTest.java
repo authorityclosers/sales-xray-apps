@@ -55,4 +55,20 @@ public class RecordingReasonRulesTest {
         assertNull(RecordingReasonRules.fix(Reason.PRIVATE_DIALER));
         for (Reason reason : Reason.values()) assertEquals(3, RecordingReasonRules.words(reason).length);
     }
+
+    // Owner, 3 Nov 2026: Google's Phone app on his OnePlus kept both recordings; say so, with its one way out.
+    @Test
+    public void googlesPhoneAppSaysItKeepsRecordingsAndOffersTheWayOut() {
+        assertEquals("dialer", RecordingReasonRules.privateFix("OnePlus Phone"));
+        assertEquals("share", RecordingReasonRules.privateFix(null));
+        assertEquals("share", RecordingReasonRules.privateFix(""));
+        String[] other = RecordingReasonRules.privateWords("OnePlus Phone");
+        assertEquals("This phone's Phone app keeps recordings private", other[0]);
+        assertTrue(other[1].contains("OnePlus Phone"));
+        assertEquals("Switch to OnePlus Phone", other[2]);
+        String[] share = RecordingReasonRules.privateWords(null);
+        assertEquals("This phone's Phone app keeps recordings private", share[0]);
+        assertTrue(share[1].contains("Share, then Sales X-Ray"));
+        assertEquals("Open the Phone app", share[2]);
+    }
 }

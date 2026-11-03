@@ -124,11 +124,17 @@ final class AutoCapture {
     static void scan(Context c) throws Exception {
         CaptureApi api = new CaptureApi(c);
         JSONObject book = api.book();
-        if (!noticesAllowed(c)) { stop(c, CaptureRules.NOTICES); return; }
+        // What each scan saw goes out as sx.capture_scan (CaptureScanReport), stopped early or not.
+        if (!noticesAllowed(c)) { stop(c, CaptureRules.NOTICES); CaptureScanReport.send(c, "notices", book, null); return; }
         // Another workspace (or Personal) pauses uploads; they never go to the wrong one, and resume back here.
-        if (!enabled(c, book)) { pause(c, CaptureRules.WORKSPACE); return; }
+        if (!enabled(c, book)) { pause(c, CaptureRules.WORKSPACE); CaptureScanReport.send(c, "workspace", book, null); return; }
         JSONObject policy = api.policy();
-        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) { stop(c, CaptureRules.CONSENT); return; }
+        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) {
+            stop(c, CaptureRules.CONSENT);
+            CaptureScanReport.send(c, "consent", book, null);
+            return;
+        }
+        CaptureScanReport.Seen seen = new CaptureScanReport.Seen();
         resume(c);
         long now = System.currentTimeMillis();
         int expired = 0;
@@ -141,12 +147,15 @@ final class AutoCapture {
             }
         }
         forgetOldRefusals(c, now);
+        ShareIn.cleanup(c);
         if (expired > 0) attention(c, CaptureRules.EXPIRED, expired);
         for (RecordingFolder.Document doc : RecordingFolder.files(c, Math.max(prefs(c).getLong("since", now), now - CaptureRules.KEEP_MS))) {
             if (!audio(doc)) continue;
+            seen.files++;
             String number = CaptureRules.number(doc.name, doc.modifiedMs, now,
                 prefs(c).getLong("since", now), TimeZone.getDefault(), book);
             if (number == null) continue;
+            seen.matched++;
             long stamp = RecordingMatch.read(doc.name, TimeZone.getDefault()).stampMs;
             String id = CaptureRules.id(CaptureRules.identity(book), number, stamp);
             if (prefs(c).contains("job:" + id) || prefs(c).contains("refused:" + id)) continue;
@@ -185,6 +194,56 @@ final class AutoCapture {
             if (Arrays.asList("waiting", "uploading", "analysing").contains(job.optString("state")))
                 enqueue(c, job.getString("id"), Math.max(0, job.optLong("due") - now));
         }
+        CaptureScanReport.send(c, "ran", book, seen);
+    }
+    // What became of a recording shared to the app (shared): queued, or why not.
+    static final String SHARED_OK = "ok";
+    /** Uploads are off here (or notices, consent, another workspace): Attach to a lead instead. */
+    static final String SHARED_OFF = "off";
+    /** The call's number is no lead of this seller's (or the server finds none). */
+    static final String SHARED_NO_LEAD = "no_lead";
+    /** This call already has its recording on its way. */
+    static final String SHARED_ADDED = "added";
+
+    /**
+     * A recording shared from the Phone app (ShareIn) for one of the seller's own calls, matched
+     * by the call history (ShareRules): the same lead call, job, 60-second Undo and upload as a
+     * recording found in the folder, under the same standing consent. The seller's share stands
+     * in for the folder's file name and time. Returns SHARED_* or a CaptureRules refusal.
+     */
+    static String shared(Context c, java.io.File file, ShareRules.Call call, long seconds) throws Exception {
+        CaptureApi api = new CaptureApi(c);
+        JSONObject book = api.book();
+        if (!noticesAllowed(c) || !prefs(c).getBoolean("on", false) || !enabled(c, book)) return SHARED_OFF;
+        JSONObject policy = api.policy();
+        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) return SHARED_OFF;
+        String number = CaptureRules.leadNumber(call.number, book.optJSONArray("numbers"));
+        if (number == null) return SHARED_NO_LEAD;
+        String id = CaptureRules.id(CaptureRules.identity(book), number, call.startedMs);
+        if (prefs(c).contains("job:" + id)) return SHARED_ADDED;
+        String before = prefs(c).getString("refused:" + id, null);
+        if (before != null) return before.substring(0, before.indexOf(':') < 0 ? before.length() : before.indexOf(':'));
+        JSONObject made;
+        try {
+            made = api.json("POST", "/v1/lead-desk/recording-call", new JSONObject()
+                .put("command_id", id).put("number", number).put("started_at", CallLogRules.iso(call.startedMs))
+                .put("duration_seconds", seconds), id, false);
+        } catch (CaptureApi.Failure rejected) {
+            if (refused(c, id, number, rejected)) return CaptureRules.refused(rejected.code, rejected.detail);
+            if (rejected.code == 409 || rejected.code == 422 || rejected.code == 404) return SHARED_NO_LEAD;
+            throw rejected;
+        }
+        JSONObject job = new JSONObject().put("id", id).put("identity", CaptureRules.identity(book))
+            .put("shared", true).put("source", Uri.fromFile(file).toString()).put("name", file.getName())
+            .put("number", number).put("stamp", call.startedMs).put("saved", file.lastModified())
+            .put("size", file.length()).put("seconds", seconds).put("leadId", made.getString("lead_id"))
+            .put("eventId", made.getString("event_id")).put("leadName", made.optString("lead_name", "lead"))
+            .put("state", "waiting").put("due", System.currentTimeMillis() + CaptureRules.UNDO_MS);
+        prefs(c).edit().putString("job:" + id, job.toString()).commit();
+        notice(c, id, "Call with " + job.optString("leadName", "lead") + " waiting for upload", "Uploads in 60 seconds. Undo keeps this recording on your phone.", true);
+        enqueue(c, id, CaptureRules.UNDO_MS);
+        PhoneBridge.signalActive("recordings");
+        return SHARED_OK;
     }
     /** Held calls whose cause is gone go back in the queue (profile done, minutes added, signed in, back here). */
     static void release(Context c, CaptureApi api, String identity, long now) throws JSONException {
