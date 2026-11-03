@@ -58,6 +58,19 @@ public class CaptureRulesTest {
         // Two leads with the same number: neither.
         assertNull(CaptureRules.leadNumber("+12025550123", new JSONArray().put("+12025550123").put("0012025550123")));
     }
+    // Phone QA, 3 Nov 2026: the lead held Jio care's toll-free line as +91 1800…, which never connects,
+    // and the call history and the recording's name hold it without +91. Fictional digits.
+    @Test public void indianTollFreeNumbersMatchTheirPlus91SpellingAndDialWithoutIt() {
+        assertTrue(CaptureRules.samePhone("18001230000", "+9118001230000"));
+        assertTrue(CaptureRules.samePhone("+9118001230000", "18001230000"));
+        assertTrue(CaptureRules.samePhone("1860123000", "+911860123000"));
+        assertFalse(CaptureRules.samePhone("18001230000", "+9118001230001"));
+        assertFalse(CaptureRules.samePhone("18001230000", "+118001230000"));
+        assertEquals("18001230000", CaptureRules.dialable("+91 1800 123 0000"));
+        assertEquals("+919800012345", CaptureRules.dialable("+919800012345"));
+        assertEquals("18001230000", CaptureRules.dialable("18001230000"));
+        assertEquals("", CaptureRules.dialable(null));
+    }
     @Test public void internationalNumbersNeverMatchBySuffixAlone() {
         assertFalse(CaptureRules.samePhone("442025550123", "+12025550123"));
         assertTrue(CaptureRules.samePhone("0012025550123", "+12025550123"));
