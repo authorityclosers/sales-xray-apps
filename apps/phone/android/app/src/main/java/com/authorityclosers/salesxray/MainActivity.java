@@ -14,6 +14,7 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.view.Choreographer;
 import android.view.ViewGroup;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.ValueCallback;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -21,7 +22,6 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
@@ -62,8 +62,14 @@ public class MainActivity extends BridgeActivity {
     /** Puts capture's scheduled work back after a force-stop (onResume). */
     private static final ExecutorService CAPTURE_JOBS = Executors.newSingleThreadExecutor();
 
-    /** The splash stays until the page paints, but never longer than this (a slow network). */
-    private static final long SPLASH_MAX_MS = 6_000;
+    /**
+     * The splash stays until the page paints, but never longer than this (native feel, 3 Nov 2026: about 2 s, then the
+     * page's own ground and whatever it has drawn, rather than a splash that looks stuck on a slow network).
+     */
+    private static final long SPLASH_MAX_MS = 2_000;
+    /** A renderer that dies again this soon after the screen opened anew closes the app instead of looping. */
+    private static final long RENDER_RETRY_MS = 10_000;
+    private static long lastRenderGone = -RENDER_RETRY_MS;
     /** How long after the screen opens the Play build asks Play for a newer version. */
     private static final long UPDATE_CHECK_DELAY_MS = 4000;
     private static final String START_LOG = "SXStart";
@@ -89,6 +95,14 @@ public class MainActivity extends BridgeActivity {
     /** A lead or Report to open from an alert (a /leads or /review path), once the page is there. */
     private String pendingOpen;
     private boolean pageReady;
+    /** Back through the page or Android's own back-to-home (WebBack); pull to refresh (PullRefresh); the safe areas. */
+    private WebBack back;
+    private PullRefresh pull;
+    private SafeArea safeArea;
+    /** The first screen has said it works (its root layout hydrated), logged once. */
+    private boolean usable;
+    /** The page's renderer crashed: the screen opens anew on Home, not on the page that crashed it (PageState). */
+    private boolean renderCrashed;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -106,7 +120,6 @@ public class MainActivity extends BridgeActivity {
         // before the WebView exists; null keeps Capacitor's own config.
         config = AppUserAgent.capConfig(this);
         super.onCreate(savedInstanceState);
-        SafeArea.apply(this);
         recordingPicker = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
             ValueCallback<Uri[]> callback = pickCallback;
             pickCallback = null;
@@ -115,6 +128,9 @@ public class MainActivity extends BridgeActivity {
             callback.onReceiveValue(RecordingPicker.picked(result.getResultCode(), result.getData()));
         });
         WebView webView = getBridge().getWebView();
+        // Pull to refresh around the page; the page clear of the bars, or under them when it pads itself.
+        pull = PullRefresh.around(webView);
+        safeArea = SafeArea.apply(this, webView, PhoneBridge.HOSTS, insets -> pull.setTopInset(insets[1]));
         bundled = await(web);
         // The page's ground before it paints follows the phone's light or dark mode.
         webView.setBackgroundColor(ContextCompat.getColor(this, R.color.sx_ground));
@@ -128,21 +144,13 @@ public class MainActivity extends BridgeActivity {
         FontScale.apply(webView, getResources().getConfiguration().fontScale, PhoneBridge.HOSTS);
         // window.SXHaptics: one haptics engine for the whole app (owner, 25 Oct 2026). See Haptics.
         Haptics.install(webView, PhoneBridge.HOSTS);
-        // Back: through the page's history (it closes sheets and dialogs first); on the first page,
-        // the app goes to the background and stays ready, so opening it again is quick. Capacitor's
-        // own handler did nothing on the first page.
-        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
-            @Override
-            public void handleOnBackPressed() {
-                WebView page = getBridge().getWebView();
-                if (page.canGoBack()) page.goBack();
-                else moveTaskToBack(true);
-            }
-        });
+        // Back: through the page's history while it can go back; on a tab root, Android's own back-to-home (WebBack).
+        back = new WebBack(this, webView);
         connect = new ConnectFlow(this, webView);
         phone = new PhoneBridge(this, webView, connect);
         phone.setBundledWeb(bundled);
         phone.setLiveWeb(live);
+        phone.setScreen(screen());
         google = new GoogleSignIn(this, webView);
         updates = new StoreUpdates(this);
         // Asked once the first screen is up, so Play's sheet never covers the start.
@@ -169,9 +177,31 @@ public class MainActivity extends BridgeActivity {
                     }
 
                     @Override
+                    public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                        super.onPageStarted(view, url, favicon);
+                        // A new document says how deep it is again.
+                        back.pageStarted();
+                    }
+
+                    @Override
+                    public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+                        super.doUpdateVisitedHistory(view, url, isReload);
+                        back.historyChanged();
+                    }
+
+                    @Override
+                    public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                        super.onRenderProcessGone(view, detail);
+                        renderGone(view, detail.didCrash());
+                        return true;
+                    }
+
+                    @Override
                     public void onPageCommitVisible(WebView view, String url) {
                         super.onPageCommitVisible(view, url);
                         qa.committed(view, url);
+                        // A pull that loaded the page again ends with its first paint.
+                        pull.done();
                         if (painted) return;
                         // The first page is on screen: the splash goes, and the start time is logged.
                         painted = true;
@@ -190,6 +220,7 @@ public class MainActivity extends BridgeActivity {
                             Log.i(START_LOG, "page loaded " + sinceStart() + " ms after the app started");
                         }
                         phone.inject(view, url);
+                        safeArea.pageLoaded();
                         google.onPageFinished(view, url);
                         Uri page = Uri.parse(url);
                         pageReady = "https".equals(page.getScheme()) && PhoneBridge.HOSTS.contains(page.getHost());
@@ -261,10 +292,12 @@ public class MainActivity extends BridgeActivity {
         // copy on, load the home screen again so it comes from the phone (the live site sends / there).
         String site = LeadAlerts.serverUrl(this);
         boolean qaOpened = qa.open(this, webView, getIntent());
-        if (!qaOpened && bundled.on() && site != null) {
-            webView.loadUrl(site.replaceAll("/+$", "") + "/dashboard/");
+        // Android closed the app in the background: the page the seller was on opens, not Home (PageState).
+        String wasOn = savedInstanceState == null ? null : PageState.path(savedInstanceState.getString(PageState.KEY), PhoneBridge.HOSTS);
+        if (!qaOpened && site != null && (bundled.on() || wasOn != null)) {
+            webView.loadUrl(site.replaceAll("/+$", "") + (wasOn != null ? wasOn : "/dashboard/"));
             // A web update's first start must say it is up, or the app goes back (LiveWeb).
-            live.watch(bundled, this::useWeb);
+            if (bundled.on()) live.watch(bundled, this::useWeb);
         }
         // Is there a newer web release? Downloaded in the background, used from the next start.
         live.check(true);
@@ -274,6 +307,63 @@ public class MainActivity extends BridgeActivity {
         connect.take(getIntent());
         // After Capacitor's SystemBars has painted the theme's colours at start-up.
         webView.post(() -> SystemBarColors.restore(this));
+    }
+
+    /** What the page says about its own screen (PhoneBridge.Screen). Main thread. */
+    private PhoneBridge.Screen screen() {
+        return new PhoneBridge.Screen() {
+            @Override
+            public void backDepth(int depth) {
+                back.setDepth(depth);
+            }
+
+            @Override
+            public void pull(boolean mayPull) {
+                MainActivity.this.pull.touch(mayPull);
+            }
+
+            @Override
+            public void refreshed() {
+                MainActivity.this.pull.done();
+            }
+
+            @Override
+            public void safeArea(boolean pagePads) {
+                SafeArea.setPagePads(MainActivity.this, pagePads);
+            }
+
+            @Override
+            public void webReady() {
+                if (usable) return;
+                usable = true;
+                // The first screen works: its root layout has hydrated, so taps reach it.
+                Log.i(START_LOG, "usable " + sinceStart() + " ms after the app started (" + (SystemClock.uptimeMillis() - createdAt) + " ms after the screen opened; " + (newProcess ? "started for this screen" : "already running") + ")");
+            }
+        };
+    }
+
+    /**
+     * The page's renderer died: Android reclaimed its memory, or it crashed. This WebView can't be used again, so the
+     * screen opens anew with a new one (Android's "Handle termination"), on the same page unless the renderer crashed
+     * (PageState). Capacitor's own client answers false, which closed the whole app.
+     */
+    private void renderGone(WebView view, boolean crashed) {
+        long now = SystemClock.uptimeMillis();
+        boolean again = now - lastRenderGone < RENDER_RETRY_MS;
+        lastRenderGone = now;
+        Log.w(START_LOG, "the page's renderer " + (crashed ? "crashed" : "was stopped by Android") + (again ? " again; closing" : "; opening the screen again"));
+        renderCrashed = crashed;
+        if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
+        if (again) finish();
+        else recreate();
+    }
+
+    @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        // Where the seller was, for the screen Android opens after closing the app in the background (PageState).
+        WebView page = getBridge() == null ? null : getBridge().getWebView();
+        if (page != null && !renderCrashed) outState.putString(PageState.KEY, page.getUrl());
     }
 
     /** Which copy of the web app this start serves; sets {@link #live}. Any thread. */
@@ -479,9 +569,17 @@ public class MainActivity extends BridgeActivity {
                     super.onPageStarted(view, url, favicon);
                     if (routeSignInWindow(view, Uri.parse(url))) view.stopLoading();
                 }
+
+                @Override
+                public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                    // It shares the page's renderer: the page's screen opens anew, and this window just goes.
+                    closeSignInWindow(view);
+                    return true;
+                }
             }
         );
-        ((ViewGroup) opener.getParent()).addView(window, new ViewGroup.LayoutParams(1, 1));
+        // Beside the pull layout (which lays out the page only), not inside it.
+        ((ViewGroup) pull.getParent()).addView(window, new ViewGroup.LayoutParams(1, 1));
         return window;
     }
 

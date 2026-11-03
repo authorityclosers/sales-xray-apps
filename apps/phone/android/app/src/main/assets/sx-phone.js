@@ -789,7 +789,66 @@
     if (signInPaths.test(location.pathname)) call("pushReset").catch(function () {});
   }
 
+  // Pull to refresh around the page (PullRefresh.java): on every touch, whether a
+  // pull may start there. Only on the list screens, at the very top, never in a
+  // sheet, a dialog, a field or anything fixed or scrolled down, so a form never
+  // reloads under the finger. A part of the page can opt out with data-sx-pull="off".
+  var pullScreens = /^\/(dashboard|leads|chats|analysis\/calls)\/?$/;
+  function mayPull(target) {
+    if (!pullScreens.test(location.pathname)) return false;
+    var root = document.scrollingElement || document.documentElement;
+    if (root && root.scrollTop > 0) return false;
+    var focused = document.activeElement;
+    if (focused && focused.matches && focused.matches("input,textarea,select,[contenteditable]")) return false;
+    if (document.querySelector('dialog[open],[aria-modal="true"]')) return false;
+    for (var node = target; node && node.nodeType === 1; node = node.parentElement) {
+      if (node.scrollTop > 0) return false;
+      if (node.getAttribute("data-sx-pull") === "off") return false;
+      if (window.getComputedStyle(node).position === "fixed") return false;
+    }
+    return true;
+  }
+  document.addEventListener(
+    "touchstart",
+    function (event) {
+      var ok = false;
+      try {
+        ok = event.touches.length === 1 && mayPull(event.target);
+      } catch (error) {}
+      try {
+        window.SXPhone.postMessage(
+          JSON.stringify({ id: "pull", method: "pull", args: { ok: ok } }),
+        );
+      } catch (error) {}
+    },
+    { capture: true, passive: true },
+  );
+
+  // Safe areas (SafeArea.java): a page that draws under the bars and pads itself
+  // by --sx-safe-* says so with <meta name="sx-safe-area" content="page">.
+  var safeArea = document.querySelector('meta[name="sx-safe-area"]');
+  call("safeArea", {
+    page: !!safeArea && safeArea.getAttribute("content") === "page",
+  }).catch(function () {});
+
   window.__sxPhone = {
+    // A pull to refresh (PullRefresh.java). A page that refreshes its own data
+    // takes "sx-refresh" (preventDefault) and calls detail.done() when it has;
+    // any other page loads again.
+    pullRefresh: function () {
+      var asked = new CustomEvent("sx-refresh", {
+        cancelable: true,
+        detail: {
+          done: function () {
+            call("refreshed", {}).catch(function () {});
+          },
+        },
+      });
+      window.dispatchEvent(asked);
+      if (asked.defaultPrevented) return "page";
+      location.reload();
+      return "reload";
+    },
     onNative: function (event) {
       // The page listens too: "resume" refreshes the Leads desk, "alert" as well.
       try {

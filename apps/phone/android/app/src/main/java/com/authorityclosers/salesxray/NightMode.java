@@ -5,11 +5,11 @@ import android.content.res.Configuration;
 import androidx.appcompat.app.AppCompatDelegate;
 
 /**
- * Light or dark (owner, 24 Oct 2026: "app does not follow theme of the mobile … implement dark and
- * light mode on the app properly"). The app follows the phone unless the seller picks Light or Dark
- * in Sales X-Ray; the page tells the app through the bridge's "theme" call. The pick is kept and set
- * before any screen opens, so the ground behind the page, the bars and Android's own sheets match it
- * from the first frame. MainActivity handles uiMode itself, so a change never reloads the page.
+ * Light or dark, the same as the page's own theme key (ThemeRules): Light unless the seller picks Dark in
+ * Sales X-Ray; the page tells the app through the bridge's "theme" call on every load and on each change.
+ * The pick is kept and set before any screen opens, so the ground behind the page, the bars, the WebView's
+ * colour scheme and Android's own sheets match it from the first frame. MainActivity handles uiMode itself,
+ * so a change never reloads the page.
  */
 final class NightMode {
 
@@ -19,7 +19,7 @@ final class NightMode {
     private NightMode() {}
 
     static String saved(Context context) {
-        return ThemeRules.normalize(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(MODE, "system"));
+        return ThemeRules.normalize(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(MODE, "light"));
     }
 
     /** At app start, before any screen. */
@@ -27,7 +27,7 @@ final class NightMode {
         AppCompatDelegate.setDefaultNightMode(ThemeRules.nightMode(saved(context)));
     }
 
-    /** The seller's pick from the page: "system", "light" or "dark" (anything else is "system"). On the main thread. */
+    /** The seller's pick from the page: "light" or "dark" (anything else is "light"). On the main thread. */
     static String set(Context context, String mode) {
         String chosen = ThemeRules.normalize(mode);
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(MODE, chosen).apply();

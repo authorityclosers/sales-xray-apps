@@ -110,6 +110,8 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.webkit:webkit:$androidxWebkitVersion"
+    // Pull to refresh around the page (PullRefresh).
+    implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
     implementation "androidx.work:work-runtime:2.10.0"
     // Google sign-in opens in a Chrome Custom Tab: Google refuses web views.
     implementation "androidx.browser:browser:1.8.0"

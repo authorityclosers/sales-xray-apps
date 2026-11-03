@@ -48,6 +48,10 @@ final class Haptics {
                 return HapticFeedbackConstants.LONG_PRESS;
             case REJECT:
                 return Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.REJECT : HapticFeedbackConstants.LONG_PRESS;
+            case TOGGLE_ON:
+                return Build.VERSION.SDK_INT >= 34 ? HapticFeedbackConstants.TOGGLE_ON : HapticFeedbackConstants.KEYBOARD_TAP;
+            case TOGGLE_OFF:
+                return Build.VERSION.SDK_INT >= 34 ? HapticFeedbackConstants.TOGGLE_OFF : HapticFeedbackConstants.CLOCK_TICK;
             default:
                 return HapticFeedbackConstants.KEYBOARD_TAP;
         }
