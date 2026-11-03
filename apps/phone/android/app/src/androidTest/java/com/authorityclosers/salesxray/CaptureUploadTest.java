@@ -181,6 +181,8 @@ public class CaptureUploadTest {
         assertTrue(AutoCapture.prefs(c).getString("refused:" + ID, "").startsWith(CaptureRules.REFUSED_HOURS + ":"));
         assertTrue(shown(manager, notice));
         manager.cancel(notice);
+        // Android takes the cancel in its own time: wait for it, so the check below can't see the first notice.
+        assertTrue(gone(manager, notice));
         // The next scan meets the same file: skipped, and not told again.
         assertTrue(AutoCapture.refused(c, ID, "+12025550123", hours));
         assertFalse(shown(manager, notice));
@@ -217,7 +219,9 @@ public class CaptureUploadTest {
             assertEquals(1, fake.uploads);
             // A "shared" job pointing anywhere else is never read.
             fake.uploaded = false; fake.uploads = 0;
-            AutoCapture.prefs(c).edit().putString("job:" + ID, sharedJob(recording).put("state", "waiting").remove("sha").toString()).commit();
+            JSONObject elsewhere = sharedJob(recording).put("state", "waiting");
+            elsewhere.remove("sha");
+            AutoCapture.prefs(c).edit().putString("job:" + ID, elsewhere.toString()).commit();
             TestWorkerBuilder.from(c, SharedWorker.class, Executors.newSingleThreadExecutor())
                 .setInputData(new Data.Builder().putString("id", ID).build()).build().doWork();
             assertEquals(0, fake.uploads);
@@ -228,6 +232,16 @@ public class CaptureUploadTest {
         } finally {
             copy.delete();
         }
+    }
+    /** Whether the notice has gone within 2 s. */
+    static boolean gone(android.app.NotificationManager manager, int id) throws InterruptedException {
+        for (int i = 0; i < 20; i++) {
+            boolean up = false;
+            for (android.service.notification.StatusBarNotification n : manager.getActiveNotifications()) up |= n.getId() == id;
+            if (!up) return true;
+            Thread.sleep(100);
+        }
+        return false;
     }
     /** Whether the notice is up within 2 s (so a notice that stays away takes the full 2 s). */
     static boolean shown(android.app.NotificationManager manager, int id) throws InterruptedException {
