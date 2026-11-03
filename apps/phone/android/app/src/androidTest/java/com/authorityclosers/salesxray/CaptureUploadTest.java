@@ -81,6 +81,57 @@ public class CaptureUploadTest {
         return TestWorkerBuilder.from(c, SeededWorker.class, Executors.newSingleThreadExecutor())
             .setInputData(new Data.Builder().putString("id", ID).build()).build();
     }
+    /** Android's answer to a foreground start, already given. */
+    static final class Done implements com.google.common.util.concurrent.ListenableFuture<Void> {
+        final Exception refusal;
+        Done(Exception refusal) { this.refusal = refusal; }
+        @Override public void addListener(Runnable r, java.util.concurrent.Executor e) { e.execute(r); }
+        @Override public boolean cancel(boolean interrupt) { return false; }
+        @Override public boolean isCancelled() { return false; }
+        @Override public boolean isDone() { return true; }
+        @Override public Void get() throws java.util.concurrent.ExecutionException {
+            if (refusal != null) throw new java.util.concurrent.ExecutionException(refusal);
+            return null;
+        }
+        @Override public Void get(long t, java.util.concurrent.TimeUnit u) throws java.util.concurrent.ExecutionException { return get(); }
+    }
+    /** Records foreground starts; refuses them as Android 12+ does in the background without the battery exemption. */
+    static final class Foreground implements ForegroundUpdater {
+        final List<ForegroundInfo> started = new ArrayList<>(); boolean refuse;
+        @Override public com.google.common.util.concurrent.ListenableFuture<Void> setForegroundAsync(Context context, UUID id, ForegroundInfo info) {
+            if (refuse) return new Done(new IllegalStateException("ForegroundServiceStartNotAllowedException"));
+            started.add(info);
+            return new Done(null);
+        }
+    }
+    SeededWorker worker(Foreground foreground) {
+        return TestWorkerBuilder.from(c, SeededWorker.class, Executors.newSingleThreadExecutor())
+            .setInputData(new Data.Builder().putString("id", ID).build()).setForegroundUpdater(foreground).build();
+    }
+    @Test public void bytesMoveInAQuietDataSyncForegroundService() throws Exception {
+        Foreground foreground = new Foreground();
+        worker(foreground).doWork();
+        assertEquals(1, fake.uploads); assertEquals(1, foreground.started.size());
+        ForegroundInfo info = foreground.started.get(0);
+        if (android.os.Build.VERSION.SDK_INT >= 29)
+            assertEquals(android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC, info.getForegroundServiceType());
+        android.app.Notification n = info.getNotification();
+        assertEquals("Uploading 1 call recording", n.extras.getString(android.app.Notification.EXTRA_TITLE));
+        assertEquals("auto_capture", n.getChannelId());
+        assertTrue((n.flags & android.app.Notification.FLAG_ONGOING_EVENT) != 0);
+    }
+    @Test public void aRefusedForegroundStartStillUploads() throws Exception {
+        Foreground foreground = new Foreground(); foreground.refuse = true;
+        worker(foreground).doWork();
+        assertEquals(1, fake.uploads); assertTrue(foreground.started.isEmpty());
+    }
+    @Test public void analysisPollsAfterTheUploadAreNotForeground() throws Exception {
+        worker().doWork(); worker().doWork();
+        assertEquals("analysing", AutoCapture.job(c, ID).getString("state"));
+        Foreground foreground = new Foreground();
+        worker(foreground).doWork();
+        assertTrue(foreground.started.isEmpty());
+    }
     @After public void cleanup() { AutoCapture.prefs(c).edit().clear().commit(); recording.delete(); }
     @Test public void uploadReconcilesAfterRestartAndAcceptsOneStandingPlan() throws Exception {
         worker().doWork(); assertEquals(1, fake.uploads); assertEquals(0, fake.plans);

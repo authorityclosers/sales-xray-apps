@@ -124,6 +124,13 @@
             android:name="com.facebook.internal.FacebookInitProvider"
             android:authorities="${applicationId}.FacebookInitProvider"
             tools:node="remove" />
+
+        <!-- A call recording's upload runs as WorkManager's foreground service while its bytes move
+             (CaptureForeground; Play: docs/play/fgs-declaration.md). -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 
     <!-- Permissions -->
@@ -167,6 +174,8 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Call recording uploads (CaptureForeground). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- The installed dialers, to say which one saves recordings where (RecorderProfile). -->
     <queries>

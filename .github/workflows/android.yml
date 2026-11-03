@@ -201,7 +201,12 @@ jobs:
             if grep -q "android:name=\"$banned\"" "$play"; then echo "Play flavour still declares $banned"; exit 1; fi
           done
           if grep -q 'foregroundServiceType="microphone"' "$play"; then echo "Play flavour still has a microphone foreground service"; exit 1; fi
-          if grep -q 'android:name="android.permission.FOREGROUND_SERVICE"' "$play"; then echo "Play flavour still declares FOREGROUND_SERVICE"; exit 1; fi
+          # One foreground service type in Play: dataSync, for call recording uploads (docs/play/fgs-declaration.md).
+          grep -q 'android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"' "$play" || { echo "Play flavour lost FOREGROUND_SERVICE_DATA_SYNC"; exit 1; }
+          other=$(grep -o 'android:name="android.permission.FOREGROUND_SERVICE_[A-Z_]*"' "$play" | grep -v FOREGROUND_SERVICE_DATA_SYNC || true)
+          [ -z "$other" ] || { echo "Play flavour declares another foreground service type: $other"; exit 1; }
+          types=$(grep -o 'foregroundServiceType="[^"]*"' "$play" | sort -u)
+          [ "$types" = 'foregroundServiceType="dataSync"' ] || { echo "Play flavour foreground service types: $types (Play is told dataSync only)"; exit 1; }
           # No Privacy Sandbox ad permissions in either build (Play Console: "No advertising ID").
           for manifest in "$play" "$direct"; do
             if grep -q 'android:name="android.permission.ACCESS_ADSERVICES_' "$manifest"; then echo "AdServices permission declared in $manifest"; exit 1; fi

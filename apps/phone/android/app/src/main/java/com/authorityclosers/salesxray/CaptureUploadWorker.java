@@ -58,6 +58,12 @@ public class CaptureUploadWorker extends Worker {
         };
     }
     CaptureApi api(Context c) throws Exception { return new CaptureApi(c); }
+    /** A dataSync foreground service while the bytes move, where Android allows the start (CaptureForeground). */
+    boolean foreground() {
+        try { setForegroundAsync(CaptureForeground.info(getApplicationContext())).get(); return true; }
+        catch (Exception refused) { return false; }
+    }
+    @NonNull @Override public ForegroundInfo getForegroundInfo() { return CaptureForeground.info(getApplicationContext()); }
     @NonNull public Result doWork() {
         Context c = getApplicationContext(); String id = getInputData().getString("id");
         JSONObject job = null;
@@ -71,7 +77,10 @@ public class CaptureUploadWorker extends Worker {
             if (System.currentTimeMillis() - job.optLong("stamp") > CaptureRules.KEEP_MS) {
                 AutoCapture.hold(c, job, CaptureRules.EXPIRED); return Result.success();
             }
-            // A cached app has no network on Android 15+ until the system runs a job for it (CaptureNet).
+            // Bytes still to send: a foreground service lifts the cached app's network block; refused (Android 12+
+            // in the background), a cached app has no network on Android 15+ until the system runs a job for it
+            // (CaptureNet). Analysis polls after the upload never run in the foreground.
+            if (Arrays.asList("waiting", "uploading").contains(job.optString("state"))) foreground();
             if (!CaptureNet.await(c, this)) return Result.retry();
             api = api(c);
             JSONObject policy = gate(c, api, job);
