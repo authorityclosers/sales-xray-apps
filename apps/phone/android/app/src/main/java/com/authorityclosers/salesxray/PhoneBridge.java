@@ -371,6 +371,7 @@ final class PhoneBridge {
                     break;
                 }
                 case "webReady": {
+                    android.util.Log.i("SXStart", "usable " + (android.os.SystemClock.uptimeMillis() - android.os.Process.getStartUptimeMillis()) + " ms after the app started (probe)");
                     // The page is up (the web app's root layout says so once it has hydrated): a new web
                     // update has proved it starts (LiveWeb), so it isn't rolled back.
                     LiveWeb target = live;
