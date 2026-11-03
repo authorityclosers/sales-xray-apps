@@ -385,6 +385,8 @@ public class MainActivity extends BridgeActivity {
     private static void restoreCaptureJobs(Context app) {
         // Dials with no outcome get theirs from the recordings folder, uploads on or off (OutcomeBackfill).
         OutcomeBackfill.soon(app);
+        // No scan runs with uploads off: the phone still says what it would scan (sx.capture_scan).
+        if (!AutoCapture.prefs(app).getBoolean("on", false)) CaptureScanReport.sendOff(app);
         if (!AutoCapture.prefs(app).getBoolean("on", false) && !CallLogSync.isOn(app) && !RecordingWatchWorker.watching(app)) return;
         WorkManager.getInstance(app);
         AutoCapture.soon(app);

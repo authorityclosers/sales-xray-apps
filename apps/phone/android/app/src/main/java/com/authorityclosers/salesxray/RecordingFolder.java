@@ -58,6 +58,9 @@ final class RecordingFolder {
     static Uri initial(Context context) {
         Uri existing = RecordingPicker.folder(context);
         if (existing != null) return existing;
+        // None of the known folders here (a new maker or Android version): where the media index shows call recordings.
+        String found = RecorderProfile.mediaFolder(context);
+        if (found != null) return DocumentsContract.buildDocumentUri(STORAGE, "primary:" + found);
         String[] folders = RecorderProfile.profile(context).folders;
         return folders.length == 0 ? null : DocumentsContract.buildDocumentUri(STORAGE, "primary:" + folders[0]);
     }

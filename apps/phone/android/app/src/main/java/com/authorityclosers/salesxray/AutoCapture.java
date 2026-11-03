@@ -124,11 +124,17 @@ final class AutoCapture {
     static void scan(Context c) throws Exception {
         CaptureApi api = new CaptureApi(c);
         JSONObject book = api.book();
-        if (!noticesAllowed(c)) { stop(c, CaptureRules.NOTICES); return; }
+        // What each scan saw goes out as sx.capture_scan (CaptureScanReport), stopped early or not.
+        if (!noticesAllowed(c)) { stop(c, CaptureRules.NOTICES); CaptureScanReport.send(c, "notices", book, null); return; }
         // Another workspace (or Personal) pauses uploads; they never go to the wrong one, and resume back here.
-        if (!enabled(c, book)) { pause(c, CaptureRules.WORKSPACE); return; }
+        if (!enabled(c, book)) { pause(c, CaptureRules.WORKSPACE); CaptureScanReport.send(c, "workspace", book, null); return; }
         JSONObject policy = api.policy();
-        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) { stop(c, CaptureRules.CONSENT); return; }
+        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) {
+            stop(c, CaptureRules.CONSENT);
+            CaptureScanReport.send(c, "consent", book, null);
+            return;
+        }
+        CaptureScanReport.Seen seen = new CaptureScanReport.Seen();
         resume(c);
         long now = System.currentTimeMillis();
         int expired = 0;
@@ -145,9 +151,11 @@ final class AutoCapture {
         if (expired > 0) attention(c, CaptureRules.EXPIRED, expired);
         for (RecordingFolder.Document doc : RecordingFolder.files(c, Math.max(prefs(c).getLong("since", now), now - CaptureRules.KEEP_MS))) {
             if (!audio(doc)) continue;
+            seen.files++;
             String number = CaptureRules.number(doc.name, doc.modifiedMs, now,
                 prefs(c).getLong("since", now), TimeZone.getDefault(), book);
             if (number == null) continue;
+            seen.matched++;
             long stamp = RecordingMatch.read(doc.name, TimeZone.getDefault()).stampMs;
             String id = CaptureRules.id(CaptureRules.identity(book), number, stamp);
             if (prefs(c).contains("job:" + id) || prefs(c).contains("refused:" + id)) continue;
@@ -186,6 +194,7 @@ final class AutoCapture {
             if (Arrays.asList("waiting", "uploading", "analysing").contains(job.optString("state")))
                 enqueue(c, job.getString("id"), Math.max(0, job.optLong("due") - now));
         }
+        CaptureScanReport.send(c, "ran", book, seen);
     }
     // What became of a recording shared to the app (shared): queued, or why not.
     static final String SHARED_OK = "ok";
