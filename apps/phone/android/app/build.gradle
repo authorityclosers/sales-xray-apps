@@ -19,6 +19,8 @@ android {
         manifestPlaceholders = [appIcon: "@mipmap/ic_launcher", appRoundIcon: "@mipmap/ic_launcher_round", appLabel: "Sales X-Ray"]
         // The call recorder listens to this app's own events only (call_recorder_service.xml).
         resValue "string", "sx_self_package", "com.authorityclosers.salesxray"
+        // Empty in every real build; only Sales X-Ray Live sets the local dev server here (GoogleSignIn).
+        resValue "string", "sx_live_origin", ""
         // -PsxDev builds "Sales Xray Dev": dev's site, installed beside the real app.
         if (project.hasProperty("sxDev")) {
             applicationIdSuffix = ".dev"
@@ -33,6 +35,7 @@ android {
             versionNameSuffix = "-live"
             manifestPlaceholders = [appIcon: "@mipmap/ic_launcher", appRoundIcon: "@mipmap/ic_launcher_round", appLabel: "Sales X-Ray Live"]
             resValue "string", "sx_self_package", "com.authorityclosers.salesxray.live"
+            resValue "string", "sx_live_origin", "http://localhost:3016"
         }
         // Which store this build is for (the page and the setup checklist read it).
         resValue "string", "sx_store", "direct"

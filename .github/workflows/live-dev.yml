@@ -50,6 +50,13 @@ jobs:
           sed -i 's#<domain includeSubdomains="false">127.0.0.1</domain>#&\n        <domain includeSubdomains="false">localhost</domain>#' android/app/src/debug/res/xml/sx_debug_network.xml
           cat android/app/src/debug/res/xml/sx_debug_network.xml
           grep -q '>localhost<' android/app/src/debug/res/xml/sx_debug_network.xml
+      - name: Take Google sign-in back from production in this build only
+        # Production hands every app Google sign-in to com.authorityclosers.salesxray:/auth/return. The Live
+        # build claims that address too (Android asks which app when the store app is also installed) and
+        # redeems the code through the local bridge (GoogleSignIn, sx_live_origin).
+        run: |
+          sed -i 's#<data android:scheme="${applicationId}" />#&\n                <data android:scheme="com.authorityclosers.salesxray" />#' android/app/src/main/AndroidManifest.xml
+          grep -n 'android:scheme="com.authorityclosers.salesxray"' android/app/src/main/AndroidManifest.xml
       - name: Build Sales X-Ray Live (debug)
         working-directory: apps/phone/android
         env:
