@@ -43,7 +43,13 @@ jobs:
           cat capacitor.config.json
           npx cap sync android
       - name: Allow cleartext in this build only
-        run: sed -i 's#<application#<application android:usesCleartextTraffic="true"#' android/app/src/main/AndroidManifest.xml
+        # The debug network config (src/debug/res/xml/sx_debug_network.xml) overrides usesCleartextTraffic and allows
+        # only 10.0.2.2 and 127.0.0.1; the Live build adds localhost, which `adb reverse` serves.
+        run: |
+          sed -i 's#<application#<application android:usesCleartextTraffic="true"#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#<domain includeSubdomains="false">127.0.0.1</domain>#&\n        <domain includeSubdomains="false">localhost</domain>#' android/app/src/debug/res/xml/sx_debug_network.xml
+          cat android/app/src/debug/res/xml/sx_debug_network.xml
+          grep -q '>localhost<' android/app/src/debug/res/xml/sx_debug_network.xml
       - name: Build Sales X-Ray Live (debug)
         working-directory: apps/phone/android
         env:
