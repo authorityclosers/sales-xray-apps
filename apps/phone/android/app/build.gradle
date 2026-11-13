@@ -26,6 +26,14 @@ android {
             manifestPlaceholders = [appIcon: "@mipmap/ic_launcher", appRoundIcon: "@mipmap/ic_launcher_round", appLabel: "Sales X-Ray Dev"]
             resValue "string", "sx_self_package", "com.authorityclosers.salesxray.dev"
         }
+        // -PsxLive builds "Sales X-Ray Live": a developer-only shell that opens the local hot-reload dev server
+        // (http://salesxray.localhost:3016 through `adb reverse`), installed beside the real and Dev apps. Never published.
+        if (project.hasProperty("sxLive")) {
+            applicationIdSuffix = ".live"
+            versionNameSuffix = "-live"
+            manifestPlaceholders = [appIcon: "@mipmap/ic_launcher", appRoundIcon: "@mipmap/ic_launcher_round", appLabel: "Sales X-Ray Live"]
+            resValue "string", "sx_self_package", "com.authorityclosers.salesxray.live"
+        }
         // Which store this build is for (the page and the setup checklist read it).
         resValue "string", "sx_store", "direct"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
