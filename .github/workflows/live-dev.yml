@@ -1,7 +1,7 @@
 name: Live dev app
 
 # "Sales X-Ray Live": a developer-only Android shell for the live phone design loop
-# (owner, 13 Nov 2026). It opens http://salesxray.localhost:3016, the local hot-reload
+# (owner, 13 Nov 2026). It opens http://localhost:3016, the local hot-reload
 # dev server, reached from the phone through `adb reverse tcp:3016 tcp:3016` (USB or
 # wireless debugging). Every saved UI change shows at once inside the real installed
 # app shell: the same WebView, system bars and insets as the store app, not Chrome.
@@ -39,7 +39,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Point the shell at the local dev server (cleartext to the phone's own localhost only)
         run: |
-          node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const c = JSON.parse(fs.readFileSync(file, "utf8")); c.server.url = "http://salesxray.localhost:3016"; c.server.cleartext = true; c.android = Object.assign({}, c.android, { allowMixedContent: true, webContentsDebuggingEnabled: true }); delete c.server.errorPath; fs.writeFileSync(file, JSON.stringify(c, null, 2));'
+          node -e 'const fs = require("fs"); const file = "capacitor.config.json"; const c = JSON.parse(fs.readFileSync(file, "utf8")); c.server.url = "http://localhost:3016"; c.server.cleartext = true; c.android = Object.assign({}, c.android, { allowMixedContent: true, webContentsDebuggingEnabled: true }); delete c.server.errorPath; fs.writeFileSync(file, JSON.stringify(c, null, 2));'
           cat capacitor.config.json
           npx cap sync android
       - name: Allow cleartext in this build only

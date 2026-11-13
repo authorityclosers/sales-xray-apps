@@ -27,7 +27,7 @@ android {
             resValue "string", "sx_self_package", "com.authorityclosers.salesxray.dev"
         }
         // -PsxLive builds "Sales X-Ray Live": a developer-only shell that opens the local hot-reload dev server
-        // (http://salesxray.localhost:3016 through `adb reverse`), installed beside the real and Dev apps. Never published.
+        // (http://localhost:3016 through `adb reverse`), installed beside the real and Dev apps. Never published.
         if (project.hasProperty("sxLive")) {
             applicationIdSuffix = ".live"
             versionNameSuffix = "-live"
