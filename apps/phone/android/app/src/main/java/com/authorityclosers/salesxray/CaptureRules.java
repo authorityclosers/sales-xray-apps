@@ -13,6 +13,11 @@ import org.json.JSONObject;
 final class CaptureRules {
     static final long MAX_BYTES = 100_000_000L;
     static final long UNDO_MS = 60_000L;
+    /**
+     * A recording no longer written to for this long is finished (the dialler closed it when the call ended).
+     * It was UNDO_MS, which added a minute before every upload's own minute of Undo (fast upload, 18 Nov 2026).
+     */
+    static final long SETTLE_MS = 15_000L;
     static final long KEEP_MS = 3L * 24 * 60 * 60 * 1000;
     /** Uploads use any network unless the seller picks Wi-Fi only (owner, bug 120, 3 Nov 2026: "everyone has 5G"). */
     static final boolean WIFI_ONLY_DEFAULT = false;
@@ -111,6 +116,10 @@ final class CaptureRules {
         return number;
     }
 
+    /** AudioManager modes of a phone call or a VoIP call (MODE_IN_CALL 2, MODE_IN_COMMUNICATION 3, MODE_CALL_SCREENING 4). */
+    static boolean inCall(int audioMode) { return audioMode == 2 || audioMode == 3 || audioMode == 4; }
+    /** During a call a recording may still be open: only files still for the old full minute are taken then. */
+    static boolean settled(long saved, long now, boolean inCall) { return now - saved >= (inCall ? UNDO_MS : SETTLE_MS); }
     static String number(String name, long saved, long now, long since, TimeZone zone, JSONObject book) {
         return number(name, saved, now, since, zone, book, KEEP_MS);
     }
@@ -120,7 +129,7 @@ final class CaptureRules {
         RecordingMatch.Name parsed = RecordingMatch.read(name, zone);
         if (parsed.stampMs <= 0 || parsed.stampMs < since || parsed.stampMs > now ||
             now - parsed.stampMs > maxAgeMs || saved < parsed.stampMs ||
-            saved > parsed.stampMs + 4 * 60 * 60 * 1000L + 180_000 || now - saved < UNDO_MS) return null;
+            saved > parsed.stampMs + 4 * 60 * 60 * 1000L + 180_000 || now - saved < SETTLE_MS) return null;
         String matched = null;
         org.json.JSONArray numbers = book.optJSONArray("numbers");
         for (String raw : parsed.numbers) {

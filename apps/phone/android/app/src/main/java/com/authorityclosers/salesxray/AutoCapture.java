@@ -77,6 +77,8 @@ final class AutoCapture {
             new PeriodicWorkRequest.Builder(CaptureWatchWorker.class, 15, TimeUnit.MINUTES)
                 .addTag("sx-auto-capture").setConstraints(new Constraints.Builder()
                     .setRequiredNetworkType(wifi ? NetworkType.UNMETERED : NetworkType.CONNECTED).build()).build());
+        // The look right after each call ends (CaptureTrigger); the watch above stays the fallback.
+        CaptureTrigger.arm(c);
         // Held and waiting calls go back in the queue on this first look.
         now(c);
         OutcomeBackfill.now(c);
@@ -98,6 +100,7 @@ final class AutoCapture {
     }
     static void soon(Context c) {
         if (!prefs(c).getBoolean("on", false)) return;
+        CaptureTrigger.arm(c);
         WorkManager.getInstance(c).enqueueUniqueWork("sx-auto-capture-look", ExistingWorkPolicy.KEEP,
             new OneTimeWorkRequest.Builder(CaptureWatchWorker.class).addTag("sx-auto-capture")
                 .setInitialDelay(30, TimeUnit.SECONDS).setConstraints(new Constraints.Builder()
@@ -113,6 +116,8 @@ final class AutoCapture {
     }
     static void afterCall(Context c, long started) {
         if (!prefs(c).getBoolean("on", false)) return;
+        // The settled look comes first; this later one catches a dialler that saves its file slowly.
+        CaptureTrigger.settled(c);
         WorkManager.getInstance(c).enqueueUniqueWork("sx-auto-after-call:" + started, ExistingWorkPolicy.KEEP,
             new OneTimeWorkRequest.Builder(CaptureWatchWorker.class).addTag("sx-auto-capture")
                 .setInitialDelay(90, TimeUnit.SECONDS).setConstraints(new Constraints.Builder()
@@ -149,9 +154,11 @@ final class AutoCapture {
         forgetOldRefusals(c, now);
         ShareIn.cleanup(c);
         if (expired > 0) attention(c, CaptureRules.EXPIRED, expired);
+        boolean calling = CaptureTrigger.inCall(c);
         for (RecordingFolder.Document doc : RecordingFolder.files(c, Math.max(prefs(c).getLong("since", now), now - CaptureRules.KEEP_MS))) {
             if (!audio(doc)) continue;
             seen.files++;
+            if (!CaptureRules.settled(doc.modifiedMs, now, calling)) continue;
             String number = CaptureRules.number(doc.name, doc.modifiedMs, now,
                 prefs(c).getLong("since", now), TimeZone.getDefault(), book);
             if (number == null) continue;
