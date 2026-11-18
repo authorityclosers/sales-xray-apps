@@ -61,7 +61,12 @@ enrolment and review times are from Apple's own pages (checked 28 Oct 2026); lin
 TestFlight internal testing can start without these. App Store review will check them.
 
 1. **Google sign-in fails inside the app.** Google refuses sign-in from embedded web views (a WKWebView), so
-   "Continue with Google" breaks on the iPhone. Android solved this with native sign-in; the iPhone app has none yet.
+   "Continue with Google" breaks on the iPhone. **Fixed in the shell (18 Nov 2026):** the app takes over Sales Xray's
+   Google, Facebook and Apple sign-in starts and runs them in Apple's sign-in sheet (ASWebAuthenticationSession) with
+   the Android app's hand-off (`app_challenge`, `com.authorityclosers.salesxray:/auth/return`,
+   `/v1/auth/google/app-exchange`), so no server change. Before, the shell sent the provider page to the phone's
+   browser, which never came back, and the app showed "can't be reached". Code: `ios/App/App/SignInHandoff.swift`,
+   rules checked by `ios/rules-check`.
 2. **4.8 Login Services.** If Google or Facebook sign-in sets up the account, the app must also offer an
    equivalent private login (Sign in with Apple meets it). **Quickest fix for both 1 and 2:** the web app hides
    the Google and Facebook buttons inside the iPhone app (user agent has `SalesXrayApp/` and `iPhone`), leaving

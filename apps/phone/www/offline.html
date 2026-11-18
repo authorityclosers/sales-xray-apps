@@ -91,13 +91,17 @@
       <h1>Sales X-Ray can't be reached</h1>
       <p>
         Check your internet connection. Sales X-Ray opens again by itself when
-        it's back. Your call recordings stay on this phone.
+        it's back.<span id="kept"> Your call recordings stay on this phone.</span>
       </p>
       <button type="button" onclick="retry()">Try again</button>
     </main>
     <script>
       function retry() {
         location.replace("https://salesxray.authorityclosers.com/");
+      }
+      // iOS gives apps no call recordings, so there is nothing kept to mention.
+      if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+        document.getElementById("kept").remove();
       }
       window.addEventListener("online", retry);
     </script>

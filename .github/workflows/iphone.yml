@@ -46,6 +46,10 @@ jobs:
           node-version: 22
       - name: Install Capacitor
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Sign-in rules (no simulator needed)
+        run: |
+          swiftc -o "$RUNNER_TEMP/rules-check" ios/App/App/SignInRules.swift ios/rules-check/main.swift
+          "$RUNNER_TEMP/rules-check"
       - name: Sync the web shell into iOS (live site)
         run: npx cap sync ios
       - name: Build for the simulator
