@@ -139,25 +139,6 @@ final class RecordingScanner {
         return found.size() > limit ? new ArrayList<>(found.subList(0, limit)) : found;
     }
 
-    /**
-     * The newest recording saved since {@code sinceMs}. One named after the
-     * number or the person wins over one that is merely newer.
-     */
-    static JSONObject newestSince(Context context, long sinceMs, String number, String name) {
-        String digits = CallTracker.digits(number);
-        String tail = digits.length() > 6 ? digits.substring(digits.length() - 6) : digits;
-        String first = name == null ? "" : name.trim().split("\\s+")[0].toLowerCase(Locale.ROOT);
-        JSONObject fallback = null;
-        for (JSONObject item : list(context, 40)) {
-            if (item.optLong("addedMs") < sinceMs) continue;
-            String file = item.optString("name").toLowerCase(Locale.ROOT);
-            boolean named = (tail.length() >= 6 && file.replaceAll("\\D", "").contains(tail)) || (first.length() > 1 && file.contains(first));
-            if (named) return item;
-            if (fallback == null) fallback = item;
-        }
-        return fallback;
-    }
-
     static JSONArray toJson(List<JSONObject> items) {
         JSONArray array = new JSONArray();
         for (JSONObject item : items) array.put(item);

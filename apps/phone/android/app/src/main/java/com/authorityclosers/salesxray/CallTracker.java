@@ -6,10 +6,12 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.ParcelFileDescriptor;
 import android.provider.CallLog;
 import android.provider.Settings;
 import android.telephony.PhoneStateListener;
@@ -17,11 +19,15 @@ import android.telephony.ServiceState;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyCallback;
 import android.telephony.TelephonyManager;
+import android.util.Log;
 import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.json.JSONException;
@@ -42,8 +48,13 @@ final class CallTracker {
 
     private static final String PREFS = "sx_calls";
     private static final String LAST = "last";
+    /** Recordings already given to a call (CallRecordingPick): never given to another. */
+    private static final String USED = "used_recordings";
+    private static final String TAG = "SxCallTracker";
     private static final long LOG_WAIT_MS = 8_000;
-    private static final long RECORDING_WAIT_MS = 30_000;
+    /** Oppo saves the recording well after the call ends (CPH2835, 20 Nov 2026). */
+    private static final long RECORDING_WAIT_MS = 60_000;
+    private static final int SCAN_LIMIT = 60;
     private static final long POLL_MS = 1_500;
     /** Another app's after-call screen opens a moment after the call ends. */
     private static final long COVER_RETRY_MS = 3_000;
@@ -326,18 +337,81 @@ final class CallTracker {
         return null;
     }
 
+    /**
+     * This call's own recording, or null (CallRecordingPick): saved since the call started, the
+     * length of this call, and never one already given to another call. Oppo saves late, so the
+     * phone keeps looking for up to a minute instead of taking an older file (Oppo CPH2835, 20 Nov
+     * 2026: the previous call's recording was sent for the next call). Nothing found or nothing
+     * certain: nothing is sent, and the call says why ("recordingSkipped").
+     */
     private JSONObject findRecording(JSONObject call) {
         if (!RecordingScanner.hasAudioAccess(activity) && !RecordingScanner.hasAllFilesAccess()) return null;
         // No conversation, nothing worth analysing.
         if (Boolean.FALSE.equals(call.opt("connected"))) return null;
-        long since = call.optLong("startedMs") - 5_000;
-        long deadline = System.currentTimeMillis() + RECORDING_WAIT_MS;
-        do {
-            JSONObject found = RecordingScanner.newestSince(activity, since, call.optString("number"), call.optString("name"));
-            if (found != null) return found;
-            sleep(POLL_MS * 2);
-        } while (System.currentTimeMillis() < deadline);
+        CallRecordingPick.Call wanted = new CallRecordingPick.Call(
+            CallRecordingPick.key(call.optString("leadId"), call.optLong("startedMs")),
+            call.optLong("startedMs"),
+            call.optLong("endedMs"),
+            call.isNull("durationSeconds") ? -1 : call.optLong("durationSeconds", -1),
+            call.optString("number"),
+            call.optString("name")
+        );
+        Map<String, Long> lengths = new HashMap<>();
+        CallRecordingPick.Result result = CallRecordingPick.await(
+            () -> RecordingScanner.list(activity, SCAN_LIMIT),
+            wanted,
+            usedRecordings(),
+            item -> lengthMs(item, lengths),
+            TimeZone.getDefault(),
+            System::currentTimeMillis,
+            CallTracker::sleep,
+            RECORDING_WAIT_MS,
+            POLL_MS * 2
+        );
+        if (result.recording != null) {
+            rememberUsed(wanted.key, result.recording);
+            return result.recording;
+        }
+        put(call, "recordingSkipped", result.reason);
+        Log.i(TAG, "No recording sent for this call: " + result.reason + " (" + result.files + " files seen)");
+        CaptureScanReport.sendCallPick(activity, result.reason, result.files);
         return null;
+    }
+
+    /** The media index's length, or read from the file once per file and size; 0 when unknown. */
+    private long lengthMs(JSONObject item, Map<String, Long> cache) {
+        long known = item.optLong("durationMs");
+        if (known > 0) return known;
+        String key = item.optString("source") + "#" + item.optLong("size");
+        Long cached = cache.get(key);
+        if (cached != null) return cached;
+        long ms = 0;
+        MediaMetadataRetriever media = new MediaMetadataRetriever();
+        try (ParcelFileDescriptor descriptor = RecordingScanner.descriptor(activity, item.optString("source"))) {
+            media.setDataSource(descriptor.getFileDescriptor());
+            String duration = media.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            ms = duration == null ? 0 : Long.parseLong(duration);
+        } catch (Exception unreadable) {
+            // Still being written, or a format the phone can't read: the time decides alone.
+            ms = 0;
+        } finally {
+            try {
+                media.release();
+            } catch (Exception ignored) {
+                // Already released.
+            }
+        }
+        cache.put(key, ms);
+        return ms;
+    }
+
+    private synchronized String usedRecordings() {
+        return prefs().getString(USED, "");
+    }
+
+    private synchronized void rememberUsed(String callKey, JSONObject recording) {
+        String used = CallRecordingPick.remember(prefs().getString(USED, ""), callKey, recording, CallRecordingPick.USED_MAX);
+        prefs().edit().putString(USED, used).commit();
     }
 
     /**
@@ -485,6 +559,7 @@ final class CallTracker {
     }
 
     private synchronized void clear() {
+        // The used recordings stay: a later call must never get one of them.
         prefs().edit().remove(LAST).apply();
     }
 
