@@ -410,6 +410,26 @@ final class CallLogRules {
         return isIgnored(lines, line);
     }
 
+    /** "Sync now" may read the call history again at most this many days back. */
+    static final int LOOK_BACK_DAYS = 14;
+
+    /**
+     * Where a call-history read starts. Normally right after the last read
+     * ({@code since}). With {@code days} (1 to {@link #LOOK_BACK_DAYS}) it starts
+     * that far back instead, so lead calls read before their number was a
+     * lead's, or before a failed send, go again (Sales Xray skips any it has);
+     * but never before {@code floor}, when this logging started (calls made
+     * while it was off are never sent), and never past
+     * {@link OutcomeRules#LOG_MS}: Sales Xray logs no older row as a call of its
+     * own (the server's PHONE_LOG_DAYS, 7). A look back never moves the next
+     * read's start: that stays after the newest row read.
+     */
+    static long lookBackFrom(long since, long floor, long now, int days) {
+        if (days <= 0) return since;
+        long back = Math.min(Math.min(days, LOOK_BACK_DAYS) * 24L * 60 * 60 * 1000, OutcomeRules.LOG_MS);
+        return Math.min(since, Math.max(now - back, floor));
+    }
+
     /** ISO 8601 in UTC, as Sales Xray reads times. */
     static String iso(long ms) {
         SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);

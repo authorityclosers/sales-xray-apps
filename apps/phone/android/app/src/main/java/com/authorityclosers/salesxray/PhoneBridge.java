@@ -359,6 +359,20 @@ final class PhoneBridge {
                     });
                     break;
                 }
+                case "findOldRecordings": {
+                    // "Find my old calls" (20 Nov 2026): the last two weeks' lead calls with no recording
+                    // on Sales X-Ray, matched to the recordings on the phone. Read-only (OldCalls).
+                    String asked = id;
+                    JSONObject ask = args;
+                    io.execute(() -> {
+                        try {
+                            reply(reply, asked, OldCalls.find(activity, ask));
+                        } catch (RuntimeException error) {
+                            fail(reply, asked, "scan_failed");
+                        }
+                    });
+                    break;
+                }
                 case "webShell":
                     // The app's own copy of the web app (S9): built from which version, on or off, and its live updates.
                     reply(reply, id, webShellStatus());
@@ -498,8 +512,11 @@ final class PhoneBridge {
                     callLogSetup(reply, id, args.optBoolean("on"), args.optString("sim", ""));
                     break;
                 case "callLogSync": {
+                    // "Sync now". With days (at most 14; older apps ignore it) the call history is
+                    // read that far back again (CallLogRules.lookBackFrom), before "Find my old calls".
                     String asked = id;
-                    io.execute(() -> reply(reply, asked, CallLogSync.run(activity)));
+                    int days = Math.max(0, Math.min(CallLogRules.LOOK_BACK_DAYS, args.optInt("days", 0)));
+                    io.execute(() -> reply(reply, asked, CallLogSync.run(activity, days)));
                     break;
                 }
                 case "unknownCalls": {

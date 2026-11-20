@@ -13,8 +13,10 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
 import org.json.JSONArray;
@@ -179,6 +181,31 @@ final class RecordingQueue {
             }
             prefs.edit().putString(QUEUE, CallLogRules.dropQueued(queue, eventId).toString()).putString(USED, used).apply();
         }
+    }
+
+    /**
+     * Read-only, for "Find my old calls" (OldCalls): the recordings this list
+     * already gave to a call (used before, or found for a waiting call), and
+     * the silence checks it already made, by source. Nothing changes here.
+     */
+    static Set<String> taken(Context context) {
+        synchronized (LOCK) {
+            return used(context, load(context));
+        }
+    }
+
+    static Map<String, JSONObject> checks(Context context) {
+        Map<String, JSONObject> checks = new HashMap<>();
+        synchronized (LOCK) {
+            JSONArray queue = load(context);
+            for (int i = 0; i < queue.length(); i++) {
+                JSONObject entry = queue.optJSONObject(i);
+                JSONObject recording = entry == null ? null : entry.optJSONObject("recording");
+                JSONObject check = recording == null ? null : recording.optJSONObject("check");
+                if (check != null) checks.put(recording.optString("source"), check);
+            }
+        }
+        return checks;
     }
 
     /** Recordings already taken: used before, or found for another waiting call. */

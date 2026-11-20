@@ -178,4 +178,25 @@ public class CallLogRulesTest {
     public void timesGoOutInUtc() {
         assertEquals("2025-10-09T08:53:20.000Z", CallLogRules.iso(1_760_000_000_000L));
     }
+
+    @Test
+    public void syncNowLooksBackOnlyWhileLoggingWasOnAndAtMostAWeek() {
+        long day = 24L * 60 * 60 * 1000;
+        long now = 1_800_000_000_000L;
+        long since = now - 600_000;
+        long floor = now - 30 * day;
+        // No days: right after the last read, as every sync.
+        assertEquals(since, CallLogRules.lookBackFrom(since, floor, now, 0));
+        assertEquals(since, CallLogRules.lookBackFrom(since, floor, now, -3));
+        assertEquals(now - 3 * day, CallLogRules.lookBackFrom(since, floor, now, 3));
+        // 14 asked: Sales Xray logs no row older than a week as a call of its own, so a week.
+        assertEquals(now - 7 * day, CallLogRules.lookBackFrom(since, floor, now, 14));
+        assertEquals(now - 7 * day, CallLogRules.lookBackFrom(since, floor, now, 400));
+        // Logging was turned on two days ago: calls before that are never read.
+        assertEquals(now - 2 * day, CallLogRules.lookBackFrom(since, now - 2 * day, now, 14));
+        // A look back never starts after the last read.
+        assertEquals(since, CallLogRules.lookBackFrom(since, now, now, 14));
+        long behind = now - 10 * day;
+        assertEquals(behind, CallLogRules.lookBackFrom(behind, floor, now, 14));
+    }
 }

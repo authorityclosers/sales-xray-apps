@@ -46,10 +46,11 @@ final class CallTracker {
         void onCall(JSONObject call);
     }
 
-    private static final String PREFS = "sx_calls";
+    /** Package-wide: "Find my old calls" (OldCalls) reads the used history, never writes it. */
+    static final String PREFS = "sx_calls";
     private static final String LAST = "last";
     /** Recordings already given to a call (CallRecordingPick): never given to another. */
-    private static final String USED = "used_recordings";
+    static final String USED = "used_recordings";
     private static final String TAG = "SxCallTracker";
     private static final long LOG_WAIT_MS = 8_000;
     /** Oppo saves the recording well after the call ends (CPH2835, 20 Nov 2026). */

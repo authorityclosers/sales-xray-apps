@@ -72,6 +72,12 @@ final class CallLogSync {
     private static final String BACKFILL_UNTIL = "backfill_until";
     /** That first read finished on this phone; it never runs again. */
     private static final String BACKFILLED = "backfilled";
+    /**
+     * The earliest call this logging may read: where it started when it was turned on
+     * (or the person on the phone changed). A look back ("Sync now" with days) never
+     * reaches before it, so calls made while logging was off are still never sent.
+     */
+    private static final String FLOOR = "floor";
     private static final long UNKNOWN_KEEP_MS = 7L * 24 * 60 * 60 * 1000;
     private static final int UNKNOWN_MAX = 30;
     private static final long RESUME_GAP_MS = 60_000;
@@ -133,9 +139,9 @@ final class CallLogSync {
         if (on) {
             long now = System.currentTimeMillis();
             if (!prefs.getBoolean(ON, false) && !prefs.getBoolean(BACKFILLED, false)) {
-                edit.putLong(SINCE, now - OutcomeRules.FILL_MS).putLong(BACKFILL_UNTIL, now).putString(STATE, "never");
+                edit.putLong(SINCE, now - OutcomeRules.FILL_MS).putLong(FLOOR, now - OutcomeRules.FILL_MS).putLong(BACKFILL_UNTIL, now).putString(STATE, "never");
             } else if (!prefs.getBoolean(ON, false)) {
-                edit.putLong(SINCE, now).putString(STATE, "never");
+                edit.putLong(SINCE, now).putLong(FLOOR, now).putString(STATE, "never");
             }
             if (prefs.getString(DEVICE, null) == null) edit.putString(DEVICE, UUID.randomUUID().toString());
             edit.putString(SIM, chosen).putString(SIM_ALT, subscriptionOf(context, chosen));
@@ -288,8 +294,18 @@ final class CallLogSync {
 
     /** Looks now (blocking) and says how it went. */
     static JSONObject run(Context context) {
+        return run(context, 0);
+    }
+
+    /**
+     * Looks now, and with {@code days} (at most 14) reads the call history that
+     * far back again ("Find my old calls", 20 Nov 2026: before the page asks the
+     * server which lead calls have no recording, the phone's lead calls must be
+     * there). See CallLogRules.lookBackFrom for how far it really reaches.
+     */
+    static JSONObject run(Context context, int days) {
         synchronized (LOCK) {
-            int logged = sync(context);
+            int logged = sync(context, days);
             if (logged > 0) PhoneBridge.signalActive("calls");
         }
         // Lead calls that connected look for their recording (owner, 22 Oct).
@@ -301,7 +317,7 @@ final class CallLogSync {
         return status(context);
     }
 
-    private static int sync(Context context) {
+    private static int sync(Context context, int lookBackDays) {
         SharedPreferences prefs = prefs(context);
         if (!isOn(context)) return 0;
         if (!granted(context, Manifest.permission.READ_CALL_LOG)) return state(context, "no_access");
@@ -358,14 +374,18 @@ final class CallLogSync {
         long now = System.currentTimeMillis();
         if (!person.equals(prefs.getString(PERSON, person))) {
             // Someone else signed in on this phone: their logging starts now, with no look back.
-            prefs.edit().putString(PERSON, person).putLong(SINCE, now).remove(BACKFILL_UNTIL).apply();
+            prefs.edit().putString(PERSON, person).putLong(SINCE, now).putLong(FLOOR, now).remove(BACKFILL_UNTIL).apply();
             return state(context, "ok");
         }
+        // Logging turned on before the floor was kept: from now on is all that is known to be on.
+        if (!prefs.contains(FLOOR)) prefs.edit().putLong(FLOOR, now).apply();
         prefs.edit().putString(PERSON, person).apply();
 
         long since = prefs.getLong(SINCE, now);
         long until = prefs.getLong(BACKFILL_UNTIL, 0);
         boolean backfill = until > 0 && since < until;
+        // The first read already goes 30 days back; otherwise a look back may start before the last read.
+        long from = backfill ? since : CallLogRules.lookBackFrom(since, prefs.getLong(FLOOR, now), now, lookBackDays);
         String sim = prefs.getString(SIM, "");
         String alt = prefs.getString(SIM_ALT, "");
         String inApp = prefs.getString(IN_APP, "");
@@ -394,7 +414,7 @@ final class CallLogSync {
                     CallLog.Calls.CONTENT_URI,
                     columns,
                     CallLog.Calls.DATE + " > ?",
-                    new String[] { String.valueOf(since) },
+                    new String[] { String.valueOf(from) },
                     CallLog.Calls.DATE + " ASC"
                 )
         ) {
@@ -414,7 +434,8 @@ final class CallLogSync {
                 String number = key.length() >= 6 ? numbers.get(key) : null;
                 if (number != null && !CaptureRules.samePhone(cursor.getString(1), number)) number = null;
                 if (number == null) {
-                    if (!"play".equals(Permissions.store(context)) && CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)) {
+                    // A row read before (a look back) was already offered as "Save as lead?" once.
+                    if (date > since && !"play".equals(Permissions.store(context)) && CallLogRules.worthSaving(key, direction, cursor.getLong(3), notLeads)) {
                         unknown = CallLogRules.keepUnknown(unknown, cursor.getString(1), key, date, direction, cursor.getLong(3), now, UNKNOWN_KEEP_MS, UNKNOWN_MAX);
                     }
                     continue;
@@ -468,7 +489,11 @@ final class CallLogSync {
             try {
                 JSONObject answer = new JSONObject(sent.body);
                 logged += answer.optInt("logged");
-                waiting.addAll(CallLogRules.waitingCalls(answer.optJSONArray("calls"), sentRows));
+                // A row read before (a look back) does not wait for its recording here: the seller
+                // may have dealt with it already, and "Find my old calls" finds its recording.
+                for (JSONObject call : CallLogRules.waitingCalls(answer.optJSONArray("calls"), sentRows)) {
+                    if (call.optLong("startedMs") > since) waiting.add(call);
+                }
                 JSONArray dials = answer.optJSONArray("timed");
                 for (int i = 0; dials != null && i < dials.length(); i++) timed.put(dials.optString(i));
             } catch (JSONException ignored) {
