@@ -40,6 +40,7 @@ import org.json.JSONObject;
  */
 final class LeadAlerts {
 
+    /** The one channel lead alerts had before each moment got its picked sound; SoundChannels deletes it. */
     static final String CHANNEL = "lead_alerts";
     /** Nudges back to work and urgent alerts: its own sound (res/raw/sx_urgent), do-not-disturb still applies. */
     static final String URGENT_CHANNEL = "urgent_work";
@@ -148,10 +149,16 @@ final class LeadAlerts {
             path = "/leads";
         }
         if (!path.startsWith("/leads")) path = "/leads";
+        // Not urgent: the sound picked for its moment (Settings > Sounds & alerts, round-2 board 4, 20 Nov 2026).
+        String sound = SoundRules.eventForPush(kind);
+        String channelId = URGENT_CHANNEL;
         if (urgent) urgentChannel(context);
-        else channel(context);
+        else {
+            SoundChannels.refresh(context);
+            channelId = SoundChannels.channel(context, sound);
+        }
         int id = one ? leadId.hashCode() : SUMMARY_ID;
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, urgent ? URGENT_CHANNEL : CHANNEL)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_stat_sx)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(title)
@@ -163,6 +170,7 @@ final class LeadAlerts {
             .setPriority(NotificationCompat.PRIORITY_HIGH);
         if (waiting > 0) builder.setNumber(waiting);
         if (urgent) urgentBefore26(context, builder);
+        else soundBefore26(context, builder, sound);
         if (one) builder.addAction(R.drawable.ic_stat_lead, "Call", open(context, id + 1, path + "&call=1"));
         try {
             NotificationManagerCompat.from(context).notify(id, builder.build());
@@ -175,9 +183,10 @@ final class LeadAlerts {
     /** A sample, so the seller can hear how a normal or an urgent alert sounds (the page's Settings). */
     static boolean sample(Context context, boolean urgent) {
         if (!allowed(context)) return false;
+        String channelId = URGENT_CHANNEL;
         if (urgent) urgentChannel(context);
-        else channel(context);
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, urgent ? URGENT_CHANNEL : CHANNEL)
+        else channelId = SoundChannels.channel(context, SoundRules.NEW_LEAD);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_stat_sx)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(urgent ? "This is an urgent alert" : "This is a lead alert")
@@ -203,6 +212,18 @@ final class LeadAlerts {
             .setSound(urgentSound(context), AudioManager.STREAM_NOTIFICATION)
             .setVibrate(HapticRules.URGENT_TIMINGS)
             .setPriority(NotificationCompat.PRIORITY_MAX);
+    }
+
+    /** Before Android 8 the alert itself carries the moment's picked sound (none: silent; system: the phone's). */
+    @SuppressWarnings("deprecation")
+    private static void soundBefore26(Context context, NotificationCompat.Builder builder, String event) {
+        if (Build.VERSION.SDK_INT >= 26) return;
+        String choice = SoundChannels.plays(context, event);
+        if (SoundRules.NONE.equals(choice)) builder.setSilent(true);
+        else {
+            Uri sound = SoundChannels.soundUri(context, choice);
+            if (sound != null) builder.setSound(sound, AudioManager.STREAM_NOTIFICATION);
+        }
     }
 
     /** By name, so the channel's sound survives builds that renumber resources. */
@@ -234,16 +255,6 @@ final class LeadAlerts {
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra(EXTRA_OPEN, path);
         return PendingIntent.getActivity(context, request, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-    }
-
-    private static void channel(Context context) {
-        if (Build.VERSION.SDK_INT < 26) return;
-        NotificationManager manager = context.getSystemService(NotificationManager.class);
-        if (manager.getNotificationChannel(CHANNEL) != null) return;
-        NotificationChannel channel = new NotificationChannel(CHANNEL, "Lead alerts", NotificationManager.IMPORTANCE_HIGH);
-        channel.setDescription("A new lead for you, or a call that is due now.");
-        channel.setShowBadge(true);
-        manager.createNotificationChannel(channel);
     }
 
     /** The site this app opens (production, or dev in a test build). */
