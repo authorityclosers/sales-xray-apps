@@ -33,6 +33,29 @@ public class CaptureRulesTest {
         assertEquals(0, RecordingMatch.read("12025550123_260230120000.mp3", zone).stampMs);
         assertNull(CaptureRules.number("12025550123_261029120000.mp3", stamp + 20000, stamp + 30000, stamp - 1, zone, book()));
     }
+    @Test public void aRecordingStillForFifteenSecondsIsTakenRightAfterTheCall() throws Exception {
+        // Fast upload, 18 Nov 2026: 15 s still after the call ends, not a whole minute.
+        String name = "12025550123_261029120000.mp3";
+        long saved = stamp + 20000;
+        assertNull(CaptureRules.number(name, saved, saved + CaptureRules.SETTLE_MS - 1, stamp - 1, zone, book()));
+        assertEquals("+12025550123", CaptureRules.number(name, saved, saved + CaptureRules.SETTLE_MS, stamp - 1, zone, book()));
+        assertTrue(CaptureRules.SETTLE_MS < CaptureRules.UNDO_MS);
+    }
+    @Test public void duringACallOnlyAFullMinuteStillCounts() {
+        long saved = stamp;
+        assertTrue(CaptureRules.settled(saved, saved + CaptureRules.SETTLE_MS, false));
+        assertFalse(CaptureRules.settled(saved, saved + CaptureRules.SETTLE_MS, true));
+        assertTrue(CaptureRules.settled(saved, saved + CaptureRules.UNDO_MS, true));
+        assertFalse(CaptureRules.settled(saved, saved + 1000, false));
+    }
+    @Test public void phoneAndVoipCallModesAreCalls() {
+        // AudioManager: NORMAL 0, RINGTONE 1, IN_CALL 2, IN_COMMUNICATION 3, CALL_SCREENING 4.
+        assertFalse(CaptureRules.inCall(0));
+        assertFalse(CaptureRules.inCall(1));
+        assertTrue(CaptureRules.inCall(2));
+        assertTrue(CaptureRules.inCall(3));
+        assertTrue(CaptureRules.inCall(4));
+    }
     @Test public void consentFailsClosed() throws Exception {
         String hash = String.join("", java.util.Collections.nCopies(64, "a"));
         assertFalse(CaptureRules.consent(null, hash));
