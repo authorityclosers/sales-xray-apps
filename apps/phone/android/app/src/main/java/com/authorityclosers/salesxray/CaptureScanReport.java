@@ -41,6 +41,25 @@ final class CaptureScanReport {
         }
     }
 
+    /**
+     * A call placed from the app whose recording was not sent (CallRecordingPick): the scan's usual
+     * fields, with this one call as unmatched ("none", "stale", "used", "other_call") or ambiguous.
+     * Counts only, never a file's name.
+     */
+    static void sendCallPick(Context c, String reason, int files) {
+        if (!DeviceTelemetry.on(c)) return;
+        try {
+            Seen seen = new Seen();
+            seen.files = files;
+            JSONObject f = fields(c, "ran", null, seen, System.currentTimeMillis());
+            boolean ambiguous = CallRecordingPick.AMBIGUOUS.equals(reason);
+            f.put("calls", 1).put("calls_matched", 0).put("calls_none", ambiguous ? 0 : 1).put("calls_ambiguous", ambiguous ? 1 : 0);
+            DeviceTelemetry.captureScan(c, f);
+        } catch (JSONException | RuntimeException unreadable) {
+            // A report is never worth a lost call.
+        }
+    }
+
     /** Uploads off, so no scan runs: what the phone would scan, at a return to the app, at most hourly. */
     static void sendOff(Context c) {
         android.content.SharedPreferences prefs = c.getSharedPreferences("sx_capture_scan", Context.MODE_PRIVATE);
