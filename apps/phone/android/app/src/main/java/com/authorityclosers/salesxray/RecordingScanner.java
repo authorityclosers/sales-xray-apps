@@ -126,15 +126,29 @@ final class RecordingScanner {
 
     /** Newest first, at most {@code limit} items. */
     static List<JSONObject> list(Context context, int limit) {
+        return list(context, limit, 0);
+    }
+
+    /** Most recordings the media index gives one list when no window is asked (the older bound). */
+    private static final int MEDIA_MAX = 500;
+
+    /**
+     * Newest first, at most {@code limit} items, only ones saved since
+     * {@code sinceMs} (0: any time). With a window ("Find my old calls", two
+     * weeks back) the media index and the picked folder are asked for that
+     * window only, so older archive files don't use up the bounded list.
+     */
+    static List<JSONObject> list(Context context, int limit, long sinceMs) {
         List<JSONObject> found = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         fromApp(context, found, seen);
-        if (hasAudioAccess(context) || hasAllFilesAccess()) fromMediaIndex(context, found, seen);
+        if (hasAudioAccess(context) || hasAllFilesAccess()) fromMediaIndex(context, found, seen, sinceMs, Math.max(MEDIA_MAX, limit));
         // Some phones hide the call folder from the media index (.nomedia), so
         // the maker's folders are also read by path where Android allows it.
         if (canReadFolders(context)) fromFolders(found, seen);
         // Folders the seller picked (S8): read through Android's folder grant, no other access needed.
-        fromPickedFolders(context, found, seen);
+        fromPickedFolders(context, found, seen, sinceMs);
+        if (sinceMs > 0) found.removeIf(item -> item.optLong("addedMs") < sinceMs);
         found.sort((a, b) -> Long.compare(b.optLong("addedMs"), a.optLong("addedMs")));
         return found.size() > limit ? new ArrayList<>(found.subList(0, limit)) : found;
     }
@@ -145,7 +159,7 @@ final class RecordingScanner {
         return array;
     }
 
-    private static void fromMediaIndex(Context context, List<JSONObject> found, Set<String> seen) {
+    private static void fromMediaIndex(Context context, List<JSONObject> found, Set<String> seen, long sinceMs, int max) {
         Uri collection = Build.VERSION.SDK_INT >= 29
             ? MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
             : MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
@@ -165,13 +179,20 @@ final class RecordingScanner {
             selection.append("LOWER(").append(pathColumn).append(") LIKE ?");
         }
         selection.append(")");
+        String[] values = PATH_HINTS;
+        if (sinceMs > 0) {
+            // The media index keeps whole seconds.
+            selection.append(" AND ").append(MediaStore.MediaColumns.DATE_ADDED).append(" >= ?");
+            values = Arrays.copyOf(PATH_HINTS, PATH_HINTS.length + 1);
+            values[PATH_HINTS.length] = String.valueOf(sinceMs / 1000);
+        }
         try (
             Cursor cursor = context
                 .getContentResolver()
-                .query(collection, projection, selection.toString(), PATH_HINTS, MediaStore.MediaColumns.DATE_ADDED + " DESC")
+                .query(collection, projection, selection.toString(), values, MediaStore.MediaColumns.DATE_ADDED + " DESC")
         ) {
             if (cursor == null) return;
-            while (cursor.moveToNext() && found.size() < 500) {
+            while (cursor.moveToNext() && found.size() < max) {
                 long id = cursor.getLong(0);
                 String name = cursor.getString(1);
                 String folder = cursor.getString(2);
@@ -200,8 +221,8 @@ final class RecordingScanner {
         }
     }
 
-    private static void fromPickedFolders(Context context, List<JSONObject> found, Set<String> seen) {
-        for (RecordingFolder.Document file : RecordingFolder.files(context)) {
+    private static void fromPickedFolders(Context context, List<JSONObject> found, Set<String> seen, long sinceMs) {
+        for (RecordingFolder.Document file : RecordingFolder.files(context, sinceMs)) {
             if (skip(file.folder) || !AUDIO.contains(extension(file.name))) continue;
             if (!seen.add(file.name.toLowerCase(Locale.ROOT) + ":" + file.size)) continue;
             String mime = file.mime == null || !file.mime.startsWith("audio/") ? null : file.mime;

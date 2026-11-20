@@ -178,4 +178,50 @@ public class CallLogRulesTest {
     public void timesGoOutInUtc() {
         assertEquals("2025-10-09T08:53:20.000Z", CallLogRules.iso(1_760_000_000_000L));
     }
+
+    @Test
+    public void syncNowLooksBackOnlyWhileLoggingWasOnAndAsFarAsAsked() {
+        long day = 24L * 60 * 60 * 1000;
+        long now = 1_800_000_000_000L;
+        long since = now - 600_000;
+        long floor = now - 30 * day;
+        // No days: right after the last read, as every sync.
+        assertEquals(since, CallLogRules.lookBackFrom(since, floor, now, 0));
+        assertEquals(since, CallLogRules.lookBackFrom(since, floor, now, -3));
+        assertEquals(now - 3 * day, CallLogRules.lookBackFrom(since, floor, now, 3));
+        // Sales Xray keeps every row (owner, 20 Nov 2026): 14 asked is 14 days, up to the floor.
+        assertEquals(now - 14 * day, CallLogRules.lookBackFrom(since, floor, now, 14));
+        assertEquals(floor, CallLogRules.lookBackFrom(since, floor, now, 400));
+        // A floor at 0 (the whole history): at most LOOK_BACK_DAYS asked.
+        assertEquals(now - 365 * day, CallLogRules.lookBackFrom(since, 0, now, 400));
+        assertEquals(now - 200 * day, CallLogRules.lookBackFrom(since, 0, now, 200));
+        // Logging was turned on two days ago: calls before that are never read.
+        assertEquals(now - 2 * day, CallLogRules.lookBackFrom(since, now - 2 * day, now, 14));
+        // A look back never starts after the last read.
+        assertEquals(since, CallLogRules.lookBackFrom(since, now, now, 14));
+        long behind = now - 20 * day;
+        assertEquals(behind, CallLogRules.lookBackFrom(behind, floor, now, 14));
+    }
+
+    @Test
+    public void theWholeCallHistoryIsReadAgainOnceADayInReadsThatGoOn() {
+        long day = 24L * 60 * 60 * 1000;
+        long now = 1_800_000_000_000L;
+        // Never done, or done a day ago: due. Done an hour ago, or one running: not due.
+        assertTrue(CallLogRules.deepDue(false, 0, now));
+        assertTrue(CallLogRules.deepDue(false, now - day, now));
+        assertFalse(CallLogRules.deepDue(false, now - day / 24, now));
+        assertFalse(CallLogRules.deepDue(true, 0, now));
+        assertTrue(CallLogRules.deepDue(false, now + day, now));
+        long since = now - 600_000;
+        // A read with fewer rows than it takes is the end of the history.
+        assertEquals(-1, CallLogRules.deepNext(0, 120, 600, now - 30 * day, since));
+        // A full read goes on just before its last row.
+        long last = now - 90 * day;
+        assertEquals(last - 1, CallLogRules.deepNext(0, 600, 600, last, since));
+        // A full read that reached the last read's start is done.
+        assertEquals(-1, CallLogRules.deepNext(0, 600, 600, since, since));
+        // Never stuck: it always moves past where it started.
+        assertEquals(last + 1, CallLogRules.deepNext(last, 600, 600, last, since));
+    }
 }
