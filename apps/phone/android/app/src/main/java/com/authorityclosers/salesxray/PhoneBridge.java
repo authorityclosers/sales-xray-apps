@@ -512,8 +512,9 @@ final class PhoneBridge {
                     callLogSetup(reply, id, args.optBoolean("on"), args.optString("sim", ""));
                     break;
                 case "callLogSync": {
-                    // "Sync now". With days (at most 14; older apps ignore it) the call history is
+                    // "Sync now". With days (at most 365; older apps ignore it) the call history is
                     // read that far back again (CallLogRules.lookBackFrom), before "Find my old calls".
+                    // The whole history is also read again once a day by itself (CallLogSync DEEP_*).
                     String asked = id;
                     int days = Math.max(0, Math.min(CallLogRules.LOOK_BACK_DAYS, args.optInt("days", 0)));
                     io.execute(() -> reply(reply, asked, CallLogSync.run(activity, days)));

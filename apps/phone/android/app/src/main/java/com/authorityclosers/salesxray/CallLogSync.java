@@ -78,6 +78,16 @@ final class CallLogSync {
      * reaches before it, so calls made while logging was off are still never sent.
      */
     private static final String FLOOR = "floor";
+    /**
+     * The floor reaches the whole history once (owner, 20 Nov 2026: "find my old calls should
+     * be there automated as well, and not just seven days, every call"): phones set up before
+     * it kept their enable day as the floor. Turning logging off and on again still starts then.
+     */
+    private static final String FLOOR_ALL = "floor_all_v1";
+    /** A read of the whole call history is going on from here (ms), a read at a time. */
+    private static final String DEEP_AT = "deep_at";
+    /** The last read of the whole call history finished then (ms); it runs again a day later. */
+    private static final String DEEP_DONE = "deep_done";
     private static final long UNKNOWN_KEEP_MS = 7L * 24 * 60 * 60 * 1000;
     private static final int UNKNOWN_MAX = 30;
     private static final long RESUME_GAP_MS = 60_000;
@@ -123,12 +133,13 @@ final class CallLogSync {
     }
 
     /**
-     * Turns logging on or off. Turning it on starts from now, so calls made
-     * while it was off are never sent. The first time on this phone, one read
-     * goes 30 days back to fill in the outcome of the app's own dials (owner via
-     * the orchestrator, 2 Nov 2026); past a week it sends calls out only, and
-     * Sales X-Ray logs none of them as calls of their own. With more than one
-     * SIM it stays off until the work SIM is chosen.
+     * Turns logging on or off. The first time on this phone, one read goes 30
+     * days back to fill in the outcome of the app's own dials (owner via the
+     * orchestrator, 2 Nov 2026), and then the whole call history is read (owner,
+     * 20 Nov 2026: every call kept, not just seven days) and again once a day,
+     * lead numbers on the work SIM in work hours only, as always. Turned on again
+     * after it was off, it starts from now, so calls made while it was off are
+     * never sent. With more than one SIM it stays off until the work SIM is chosen.
      */
     static boolean setOn(Context context, boolean on, String sim) {
         SharedPreferences prefs = prefs(context);
@@ -139,9 +150,9 @@ final class CallLogSync {
         if (on) {
             long now = System.currentTimeMillis();
             if (!prefs.getBoolean(ON, false) && !prefs.getBoolean(BACKFILLED, false)) {
-                edit.putLong(SINCE, now - OutcomeRules.FILL_MS).putLong(FLOOR, now - OutcomeRules.FILL_MS).putLong(BACKFILL_UNTIL, now).putString(STATE, "never");
+                edit.putLong(SINCE, now - OutcomeRules.FILL_MS).putLong(FLOOR, 0).putBoolean(FLOOR_ALL, true).putLong(BACKFILL_UNTIL, now).putString(STATE, "never");
             } else if (!prefs.getBoolean(ON, false)) {
-                edit.putLong(SINCE, now).putLong(FLOOR, now).putString(STATE, "never");
+                edit.putLong(SINCE, now).putLong(FLOOR, now).putBoolean(FLOOR_ALL, true).remove(DEEP_AT).putString(STATE, "never");
             }
             if (prefs.getString(DEVICE, null) == null) edit.putString(DEVICE, UUID.randomUUID().toString());
             edit.putString(SIM, chosen).putString(SIM_ALT, subscriptionOf(context, chosen));
@@ -174,6 +185,11 @@ final class CallLogSync {
             status.put("lastSyncMs", last > 0 ? last : JSONObject.NULL);
             status.put("lastLogged", prefs.getInt(LAST_LOGGED, 0));
             status.put("state", prefs.getString(STATE, "never"));
+            // The read of the whole call history: going on (from where), and when it last finished.
+            long deepAt = prefs.getLong(DEEP_AT, -1);
+            status.put("deepAtMs", deepAt >= 0 ? deepAt : JSONObject.NULL);
+            long deepDone = prefs.getLong(DEEP_DONE, 0);
+            status.put("deepDoneMs", deepDone > 0 ? deepDone : JSONObject.NULL);
         } catch (JSONException ignored) {}
         return status;
     }
@@ -298,10 +314,11 @@ final class CallLogSync {
     }
 
     /**
-     * Looks now, and with {@code days} (at most 14) reads the call history that
+     * Looks now, and with {@code days} (at most 365) reads the call history that
      * far back again ("Find my old calls", 20 Nov 2026: before the page asks the
      * server which lead calls have no recording, the phone's lead calls must be
-     * there). See CallLogRules.lookBackFrom for how far it really reaches.
+     * there). See CallLogRules.lookBackFrom for how far it really reaches. Without
+     * days, the whole history is still read again once a day by itself (DEEP_*).
      */
     static JSONObject run(Context context, int days) {
         synchronized (LOCK) {
@@ -374,18 +391,30 @@ final class CallLogSync {
         long now = System.currentTimeMillis();
         if (!person.equals(prefs.getString(PERSON, person))) {
             // Someone else signed in on this phone: their logging starts now, with no look back.
-            prefs.edit().putString(PERSON, person).putLong(SINCE, now).putLong(FLOOR, now).remove(BACKFILL_UNTIL).apply();
+            prefs.edit().putString(PERSON, person).putLong(SINCE, now).putLong(FLOOR, now).putBoolean(FLOOR_ALL, true).remove(DEEP_AT).remove(BACKFILL_UNTIL).apply();
             return state(context, "ok");
         }
-        // Logging turned on before the floor was kept: from now on is all that is known to be on.
-        if (!prefs.contains(FLOOR)) prefs.edit().putLong(FLOOR, now).apply();
+        // Phones set up before 20 Nov 2026: their floor now reaches the whole history, once.
+        if (!prefs.getBoolean(FLOOR_ALL, false)) prefs.edit().putLong(FLOOR, 0).putBoolean(FLOOR_ALL, true).apply();
         prefs.edit().putString(PERSON, person).apply();
 
         long since = prefs.getLong(SINCE, now);
+        long floor = prefs.getLong(FLOOR, 0);
         long until = prefs.getLong(BACKFILL_UNTIL, 0);
         boolean backfill = until > 0 && since < until;
-        // The first read already goes 30 days back; otherwise a look back may start before the last read.
-        long from = backfill ? since : CallLogRules.lookBackFrom(since, prefs.getLong(FLOOR, now), now, lookBackDays);
+        long deepAt = prefs.getLong(DEEP_AT, -1);
+        if (!backfill) {
+            // "Sync now" with days, or the daily read of the whole history: a look back that goes on
+            // a read at a time (MAX_ROWS) until it reaches the last read's start.
+            long asked = CallLogRules.lookBackFrom(since, floor, now, lookBackDays);
+            if (asked < since && (deepAt < 0 || asked < deepAt)) deepAt = asked;
+            if (deepAt < 0 && CallLogRules.deepDue(false, prefs.getLong(DEEP_DONE, 0), now)) deepAt = floor;
+            if (deepAt >= 0) deepAt = Math.max(deepAt, floor);
+        }
+        boolean deep = !backfill && deepAt >= 0 && deepAt < since;
+        // The first read already goes 30 days back; a look back may start before the last read.
+        long from = backfill ? since : deep ? deepAt : since;
+        long lastRow = from;
         String sim = prefs.getString(SIM, "");
         String alt = prefs.getString(SIM_ALT, "");
         String inApp = prefs.getString(IN_APP, "");
@@ -422,9 +451,9 @@ final class CallLogSync {
                 rows++;
                 long date = cursor.getLong(2);
                 newest = Math.max(newest, date);
+                lastRow = date;
                 String direction = CallLogRules.direction(cursor.getInt(4));
                 if (direction == null) continue;
-                if (backfill && !OutcomeRules.backfillRow(direction, date, now)) continue;
                 if (!CallLogRules.inWorkHours(date, workDays, workStart, workEnd)) continue;
                 String account = cursor.isNull(5) ? "" : cursor.getString(5);
                 if (!CallLogRules.onWorkSim(account, sim, alt)) continue;
@@ -511,6 +540,13 @@ final class CallLogSync {
             .putString(STATE, "ok");
         // The first read reached its end (or the history did): it never runs again.
         if (until > 0 && (newest >= until || rows < MAX_ROWS)) done.remove(BACKFILL_UNTIL).putBoolean(BACKFILLED, true);
+        if (deep) {
+            long next = CallLogRules.deepNext(from, rows, MAX_ROWS, lastRow, since);
+            if (next < 0) done.remove(DEEP_AT).putLong(DEEP_DONE, now);
+            else done.putLong(DEEP_AT, next);
+        } else if (deepAt >= since) {
+            done.remove(DEEP_AT).putLong(DEEP_DONE, now);
+        }
         done.apply();
         return logged;
     }

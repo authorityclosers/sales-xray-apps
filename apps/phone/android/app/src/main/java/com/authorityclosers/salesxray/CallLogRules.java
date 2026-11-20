@@ -411,23 +411,44 @@ final class CallLogRules {
     }
 
     /** "Sync now" may read the call history again at most this many days back. */
-    static final int LOOK_BACK_DAYS = 14;
+    static final int LOOK_BACK_DAYS = 365;
+    /** The whole call history is read again at most this often, by itself (owner, 20 Nov 2026). */
+    static final long DEEP_EVERY_MS = 24L * 60 * 60 * 1000;
 
     /**
-     * Where a call-history read starts. Normally right after the last read
-     * ({@code since}). With {@code days} (1 to {@link #LOOK_BACK_DAYS}) it starts
-     * that far back instead, so lead calls read before their number was a
-     * lead's, or before a failed send, go again (Sales Xray skips any it has);
-     * but never before {@code floor}, when this logging started (calls made
-     * while it was off are never sent), and never past
-     * {@link OutcomeRules#LOG_MS}: Sales Xray logs no older row as a call of its
-     * own (the server's PHONE_LOG_DAYS, 7). A look back never moves the next
-     * read's start: that stays after the newest row read.
+     * Where a call-history look back starts. Normally a read starts right after
+     * the last one ({@code since}). With {@code days} (1 to {@link #LOOK_BACK_DAYS})
+     * it starts that far back instead, so lead calls read before their number was
+     * a lead's, or before a failed send, go again (Sales Xray skips any it has);
+     * but never before {@code floor}, when this logging started (calls made while
+     * it was off are never sent). Sales Xray keeps every row however old (owner,
+     * 20 Nov 2026: "every call, everything needs to be there"; no 7-day cap). A
+     * look back never moves the next read's start: that stays after the newest row read.
      */
     static long lookBackFrom(long since, long floor, long now, int days) {
         if (days <= 0) return since;
-        long back = Math.min(Math.min(days, LOOK_BACK_DAYS) * 24L * 60 * 60 * 1000, OutcomeRules.LOG_MS);
+        long back = Math.min(days, LOOK_BACK_DAYS) * 24L * 60 * 60 * 1000;
         return Math.min(since, Math.max(now - back, floor));
+    }
+
+    /**
+     * Whether the daily read of the whole call history starts now: none running,
+     * and none finished in the last day (or the clock went back).
+     */
+    static boolean deepDue(boolean running, long doneMs, long now) {
+        if (running) return false;
+        return doneMs <= 0 || now < doneMs || now - doneMs >= DEEP_EVERY_MS;
+    }
+
+    /**
+     * After one read of a look back that started at {@code from}: where the next
+     * read goes on from, or -1 when it is done (fewer rows than a read takes, or it
+     * reached the last read's start). It goes on 1 ms before the last row read, so
+     * rows sharing that millisecond are read again (Sales Xray skips any it has).
+     */
+    static long deepNext(long from, int rows, int maxRows, long lastRowMs, long since) {
+        if (rows < maxRows || lastRowMs >= since) return -1;
+        return Math.max(from + 1, lastRowMs - 1);
     }
 
     /** ISO 8601 in UTC, as Sales Xray reads times. */
