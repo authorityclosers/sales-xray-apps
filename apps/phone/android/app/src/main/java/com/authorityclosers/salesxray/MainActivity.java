@@ -371,10 +371,43 @@ public class MainActivity extends BridgeActivity {
         if (updates != null) updates.resume();
         // Work calls made since the last look reach their leads (UX study item 5).
         CallLogSync.soon(this);
+        // Reminders ring on time only when Android lets the app run: ask once (owner, 22 Nov 2026).
+        askBatteryForReminders();
         // A force-stop (Settings, or HyperOS cleaning the app) drops every scheduled job. WorkManager puts them back
         // when it starts, and it starts on first use (SalesXrayApp), which a launch alone may never reach.
         Context app = getApplicationContext();
         CAPTURE_JOBS.execute(() -> restoreCaptureJobs(app));
+    }
+
+    private static final String BATTERY_ASKED = "reminders_battery_asked";
+
+    /**
+     * One plain question, once, after lead alerts are on and while Android still restricts the app's battery:
+     * a reminder pushed while the phone sleeps can wait for the next wake-up otherwise. "Open battery settings"
+     * opens the same screen Phone setup does (Android's question, or the app's battery page on Play builds).
+     */
+    private void askBatteryForReminders() {
+        android.content.SharedPreferences prefs = LeadAlerts.prefs(this);
+        if (!AlertRules.askBattery(
+            LeadAlerts.token(this) != null,
+            PhoneSetup.batteryUnrestricted(this),
+            prefs.getBoolean(BATTERY_ASKED, false),
+            android.os.Build.VERSION.SDK_INT
+        )) return;
+        prefs.edit().putBoolean(BATTERY_ASKED, true).apply();
+        try {
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Get reminders on time")
+                .setMessage(
+                    "Your phone saves battery by holding Sales X-Ray back while it sleeps, so a reminder can arrive late.\n\n"
+                        + "Set Sales X-Ray's battery use to \u201cUnrestricted\u201d (or \u201cNo restrictions\u201d) and each reminder rings at the minute you picked."
+                )
+                .setPositiveButton("Open battery settings", (dialog, which) -> PhoneSetup.screen(this, "battery"))
+                .setNegativeButton("Not now", null)
+                .show();
+        } catch (RuntimeException ignored) {
+            // The activity is finishing; it was asked, and Phone setup still has the line.
+        }
     }
 
     /**

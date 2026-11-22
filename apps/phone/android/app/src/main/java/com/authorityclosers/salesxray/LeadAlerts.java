@@ -1,6 +1,7 @@
 package com.authorityclosers.salesxray;
 
 import android.Manifest;
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -10,6 +11,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
+import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.webkit.CookieManager;
@@ -40,9 +42,15 @@ import org.json.JSONObject;
  */
 final class LeadAlerts {
 
-    static final String CHANNEL = "lead_alerts";
+    static final String CHANNEL = AlertRules.CHANNEL_LEADS;
     /** Nudges back to work and urgent alerts: its own sound (res/raw/sx_urgent), do-not-disturb still applies. */
-    static final String URGENT_CHANNEL = "urgent_work";
+    static final String URGENT_CHANNEL = AlertRules.CHANNEL_URGENT;
+    /**
+     * Follow-ups and tasks due now (owner, 22 Nov 2026): high importance (heads-up), a long vibration, the
+     * phone's notification sound, on the lock screen with the lead's name hidden unless the phone shows all
+     * content. A new channel id: Android never lets an app raise an existing channel's sound or importance.
+     */
+    static final String REMINDER_CHANNEL = AlertRules.CHANNEL_REMINDERS;
     static final String EXTRA_OPEN = "sx_open";
     private static final String PREFS = "sx_lead_alerts";
     private static final String CONFIG = "firebase";
@@ -121,6 +129,10 @@ final class LeadAlerts {
      * "urgent" (in the push or the words) puts it on the Urgent work channel (AlertRules).
      */
     static void show(Context context, String kind, String leadId, int waiting, String urgency) {
+        show(context, kind, leadId, waiting, urgency, null);
+    }
+
+    static void show(Context context, String kind, String leadId, int waiting, String urgency, String pushReminder) {
         if (!allowed(context)) return;
         boolean one = !"many".equals(kind) && !"nudge".equals(kind) && leadId != null && ID.matcher(leadId).matches();
         String base = serverUrl(context);
@@ -148,10 +160,12 @@ final class LeadAlerts {
             path = "/leads";
         }
         if (!path.startsWith("/leads")) path = "/leads";
+        boolean reminder = !urgent && AlertRules.reminder(pushReminder, kind);
         if (urgent) urgentChannel(context);
+        else if (reminder) reminderChannel(context);
         else channel(context);
         int id = one ? leadId.hashCode() : SUMMARY_ID;
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, urgent ? URGENT_CHANNEL : CHANNEL)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, AlertRules.channelFor(urgent, reminder))
             .setSmallIcon(R.drawable.ic_stat_sx)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setContentTitle(title)
@@ -163,6 +177,7 @@ final class LeadAlerts {
             .setPriority(NotificationCompat.PRIORITY_HIGH);
         if (waiting > 0) builder.setNumber(waiting);
         if (urgent) urgentBefore26(context, builder);
+        if (reminder) asReminder(context, builder, path);
         if (one) builder.addAction(R.drawable.ic_stat_lead, "Call", open(context, id + 1, path + "&call=1"));
         try {
             NotificationManagerCompat.from(context).notify(id, builder.build());
@@ -203,6 +218,56 @@ final class LeadAlerts {
             .setSound(urgentSound(context), AudioManager.STREAM_NOTIFICATION)
             .setVibrate(HapticRules.URGENT_TIMINGS)
             .setPriority(NotificationCompat.PRIORITY_MAX);
+    }
+
+    /**
+     * A reminder rings like one: heads-up, on the lock screen (private: the lead's name only where the phone
+     * shows all content; the public copy says a reminder is due), and before Android 8 the sound and the long
+     * buzz on the alert itself.
+     */
+    @SuppressWarnings("deprecation")
+    private static void asReminder(Context context, NotificationCompat.Builder builder, String path) {
+        Notification hidden = new NotificationCompat.Builder(context, REMINDER_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_sx)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
+            .setContentTitle("Reminder")
+            .setContentText("A follow-up is due now. Unlock to see who.")
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .build();
+        builder
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(hidden)
+            .setShowWhen(true)
+            .setWhen(System.currentTimeMillis());
+        if (Build.VERSION.SDK_INT < 26) {
+            builder
+                .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), AudioManager.STREAM_NOTIFICATION)
+                .setVibrate(AlertRules.REMINDER_TIMINGS)
+                .setPriority(NotificationCompat.PRIORITY_MAX);
+        }
+    }
+
+    private static void reminderChannel(Context context) {
+        if (Build.VERSION.SDK_INT < 26) return;
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager.getNotificationChannel(REMINDER_CHANNEL) != null) return;
+        NotificationChannel channel = new NotificationChannel(REMINDER_CHANNEL, "Reminders", NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription("Follow-ups and tasks at the time you picked: they pop up, ring and vibrate. Do Not Disturb still applies.");
+        channel.setSound(
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+            new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+        );
+        channel.enableVibration(true);
+        channel.setVibrationPattern(AlertRules.REMINDER_TIMINGS);
+        channel.enableLights(true);
+        channel.setLightColor(ContextCompat.getColor(context, R.color.notification_accent));
+        channel.setShowBadge(true);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+        // Never bypasses do-not-disturb: the seller's quiet time wins (owner, 25 Oct 2026).
+        manager.createNotificationChannel(channel);
     }
 
     /** By name, so the channel's sound survives builds that renumber resources. */

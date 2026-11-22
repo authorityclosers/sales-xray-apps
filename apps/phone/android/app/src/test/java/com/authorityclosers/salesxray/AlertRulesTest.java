@@ -20,6 +20,37 @@ public class AlertRulesTest {
         assertFalse(AlertRules.urgent("urgently", null));
     }
 
+    // Owner, 22 Nov 2026: reminders on their own loud channel, exactly on time.
+    @Test
+    public void aDueFollowUpGoesOnTheRemindersChannel() {
+        assertTrue(AlertRules.reminder("1", "many"));
+        assertTrue(AlertRules.reminder(null, "due"));
+        assertFalse(AlertRules.reminder(null, "new"));
+        assertFalse(AlertRules.reminder("0", "many"));
+        assertEquals("reminders", AlertRules.channelFor(false, true));
+        assertEquals("lead_alerts", AlertRules.channelFor(false, false));
+        // An urgent alert keeps the Urgent work channel.
+        assertEquals("urgent_work", AlertRules.channelFor(true, true));
+    }
+
+    @Test
+    public void aReminderBuzzesLongAndHard() {
+        long on = 0;
+        for (int i = 1; i < AlertRules.REMINDER_TIMINGS.length; i += 2) on += AlertRules.REMINDER_TIMINGS[i];
+        assertTrue("at least two seconds of buzz", on >= 2000);
+        assertEquals(0, AlertRules.REMINDER_TIMINGS[0]);
+        assertEquals(0, AlertRules.REMINDER_TIMINGS.length % 2);
+    }
+
+    @Test
+    public void batteryIsAskedOnceAfterAlertsAreOn() {
+        assertTrue(AlertRules.askBattery(true, false, false, 34));
+        assertFalse("alerts off", AlertRules.askBattery(false, false, false, 34));
+        assertFalse("already unrestricted", AlertRules.askBattery(true, true, false, 34));
+        assertFalse("asked before", AlertRules.askBattery(true, false, true, 34));
+        assertFalse("no battery optimisation before Android 6", AlertRules.askBattery(true, false, false, 22));
+    }
+
     @Test
     public void wordsComeFromTheLeadOrTheKind() {
         assertEquals("/v1/lead-desk/leads/" + LEAD + "/alert", AlertRules.wordsPath(true, LEAD, "new"));
