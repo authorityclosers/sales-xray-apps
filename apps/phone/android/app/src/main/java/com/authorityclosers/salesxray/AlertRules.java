@@ -34,6 +34,36 @@ final class AlertRules {
         return "/v1/lead-desk/alert";
     }
 
+    /** The Reminders channel (owner, 22 Nov 2026): a follow-up or a task that is due now. */
+    static final String CHANNEL_REMINDERS = "reminders";
+    static final String CHANNEL_URGENT = "urgent_work";
+    static final String CHANNEL_LEADS = "lead_alerts";
+
+    /**
+     * Reminders buzz hard and long, so a seller across the room hears and feels one (owner, 22 Nov 2026:
+     * "a proper vibrating, attention-grabbing notification"): ms off, on, off, on, off, on, off, on.
+     */
+    static final long[] REMINDER_TIMINGS = {0, 500, 200, 500, 200, 500, 400, 900};
+
+    /** A reminder: the push says so (Sales X-Ray 1.95+), or it is the one lead whose call is due now. */
+    static boolean reminder(String pushReminder, String kind) {
+        return "1".equals(pushReminder == null ? null : pushReminder.trim()) || "due".equals(kind);
+    }
+
+    /** Which channel an alert goes on: urgent wins, then a reminder, else lead alerts. */
+    static String channelFor(boolean urgent, boolean reminder) {
+        if (urgent) return CHANNEL_URGENT;
+        return reminder ? CHANNEL_REMINDERS : CHANNEL_LEADS;
+    }
+
+    /**
+     * Ask once to let Sales X-Ray run unrestricted, so a reminder pushed while the phone sleeps still rings on
+     * time: only once alerts are on, only while the phone still restricts the app, never twice.
+     */
+    static boolean askBattery(boolean alertsOn, boolean unrestricted, boolean askedBefore, int sdk) {
+        return alertsOn && !unrestricted && !askedBefore && sdk >= 23;
+    }
+
     /** Offline words for a nudge back to work (Sales X-Ray's own words win when they arrive). */
     static String[] nudgeWords() {
         return new String[] {"Back to your leads", "Your leads are waiting. Tap to see who to call next."};
