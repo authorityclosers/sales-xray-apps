@@ -21,6 +21,44 @@ final class CaptureRules {
     static final long KEEP_MS = 3L * 24 * 60 * 60 * 1000;
     /** Uploads use any network unless the seller picks Wi-Fi only (owner, bug 120, 3 Nov 2026: "everyone has 5G"). */
     static final boolean WIFI_ONLY_DEFAULT = false;
+    /** Clock slack around the Undo minute: an upload job due within UNDO_MS plus this waits in the job itself. */
+    static final long UNDO_SLACK_MS = 5_000L;
+
+    /**
+     * Whether an upload job started before its Undo minute is over waits that minute out in the job itself.
+     * Redmi 13 (HyperOS, device test 25 Nov 2026): a call detected 55 s after hang-up said "Uploads in 60 seconds"
+     * and was still waiting 33 minutes later; a second, delayed job is one more thing a phone can drop, so the
+     * upload job starts at once and waits here. Longer waits (only a held call's old due time) go back to WorkManager.
+     */
+    static boolean waitInJob(long due, long now) {
+        return due > now && due - now <= UNDO_MS + UNDO_SLACK_MS;
+    }
+
+    // What became of a recording between its match and its upload (sourceChange).
+    static final String SOURCE_SAME = "same";
+    static final String SOURCE_SETTLING = "settling";
+    static final String SOURCE_FINISHED = "finished";
+    static final String SOURCE_CHANGED = "changed";
+
+    /**
+     * The recording's size and last-written time at upload against those at its match. A dialler that is still
+     * closing or tagging the file (MIUI writes after the call ends) is waited for, then the finished file goes:
+     * it is the same recording of the same call (same media row or document), only complete. A file that went
+     * back in time or is empty is another file: held for the seller (REVIEW), as before.
+     */
+    static String sourceChange(long matchedSize, long matchedSaved, long size, long saved, long now) {
+        if (size == matchedSize && saved == matchedSaved) return SOURCE_SAME;
+        if (size <= 0 || saved < matchedSaved) return SOURCE_CHANGED;
+        if (now - saved < SETTLE_MS) return SOURCE_SETTLING;
+        return SOURCE_FINISHED;
+    }
+
+    /** The call's own notice once it is held: what happened, in the attention notice's words. Null: no notice. */
+    static String[] heldNotice(String reason, String leadName, boolean off) {
+        if (OFF.equals(reason)) return null;
+        String[] words = attention(reason, 1, off);
+        return new String[] {"Call with " + leadName + " not uploaded yet", words[1]};
+    }
 
     // Why a call waits on the phone (Redmi real-call test, 30 Oct 2026: each of these lost a call silently).
     // The watch retries the recoverable ones by itself once their cause is gone; the seller is told about all of them.

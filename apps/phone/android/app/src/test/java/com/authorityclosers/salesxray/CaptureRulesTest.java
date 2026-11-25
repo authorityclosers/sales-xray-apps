@@ -13,6 +13,38 @@ public class CaptureRulesTest {
         return new JSONObject().put("organisation_workspace", true).put("tenant_id", "fictional-workspace")
             .put("person_id", "fictional-seller").put("numbers", new JSONArray().put("+12025550123"));
     }
+    // Redmi 13, 25 Nov 2026: "Uploads in 60 seconds", still waiting 33 minutes later. The upload job starts at once
+    // and waits the Undo minute out itself; only a far-off due time (an old held call's) goes back to WorkManager.
+    @Test public void theUndoMinuteIsWaitedOutInTheUploadJob() {
+        long now = stamp;
+        assertTrue(CaptureRules.waitInJob(now + CaptureRules.UNDO_MS, now));
+        assertTrue(CaptureRules.waitInJob(now + CaptureRules.UNDO_MS + CaptureRules.UNDO_SLACK_MS, now));
+        assertTrue(CaptureRules.waitInJob(now + 1, now));
+        assertFalse(CaptureRules.waitInJob(now, now));
+        assertFalse(CaptureRules.waitInJob(now - 1, now));
+        assertFalse(CaptureRules.waitInJob(now + 3_600_000, now));
+    }
+    // A dialler that closes or tags its file after the match no longer parks the call for ever (REVIEW).
+    @Test public void aRecordingFinishedAfterItsMatchStillGoes() {
+        long saved = stamp, now = stamp + 120_000;
+        assertEquals(CaptureRules.SOURCE_SAME, CaptureRules.sourceChange(1000, saved, 1000, saved, now));
+        assertEquals(CaptureRules.SOURCE_FINISHED, CaptureRules.sourceChange(1000, saved, 1400, saved + 2000, now));
+        assertEquals(CaptureRules.SOURCE_FINISHED, CaptureRules.sourceChange(1000, saved, 900, saved + 1000, now));
+        assertEquals(CaptureRules.SOURCE_FINISHED, CaptureRules.sourceChange(1000, saved, 1000, saved + 1000, now));
+        // Written to within the last SETTLE_MS: wait, then look again.
+        assertEquals(CaptureRules.SOURCE_SETTLING, CaptureRules.sourceChange(1000, saved, 1400, now - 1000, now));
+        // Emptied, or older than the file that was matched: another file, held for the seller as before.
+        assertEquals(CaptureRules.SOURCE_CHANGED, CaptureRules.sourceChange(1000, saved, 0, saved + 2000, now));
+        assertEquals(CaptureRules.SOURCE_CHANGED, CaptureRules.sourceChange(1000, saved, 1000, saved - 1000, now));
+    }
+    // A held call's own notice stops promising an upload in 60 seconds and says what it waits for.
+    @Test public void aHeldCallsNoticeSaysWhy() {
+        String[] words = CaptureRules.heldNotice(CaptureRules.PROFILE, "Asha Fixture", false);
+        assertEquals("Call with Asha Fixture not uploaded yet", words[0]);
+        assertTrue(words[1], words[1].contains("Complete your profile"));
+        assertEquals("Call with Asha Fixture not uploaded yet", CaptureRules.heldNotice(CaptureRules.REVIEW, "Asha Fixture", false)[0]);
+        assertNull(CaptureRules.heldNotice(CaptureRules.OFF, "Asha Fixture", true));
+    }
     @Test public void oemPatternsRequireNumberAndClock() throws Exception {
         for (String name : new String[] {
             "Call recording 12025550123_261029120000.mp3", // MIUI compact

@@ -111,6 +111,8 @@ final class AutoCapture {
     }
     static void soon(Context c) {
         if (!prefs(c).getBoolean("on", false)) return;
+        // Opening the app sends what is already waiting at once (Mac, 25 Nov 2026: "opening the app must flush the queue").
+        flush(c);
         CaptureTrigger.arm(c);
         WorkManager.getInstance(c).enqueueUniqueWork("sx-auto-capture-look", ExistingWorkPolicy.KEEP,
             new OneTimeWorkRequest.Builder(CaptureWatchWorker.class).addTag("sx-auto-capture")
@@ -120,6 +122,7 @@ final class AutoCapture {
     /** A look right away (turned on, or Try again on the capture-health card). */
     static void now(Context c) {
         if (!prefs(c).getBoolean("on", false)) return;
+        flush(c);
         OneTimeWorkRequest.Builder look = new OneTimeWorkRequest.Builder(CaptureWatchWorker.class).addTag("sx-auto-capture")
             .setConstraints(new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build());
         if (android.os.Build.VERSION.SDK_INT >= 31) look.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST);
@@ -165,6 +168,8 @@ final class AutoCapture {
         return doc.size > 0 && doc.size <= CaptureRules.MAX_BYTES && Arrays.asList("m4a", "mp3", "mpeg", "wav", "ogg", "flac", "aac", "amr", "awb", "3gp", "opus").contains(RecordingScanner.extension(doc.name));
     }
     static void scan(Context c) throws Exception {
+        // Before anything that can end this look early: a call already on its way always has its upload job.
+        flush(c);
         CaptureApi api = new CaptureApi(c);
         JSONObject book = api.book();
         // What each scan saw goes out as sx.capture_scan (CaptureScanReport), stopped early or not.
@@ -238,15 +243,14 @@ final class AutoCapture {
             prefs(c).edit().putString("job:" + id, job.toString()).commit();
             notice(c, id, "Call with " + job.optString("leadName", "lead") + " waiting for upload", "Uploads in 60 seconds. Undo keeps this recording on your phone.", true);
             enqueue(c, id, CaptureRules.UNDO_MS);
+            log(id, "made by name, " + doc.source.substring(0, Math.max(0, doc.source.indexOf(':'))));
         }
         // Recordings named after a contact (or with no number): the call history says which lead call they are.
         seen.matched += byCallLog(c, api, book, unnamed, window, now);
         release(c, api, CaptureRules.identity(book), now);
         // Recover a process death between saving a job and enqueueing it.
-        for (JSONObject job : jobs(c)) {
-            if (Arrays.asList("waiting", "uploading", "analysing").contains(job.optString("state")))
-                enqueue(c, job.getString("id"), Math.max(0, job.optLong("due") - now));
-        }
+        flush(c);
+        log("scan", "files " + seen.files + " matched " + seen.matched);
         CaptureScanReport.send(c, "ran", book, seen);
     }
     /**
@@ -320,6 +324,7 @@ final class AutoCapture {
             prefs(c).edit().putString("job:" + id, job.toString()).commit();
             notice(c, id, "Call with " + job.optString("leadName", "lead") + " waiting for upload", "Uploads in 60 seconds. Undo keeps this recording on your phone.", true);
             enqueue(c, id, CaptureRules.UNDO_MS);
+            log(id, "made by call history, " + doc.source.substring(0, Math.max(0, doc.source.indexOf(':'))));
             made++;
         }
         return made;
@@ -430,6 +435,14 @@ final class AutoCapture {
             job.put("hold", reason).put("heldAt", System.currentTimeMillis());
             save(c, job, "held");
         } catch (JSONException unreadable) { return; }
+        // The call's own notice no longer says "Uploads in 60 seconds" once it waits for something else.
+        String[] words = CaptureRules.heldNotice(reason, job.optString("leadName", "lead"), CaptureRules.stops(reason));
+        String id = job.optString("id");
+        if (words != null) notice(c, id, words[0], words[1], false);
+        else {
+            NotificationManager manager = c.getSystemService(NotificationManager.class);
+            if (manager != null) manager.cancel(id.hashCode());
+        }
         if (CaptureRules.stops(reason)) stop(c, reason);
         else if (!CaptureRules.OFF.equals(reason)) attention(c, reason, held(c, reason));
     }
@@ -530,14 +543,44 @@ final class AutoCapture {
         }
         return states;
     }
-    static void enqueue(Context c, String id, long delay) {
+    static void enqueue(Context c, String id, long delay) { enqueue(c, id, delay, CaptureUploadWorker.class); }
+    /**
+     * One upload job per call (KEEP: a pending one stays, a finished or lost one is made again). Due within the Undo
+     * minute: it starts now, expedited from Android 12, and waits the minute out itself (CaptureRules.waitInJob).
+     * Redmi 13 (HyperOS, 25 Nov 2026): the minute-delayed job was gone from the system's job list and the call
+     * stayed "waiting" for 33 minutes.
+     */
+    static void enqueue(Context c, String id, long delay, Class<? extends ListenableWorker> worker) {
         boolean wifi = prefs(c).getBoolean("wifiOnly", CaptureRules.WIFI_ONLY_DEFAULT);
-        WorkManager.getInstance(c).enqueueUniqueWork("sx-capture:" + id, ExistingWorkPolicy.KEEP,
-            new OneTimeWorkRequest.Builder(CaptureUploadWorker.class).addTag("sx-auto-capture")
-                .setInputData(new Data.Builder().putString("id", id).build())
-                .setInitialDelay(delay, TimeUnit.MILLISECONDS)
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
-                .setConstraints(new Constraints.Builder().setRequiredNetworkType(wifi ? NetworkType.UNMETERED : NetworkType.CONNECTED).build()).build());
+        OneTimeWorkRequest.Builder upload = new OneTimeWorkRequest.Builder(worker).addTag("sx-auto-capture")
+            .setInputData(new Data.Builder().putString("id", id).build())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .setConstraints(new Constraints.Builder().setRequiredNetworkType(wifi ? NetworkType.UNMETERED : NetworkType.CONNECTED).build());
+        boolean startNow = delay <= CaptureRules.UNDO_MS + CaptureRules.UNDO_SLACK_MS;
+        if (!startNow) upload.setInitialDelay(delay, TimeUnit.MILLISECONDS);
+        // Before Android 12 WorkManager runs expedited work as a foreground service, which this app has none of.
+        else if (android.os.Build.VERSION.SDK_INT >= 31) upload.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST);
+        WorkManager.getInstance(c).enqueueUniqueWork("sx-capture:" + id, ExistingWorkPolicy.KEEP, upload.build());
+    }
+    /**
+     * Every call on its way (waiting, uploading, analysing) has its upload job again: run at the start of every look,
+     * when the app opens and on Try again, before anything that can stop a look early (consent, workspace, an error).
+     */
+    static int flush(Context c) {
+        long now = System.currentTimeMillis();
+        int queued = 0;
+        for (JSONObject job : jobs(c)) {
+            if (!Arrays.asList("waiting", "uploading", "analysing").contains(job.optString("state"))) continue;
+            enqueue(c, job.optString("id"), Math.max(0, job.optLong("due") - now));
+            queued++;
+        }
+        if (queued > 0) log("flush", queued + " on their way");
+        return queued;
+    }
+    /** One line per upload step under SXCapture (no numbers, names or files): what a device test reads back. */
+    static void log(String id, String what) {
+        String tag = id == null ? "-" : id.length() > 8 ? id.substring(0, 8) : id;
+        android.util.Log.i("SXCapture", tag + " " + what);
     }
     static JSONObject job(Context c, String id) throws JSONException { return new JSONObject(prefs(c).getString("job:" + id, "{}")); }
     /** Retry on the upload-status screen: one held call goes back in the queue now; the upload checks everything again. */

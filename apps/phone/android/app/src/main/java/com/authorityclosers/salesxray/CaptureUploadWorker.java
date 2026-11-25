@@ -55,8 +55,8 @@ public class CaptureUploadWorker extends Worker {
         try (Cursor cursor = c.getContentResolver().query(uri, new String[] {
             DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         }, null, null, null)) {
-            if (cursor == null || !cursor.moveToFirst() || cursor.getLong(0) != job.getLong("size") ||
-                cursor.getLong(1) != job.getLong("saved")) throw new CaptureApi.Hold(CaptureRules.REVIEW);
+            if (cursor == null || !cursor.moveToFirst()) throw new CaptureApi.Hold(CaptureRules.REVIEW);
+            unchanged(c, job, cursor.getLong(0), cursor.getLong(1));
         }
         return new FilterInputStream(c.getContentResolver().openInputStream(uri)) {
             @Override public int read(byte[] b, int off, int len) throws IOException {
@@ -74,7 +74,7 @@ public class CaptureUploadWorker extends Worker {
         try { now = RecordingScanner.stat(c, source); }
         catch (IOException | SecurityException | IllegalArgumentException gone) { throw new CaptureApi.Hold(CaptureRules.FOLDER); }
         if (now == null) throw new CaptureApi.Hold(CaptureRules.FOLDER);
-        if (now[0] != job.getLong("size") || now[1] != job.getLong("saved")) throw new CaptureApi.Hold(CaptureRules.REVIEW);
+        unchanged(c, job, now[0], now[1]);
         InputStream in;
         try { in = RecordingScanner.open(c, source); }
         catch (SecurityException gone) { throw new CaptureApi.Hold(CaptureRules.FOLDER); }
@@ -84,6 +84,21 @@ public class CaptureUploadWorker extends Worker {
                 return super.read(b, off, len);
             }
         };
+    }
+    /**
+     * The recording is the one matched: unchanged, or the same file finished by its dialler since (taken as it is
+     * now; the hash is made again). Still being written: tried again shortly. Anything else is held for the seller
+     * (REVIEW), as before. Before 25 Nov 2026 every change was held, and REVIEW is never retried, so a call whose
+     * file the recorder touched after the match could wait for ever under "Uploads in 60 seconds".
+     */
+    static void unchanged(Context c, JSONObject job, long size, long saved) throws Exception {
+        String change = CaptureRules.sourceChange(job.getLong("size"), job.getLong("saved"), size, saved, System.currentTimeMillis());
+        if (CaptureRules.SOURCE_SAME.equals(change)) return;
+        AutoCapture.log(job.optString("id"), "source " + change + " size " + job.getLong("size") + "->" + size + " saved +" + (saved - job.getLong("saved")) + "ms");
+        if (CaptureRules.SOURCE_SETTLING.equals(change)) throw new IOException("recording_settling");
+        if (CaptureRules.SOURCE_CHANGED.equals(change)) throw new CaptureApi.Hold(CaptureRules.REVIEW);
+        job.put("size", size).put("saved", saved).remove("sha");
+        AutoCapture.save(c, job, "uploading");
     }
     /** A recording the seller shared (ShareIn): only the app's own copy of it, unchanged since it was matched. */
     private InputStream shared(Context c, JSONObject job, Uri uri) throws Exception {
@@ -107,20 +122,34 @@ public class CaptureUploadWorker extends Worker {
         try {
             job = AutoCapture.job(c, id);
             if (id == null || !job.has("id")) return Result.success();
+            AutoCapture.log(id, "run " + job.optString("state") + " attempt " + getRunAttemptCount() + " due " + (job.optLong("due") - System.currentTimeMillis()) + "ms");
             if (Arrays.asList("cancelled", "held", "report_ready", "received").contains(job.optString("state"))) return Result.success();
-            if (System.currentTimeMillis() < job.optLong("due")) return Result.retry();
+            if (System.currentTimeMillis() < job.optLong("due")) {
+                if (!CaptureRules.waitInJob(job.optLong("due"), System.currentTimeMillis())) return Result.retry();
+                // The Undo minute runs out here, in the job that uploads (CaptureRules.waitInJob).
+                if (!untilDue(c, id, job.optLong("due"))) {
+                    AutoCapture.log(id, isStopped() ? "stopped in undo minute" : "undone");
+                    return isStopped() ? Result.retry() : Result.success();
+                }
+                job = AutoCapture.job(c, id);
+                if (!Arrays.asList("waiting", "uploading", "analysing").contains(job.optString("state"))) return Result.success();
+            }
             if (System.currentTimeMillis() - job.optLong("stamp") > CaptureRules.KEEP_MS) {
                 AutoCapture.hold(c, job, CaptureRules.EXPIRED); return Result.success();
             }
             // A cached app has no network on Android 15+ until the system runs a job for it (CaptureNet).
-            if (!CaptureNet.await(c, this)) return Result.retry();
+            if (!CaptureNet.await(c, this)) { AutoCapture.log(id, "no network"); return Result.retry(); }
             api = api(c);
             JSONObject policy = gate(c, api, job);
             // No bytes before the Undo state has been read again.
             synchronized (AutoCapture.class) {
                 if ("cancelled".equals(AutoCapture.job(c, id).optString("state"))) return Result.success();
+                boolean first = "waiting".equals(job.optString("state"));
                 AutoCapture.save(c, job, "uploading");
+                // The Undo minute is over: the notice says what happens now (it said "Uploads in 60 seconds").
+                if (first) AutoCapture.notice(c, id, "Uploading call with " + job.optString("leadName", "lead"), "It goes for analysis when the upload ends.", false);
             }
+            AutoCapture.log(id, "uploading");
             if (!job.has("sha")) {
                 MessageDigest digest = MessageDigest.getInstance("SHA-256");
                 long count = 0;
@@ -159,16 +188,28 @@ public class CaptureUploadWorker extends Worker {
             api.json("POST", "/v1/lead-desk/leads/" + job.getString("leadId") + "/recordings", new JSONObject()
                 .put("command_id", CaptureRules.id(id, "attach", 0)).put("submission_id", sid)
                 .put("call_event_id", job.getString("eventId")), null, false);
-            if (progress.optBoolean("has_report")) { AutoCapture.save(c, job, "report_ready"); return Result.success(); }
+            AutoCapture.log(id, "uploaded");
+            if (progress.optBoolean("has_report")) {
+                AutoCapture.save(c, job, "report_ready");
+                AutoCapture.notice(c, id, "Call with " + job.optString("leadName", "lead") + " analysed", "Its report is ready. Tap to open the lead.", false);
+                return Result.success();
+            }
             // The server has this call's recording (its hash matched above) and its own rules ended it without a
             // report: a short call (transcript and lead details only), a held plan, a run that failed there. Nothing
             // here is for the seller to upload by hand (FGS session on the Redmi, 3 Nov 2026: a 42 s call held as
             // ai_short_call said "A call needs you · upload its recording by hand" after "uploaded for analysis").
             if (Arrays.asList("failed", "cancelled").contains(progress.optString("local_state")) ||
                 Arrays.asList("held", "cancelled", "completed").contains(progress.optString("state"))) {
-                AutoCapture.save(c, job, "received"); return Result.success();
+                AutoCapture.save(c, job, "received");
+                AutoCapture.notice(c, id, "Call with " + job.optString("leadName", "lead") + " uploaded", "Tap to open the lead.", false);
+                return Result.success();
             }
-            if (progress.optBoolean("automatic_progression")) { AutoCapture.save(c, job, "analysing"); return Result.retry(); }
+            if (progress.optBoolean("automatic_progression")) {
+                boolean first = !"analysing".equals(job.optString("state"));
+                AutoCapture.save(c, job, "analysing");
+                if (first) AutoCapture.notice(c, id, "Call with " + job.optString("leadName", "lead") + " uploaded for analysis", "Open the lead to see its report when ready.", false);
+                return Result.retry();
+            }
             if (!"completed".equals(progress.optString("local_state"))) return Result.retry();
             gate(c, api, job);
             JSONObject plan = api.json("POST", API + sid + "/plan/quote", new JSONObject().put("report_language", "en"), "capture-quote:" + sid, false);
@@ -183,16 +224,32 @@ public class CaptureUploadWorker extends Worker {
             AutoCapture.notice(c, id, "Call with " + job.optString("leadName", "lead") + " uploaded for analysis", "Open the lead to see its report when ready.", false);
             return Result.retry();
         } catch (CaptureApi.Hold hold) {
+            AutoCapture.log(id, "held " + hold.reason);
             AutoCapture.hold(c, job, hold.reason);
             return Result.success();
         } catch (CaptureApi.Failure error) {
             // A profile 403 or an allowance 409 holds the call, tells the seller and retries once fixed;
             // only a consent loss turns uploads off (CaptureRules.refusal, stops).
             String reason = AutoCapture.explain(api, error);
+            AutoCapture.log(id, "refused " + error.code + " -> " + reason);
             if (CaptureRules.RETRY.equals(reason)) return Result.retry();
             AutoCapture.hold(c, job, reason);
             return Result.success();
-        } catch (Exception error) { return Result.retry(); }
+        } catch (Exception error) {
+            // Only the app's own short codes: a system message can carry the file's path, and so a contact's name.
+            String code = error.getMessage();
+            if (code == null || code.contains("/") || code.contains(" ") || code.length() > 40) code = "";
+            AutoCapture.log(id, "retry " + error.getClass().getSimpleName() + " " + code);
+            return Result.retry();
+        }
         finally { CaptureNet.end(); }
+    }
+    /** Waits until {@code due}; false once the seller tapped Undo or the system stopped this job. */
+    boolean untilDue(Context c, String id, long due) throws JSONException {
+        while (System.currentTimeMillis() < due) {
+            if (isStopped() || "cancelled".equals(AutoCapture.job(c, id).optString("state"))) return false;
+            android.os.SystemClock.sleep(Math.min(500L, Math.max(1L, due - System.currentTimeMillis())));
+        }
+        return !isStopped() && !"cancelled".equals(AutoCapture.job(c, id).optString("state"));
     }
 }

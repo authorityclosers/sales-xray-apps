@@ -122,6 +122,85 @@ public class CaptureUploadTest {
         worker().doWork(); assertEquals(0, fake.uploads); assertEquals(0, fake.plans);
         assertEquals("cancelled", AutoCapture.job(c, ID).getString("state"));
     }
+    void dueIn(long ms) throws Exception {
+        AutoCapture.prefs(c).edit().putString("job:" + ID, AutoCapture.job(c, ID).put("due", System.currentTimeMillis() + ms).toString()).commit();
+    }
+    // Redmi 13, 25 Nov 2026: "Uploads in 60 seconds" and still waiting 33 minutes later. The job that uploads waits
+    // the Undo minute out itself, then uploads in the same run.
+    @Test public void aCallInItsUndoMinuteUploadsOnceTheMinuteIsOver() throws Exception {
+        dueIn(2_000);
+        long due = AutoCapture.job(c, ID).getLong("due"), started = System.currentTimeMillis();
+        worker().doWork();
+        assertTrue(System.currentTimeMillis() >= due);
+        assertTrue(System.currentTimeMillis() - started < 20_000);
+        assertEquals(1, fake.uploads);
+        assertNotEquals("waiting", AutoCapture.job(c, ID).getString("state"));
+    }
+    @Test public void undoDuringTheMinuteMeansNoUpload() throws Exception {
+        dueIn(3_000);
+        Thread undo = new Thread(() -> {
+            android.os.SystemClock.sleep(800);
+            new CaptureUndoReceiver().onReceive(c, new android.content.Intent().putExtra("id", ID));
+        });
+        undo.start();
+        assertEquals(ListenableWorker.Result.success(), worker().doWork());
+        undo.join();
+        assertEquals(0, fake.uploads);
+        assertEquals("cancelled", AutoCapture.job(c, ID).getString("state"));
+    }
+    // Detection to upload with nothing but WorkManager in between: enqueue as a scan does, and the system runs it.
+    @Test public void aDetectedCallUploadsByItselfThroughWorkManager() throws Exception {
+        dueIn(2_000);
+        WorkManager work = WorkManager.getInstance(c);
+        try {
+            AutoCapture.enqueue(c, ID, 2_000, SeededWorker.class);
+            long until = System.currentTimeMillis() + 90_000;
+            while (fake.uploads == 0 && System.currentTimeMillis() < until) Thread.sleep(250);
+            assertEquals(1, fake.uploads);
+        } finally {
+            work.cancelUniqueWork("sx-capture:" + ID).getResult().get();
+        }
+    }
+    // A waiting call whose job is gone (dropped, cancelled, ended) gets one again from the next look or app open.
+    @Test public void aWaitingCallWhoseJobIsGoneGetsItBack() throws Exception {
+        dueIn(3_600_000); // far off: the real worker stays queued in this test
+        WorkManager work = WorkManager.getInstance(c);
+        try {
+            work.cancelUniqueWork("sx-capture:" + ID).getResult().get();
+            assertEquals(1, AutoCapture.flush(c));
+            assertEquals(1, pending(work));
+            // KEEP: a second flush leaves the queued job alone.
+            AutoCapture.flush(c);
+            assertEquals(1, pending(work));
+        } finally {
+            work.cancelUniqueWork("sx-capture:" + ID).getResult().get();
+        }
+    }
+    int pending(WorkManager work) throws Exception {
+        int pending = 0;
+        for (int i = 0; i < 20; i++) {
+            pending = 0;
+            for (WorkInfo info : work.getWorkInfosForUniqueWork("sx-capture:" + ID).get()) if (!info.getState().isFinished()) pending++;
+            if (pending > 0) return pending;
+            Thread.sleep(100);
+        }
+        return pending;
+    }
+    // A held call's own notice says it is not uploaded (it said "Uploads in 60 seconds" before).
+    @Test public void aHeldCallsOwnNoticeSaysItIsNotUploaded() throws Exception {
+        android.app.NotificationManager manager = c.getSystemService(android.app.NotificationManager.class);
+        manager.cancelAll();
+        fake.otherWorkspace = true; worker().doWork();
+        assertEquals("held", AutoCapture.job(c, ID).getString("state"));
+        boolean told = false;
+        for (int i = 0; i < 20 && !told; i++) {
+            for (android.service.notification.StatusBarNotification n : manager.getActiveNotifications())
+                told |= n.getId() == ID.hashCode() && String.valueOf(n.getNotification().extras.getCharSequence("android.title")).endsWith("not uploaded yet");
+            if (!told) Thread.sleep(100);
+        }
+        assertTrue(told);
+        manager.cancelAll();
+    }
     /** A held call goes back in the queue (as the watch does) and runs here, not in WorkManager. */
     void releaseAndRun() throws Exception {
         JSONObject job = AutoCapture.job(c, ID).put("due", System.currentTimeMillis() + 3_600_000);
