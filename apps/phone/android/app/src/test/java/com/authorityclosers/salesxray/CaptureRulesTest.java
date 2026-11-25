@@ -139,7 +139,9 @@ public class CaptureRulesTest {
     }
     @Test public void onlyConsentAndNoticesTurnUploadsOff() {
         assertEquals(CaptureRules.SIGNED_OUT, CaptureRules.refusal(401, "", null, null));
-        assertEquals(CaptureRules.CONSENT, CaptureRules.refusal(409, "Automatic analysis isn't on for you here. Tap Analyse this call.", null, true));
+        // The server's standing-consent refusal holds the call (TERMS); the next scan reads the consent and only an
+        // "off" there turns uploads off.
+        assertEquals(CaptureRules.TERMS, CaptureRules.refusal(409, "Automatic analysis isn't on for you here. Tap Analyse this call.", null, true));
         assertEquals(CaptureRules.WORKSPACE, CaptureRules.refusal(409, "This call belongs to another workspace or seller.", null, true));
         for (int code : new int[] {500, 502, 503, 429, 408}) assertEquals(CaptureRules.RETRY, CaptureRules.refusal(code, "", null, null));
         assertEquals(CaptureRules.REVIEW, CaptureRules.refusal(422, "Choose an audio or video file up to 100 MB.", null, null));
@@ -232,5 +234,30 @@ public class CaptureRulesTest {
         assertEquals(CaptureRules.NET_BLOCKED, CaptureRules.netState(true, true, false));
         assertEquals(CaptureRules.NET_BLOCKED, CaptureRules.netState(true, false, false));
         assertEquals(CaptureRules.NET_OFFLINE, CaptureRules.netState(false, false, false));
+    }
+
+    // SX-AUTOUPLOAD, production 16 Nov 2026: new upload terms (another AI provider) made every phone's standing
+    // consent read as changed, and each phone turned its uploads off. New terms now hold calls and ask again.
+    @Test public void newTermsHoldCallsAndOnlyTurningOffStopsUploads() throws Exception {
+        String hash = "a".repeat(64), other = "b".repeat(64);
+        JSONObject on = new JSONObject().put("state", "on").put("can_start", true).put("terms_sha256", hash);
+        assertNull(CaptureRules.consentGap(on, hash));
+        assertEquals(CaptureRules.TERMS, CaptureRules.consentGap(on, other));
+        assertEquals(CaptureRules.TERMS, CaptureRules.consentGap(new JSONObject().put("state", "ask").put("can_start", false), hash));
+        assertEquals(CaptureRules.TERMS, CaptureRules.consentGap(null, hash));
+        assertEquals(CaptureRules.TERMS, CaptureRules.consentGap(on, ""));
+        assertEquals(CaptureRules.CONSENT, CaptureRules.consentGap(new JSONObject().put("state", "off").put("can_start", false), hash));
+        // AI level Off: the consent is on, but nothing can start.
+        assertEquals(CaptureRules.CONSENT, CaptureRules.consentGap(new JSONObject().put("state", "on").put("can_start", false).put("terms_sha256", hash), hash));
+        assertFalse(CaptureRules.stops(CaptureRules.TERMS));
+        assertTrue(CaptureRules.stops(CaptureRules.CONSENT));
+        assertTrue(CaptureRules.recoverable(CaptureRules.TERMS));
+        assertTrue(CaptureRules.release(CaptureRules.TERMS, true, null, null, stamp, stamp + 1000));
+        assertEquals(CaptureRules.TERMS, CaptureRules.health(true, null, CaptureRules.TERMS, new HashMap<>(), 0, stamp));
+        String[] words = CaptureRules.attention(CaptureRules.TERMS, 2, false);
+        assertTrue(words[1].startsWith("2 lead calls wait"));
+        assertTrue(words[1].contains("by themselves"));
+        assertEquals("/settings/privacy#automatic-call-uploads", words[2]);
+        assertEquals(CaptureRules.CONSENT, CaptureScanRules.holdReason(CaptureRules.TERMS));
     }
 }

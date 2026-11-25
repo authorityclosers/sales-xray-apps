@@ -57,7 +57,7 @@ public class CaptureTrigger extends Worker {
      * the seller's recordings folder is worth a look; this reads the folder on the phone, and nothing is sent.
      */
     static boolean newRecording(Context c, long seenMs) {
-        for (RecordingFolder.Document doc : RecordingFolder.files(c, seenMs - 5_000L))
+        for (RecordingFolder.Document doc : AutoCapture.recordings(c, seenMs - 5_000L))
             if (doc.modifiedMs >= seenMs - 5_000L && AutoCapture.audio(doc)) return true;
         return false;
     }

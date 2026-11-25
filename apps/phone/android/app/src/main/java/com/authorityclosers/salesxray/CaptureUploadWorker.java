@@ -23,13 +23,16 @@ public class CaptureUploadWorker extends Worker {
             throw new CaptureApi.Hold(CaptureRules.WORKSPACE);
         // The job was inside the upload window when it was made (turning uploads off and on keeps it);
         // the number must still be this seller's lead. A shared recording has the call's number, not a file name's.
-        String lead = job.optBoolean("shared")
+        // A shared recording, or one the call history matched (named after a contact), has the call's number.
+        String lead = job.optBoolean("shared") || "call_log".equals(job.optString("matched"))
             ? CaptureRules.leadNumber(job.getString("number"), book.optJSONArray("numbers"))
             : CaptureRules.number(job.getString("name"), job.getLong("saved"), System.currentTimeMillis(),
                 0, TimeZone.getDefault(), book);
         if (lead == null) throw new CaptureApi.Hold(CaptureRules.REVIEW);
         JSONObject policy = api.policy();
-        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) throw new CaptureApi.Hold(CaptureRules.CONSENT);
+        // New terms hold the call until the seller agrees again (TERMS); only turning consent off stops uploads.
+        String gap = CaptureRules.consentGap(api.consent(), policy.optString("policy_sha256"));
+        if (gap != null) throw new CaptureApi.Hold(gap);
         if (AutoCapture.prefs(c).getBoolean("wifiOnly", CaptureRules.WIFI_ONLY_DEFAULT)) {
             ConnectivityManager network = c.getSystemService(ConnectivityManager.class);
             NetworkCapabilities active = network.getNetworkCapabilities(network.getActiveNetwork());
@@ -42,6 +45,8 @@ public class CaptureUploadWorker extends Worker {
     InputStream source(Context c, JSONObject job) throws Exception {
         Uri uri = Uri.parse(job.getString("source"));
         if (job.optBoolean("shared")) return shared(c, job, uri);
+        String listed = job.getString("source");
+        if (listed.startsWith("media:") || listed.startsWith("tree:") || listed.startsWith("file:")) return listed(c, job, listed);
         boolean granted = false;
         for (Uri tree : RecordingFolder.trees(c)) {
             if (uri.getAuthority().equals(tree.getAuthority()) && RecordingFolderRules.inside(DocumentsContract.getTreeDocumentId(tree), DocumentsContract.getDocumentId(uri))) granted = true;
@@ -54,6 +59,26 @@ public class CaptureUploadWorker extends Worker {
                 cursor.getLong(1) != job.getLong("saved")) throw new CaptureApi.Hold(CaptureRules.REVIEW);
         }
         return new FilterInputStream(c.getContentResolver().openInputStream(uri)) {
+            @Override public int read(byte[] b, int off, int len) throws IOException {
+                if (isStopped() || !AutoCapture.prefs(c).getBoolean("on", false)) throw new IOException("stopped");
+                return super.read(b, off, len);
+            }
+        };
+    }
+    /**
+     * A recording from the phone's listing (the picked folder or the media index's call-recording folders, since
+     * 25 Nov 2026): opened only through RecordingScanner's own checks, and only while unchanged since it was matched.
+     */
+    private InputStream listed(Context c, JSONObject job, String source) throws Exception {
+        long[] now;
+        try { now = RecordingScanner.stat(c, source); }
+        catch (IOException | SecurityException | IllegalArgumentException gone) { throw new CaptureApi.Hold(CaptureRules.FOLDER); }
+        if (now == null) throw new CaptureApi.Hold(CaptureRules.FOLDER);
+        if (now[0] != job.getLong("size") || now[1] != job.getLong("saved")) throw new CaptureApi.Hold(CaptureRules.REVIEW);
+        InputStream in;
+        try { in = RecordingScanner.open(c, source); }
+        catch (SecurityException gone) { throw new CaptureApi.Hold(CaptureRules.FOLDER); }
+        return new FilterInputStream(in) {
             @Override public int read(byte[] b, int off, int len) throws IOException {
                 if (isStopped() || !AutoCapture.prefs(c).getBoolean("on", false)) throw new IOException("stopped");
                 return super.read(b, off, len);

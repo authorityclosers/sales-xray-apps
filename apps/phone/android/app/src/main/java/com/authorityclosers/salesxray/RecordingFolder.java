@@ -41,6 +41,8 @@ final class RecordingFolder {
         long modifiedMs;
         long size;
         String mime;
+        /** The listing's own name for it ("tree:", "media:" or "file:" and the address), as RecordingScanner opens it. */
+        String source;
     }
 
     private RecordingFolder() {}
@@ -159,6 +161,7 @@ final class RecordingFolder {
                         document.modifiedMs = cursor.isNull(3) ? 0 : cursor.getLong(3);
                         document.size = cursor.isNull(4) ? 0 : cursor.getLong(4);
                         document.mime = mime;
+                        document.source = "tree:" + document.uri;
                         if (document.name != null) found.add(document);
                     }
                 } catch (RuntimeException ignored) {

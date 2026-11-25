@@ -30,8 +30,8 @@ import org.json.JSONObject;
 final class OldCallsRules {
 
     static final long DAY_MS = 24L * 60 * 60 * 1000;
-    /** The page asks for two weeks; when it says nothing, two weeks. */
-    static final long DEFAULT_WINDOW_MS = 14 * DAY_MS;
+    /** When the page says nothing, the last 30 days (SX-AUTOUPLOAD, 25 Nov 2026: the first look goes 30 days back). */
+    static final long DEFAULT_WINDOW_MS = 30 * DAY_MS;
     /** Never further back than a month, however far the page asks. */
     static final long MAX_WINDOW_MS = 31 * DAY_MS;
     /** At most this many calls per ask (the newest are kept). */

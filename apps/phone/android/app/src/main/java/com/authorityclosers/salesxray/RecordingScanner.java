@@ -172,6 +172,7 @@ final class RecordingScanner {
             MediaStore.MediaColumns.SIZE,
             MediaStore.MediaColumns.MIME_TYPE,
             "duration",
+            MediaStore.MediaColumns.DATE_MODIFIED,
         };
         StringBuilder selection = new StringBuilder("(");
         for (int i = 0; i < PATH_HINTS.length; i++) {
@@ -200,7 +201,10 @@ final class RecordingScanner {
                 long size = cursor.getLong(4);
                 if (!seen.add(name.toLowerCase(Locale.ROOT) + ":" + size)) continue;
                 Uri uri = ContentUris.withAppendedId(collection, id);
-                found.add(item("media:" + uri, name, folderLabel(folder), cursor.getLong(3) * 1000L, cursor.getLong(6), size, cursor.getString(5)));
+                JSONObject entry = item("media:" + uri, name, folderLabel(folder), cursor.getLong(3) * 1000L, cursor.getLong(6), size, cursor.getString(5));
+                // When the dialer last wrote it (automatic uploads check the file is unchanged before sending it).
+                try { entry.put("modifiedMs", cursor.isNull(7) ? cursor.getLong(3) * 1000L : cursor.getLong(7) * 1000L); } catch (JSONException ignored) {}
+                found.add(entry);
             }
         } catch (RuntimeException ignored) {
             // A phone without a media index, or a revoked permission: show nothing.
@@ -337,6 +341,30 @@ final class RecordingScanner {
             return stream;
         }
         return new FileInputStream(allowedFile(context, source));
+    }
+
+    /**
+     * A listed recording's size and last-written time now ({size, modifiedMs}), through the same checks as
+     * {@link #open}; null when it is gone. Automatic uploads send a file only while both are unchanged.
+     */
+    static long[] stat(Context context, String source) throws IOException {
+        if (source.startsWith("media:")) {
+            try (Cursor cursor = context.getContentResolver().query(mediaUri(source),
+                new String[] { MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_MODIFIED }, null, null, null)) {
+                if (cursor == null || !cursor.moveToFirst()) return null;
+                return new long[] { cursor.getLong(0), cursor.getLong(1) * 1000L };
+            }
+        }
+        if (source.startsWith("tree:")) {
+            try (Cursor cursor = context.getContentResolver().query(RecordingFolder.allowed(context, source), new String[] {
+                android.provider.DocumentsContract.Document.COLUMN_SIZE, android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            }, null, null, null)) {
+                if (cursor == null || !cursor.moveToFirst()) return null;
+                return new long[] { cursor.getLong(0), cursor.getLong(1) };
+            }
+        }
+        File file = allowedFile(context, source);
+        return file.isFile() ? new long[] { file.length(), file.lastModified() } : null;
     }
 
     /** The same recordings as {@link #open}, as a file descriptor (AudioLevels decodes from it). */

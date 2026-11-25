@@ -43,7 +43,18 @@ final class AutoCapture {
         String health = CaptureRules.health(on, p.getString("stopped", null), p.getString("paused", null), held,
             p.getLong("netBlockedAt", 0), System.currentTimeMillis());
         Integer calls = held.get(health);
+        int failed = 0;
+        for (Map.Entry<String, Integer> entry : held.entrySet())
+            if (!CaptureRules.recoverable(entry.getKey())) failed += entry.getValue();
+        JSONArray folders = new JSONArray();
+        for (String path : RecordingFolder.paths(c)) folders.put(path);
         return new JSONObject().put("supported", true).put("on", on)
+            // The upload-status screen (SX-AUTOUPLOAD, 25 Nov 2026): last upload, waiting, failed, the folder.
+            .put("lastUploadAt", p.getLong("lastUploadAt", 0) > 0 ? p.getLong("lastUploadAt", 0) : JSONObject.NULL)
+            .put("lastUploadLead", p.getString("lastUploadLead", null) == null ? JSONObject.NULL : p.getString("lastUploadLead", null))
+            .put("lastScanAt", p.getLong("lastScanAt", 0) > 0 ? p.getLong("lastScanAt", 0) : JSONObject.NULL)
+            .put("failed", failed).put("folders", folders)
+            .put("callLogMatch", CallLogSync.hasAccess(c))
             .put("wifiOnly", p.getBoolean("wifiOnly", CaptureRules.WIFI_ONLY_DEFAULT)).put("health", health)
             .put("healthCalls", calls == null ? pending : calls).put("pending", pending).put("held", new JSONObject(held))
             .put("offSinceMs", !on && p.getLong("offAt", 0) > 0 ? p.getLong("offAt", 0) : JSONObject.NULL);
@@ -55,7 +66,7 @@ final class AutoCapture {
         // Turning off keeps whose uploads these were, so turning on again resumes the same seller's calls.
         String identity = on ? CaptureRules.identity(book) : p.getString("identity", "");
         if (on && !noticesAllowed(c)) throw new Exception("Allow upload notifications first, so Undo is available.");
-        if (on && (identity.isEmpty() || RecordingFolder.trees(c).isEmpty())) throw new Exception("Pick your recordings folder inside an organisation workspace first.");
+        if (on && (identity.isEmpty() || (RecordingFolder.trees(c).isEmpty() && !RecordingScanner.hasAudioAccess(c)))) throw new Exception("Pick your recordings folder inside an organisation workspace first.");
         long now = System.currentTimeMillis();
         boolean wasOn = p.getBoolean("on", false);
         boolean same = identity.equals(p.getString("identity", ""));
@@ -123,6 +134,33 @@ final class AutoCapture {
                 .setInitialDelay(90, TimeUnit.SECONDS).setConstraints(new Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED).build()).build());
     }
+    /**
+     * The phone's call recordings saved since {@code afterMs}: the folder the seller picked, and the call-recording
+     * folders Android's audio access shows (SX-AUTOUPLOAD, production 21-25 Nov 2026: sellers picked "Recordings"
+     * while the dialer saved to "Music/Recordings/Call Recordings", and the scan, reading the picked folder only,
+     * saw none of 364 lead calls' recordings the media index held). Never Sales X-Ray's own recordings.
+     */
+    static List<RecordingFolder.Document> recordings(Context c, long afterMs) {
+        List<RecordingFolder.Document> docs = new ArrayList<>();
+        for (JSONObject item : RecordingScanner.list(c, 500, afterMs)) {
+            String source = item.optString("source");
+            Uri uri;
+            if (source.startsWith("media:")) uri = Uri.parse(source.substring(6));
+            else if (source.startsWith("tree:")) uri = Uri.parse(source.substring(5));
+            else if (source.startsWith("file:")) uri = Uri.fromFile(new java.io.File(source.substring(5)));
+            else continue;
+            RecordingFolder.Document doc = new RecordingFolder.Document();
+            doc.source = source;
+            doc.uri = uri;
+            doc.name = item.optString("name", null);
+            doc.folder = item.optString("folder", "");
+            doc.modifiedMs = item.optLong("modifiedMs", item.optLong("addedMs"));
+            doc.size = item.optLong("size");
+            doc.mime = item.optString("mime", null);
+            if (doc.name != null && doc.modifiedMs >= afterMs) docs.add(doc);
+        }
+        return docs;
+    }
     static boolean audio(RecordingFolder.Document doc) {
         return doc.size > 0 && doc.size <= CaptureRules.MAX_BYTES && Arrays.asList("m4a", "mp3", "mpeg", "wav", "ogg", "flac", "aac", "amr", "awb", "3gp", "opus").contains(RecordingScanner.extension(doc.name));
     }
@@ -134,11 +172,15 @@ final class AutoCapture {
         // Another workspace (or Personal) pauses uploads; they never go to the wrong one, and resume back here.
         if (!enabled(c, book)) { pause(c, CaptureRules.WORKSPACE); CaptureScanReport.send(c, "workspace", book, null); return; }
         JSONObject policy = api.policy();
-        if (!CaptureRules.consent(api.consent(), policy.optString("policy_sha256"))) {
-            stop(c, CaptureRules.CONSENT);
+        String gap = CaptureRules.consentGap(api.consent(), policy.optString("policy_sha256"));
+        if (gap != null) {
+            // Turned off by the seller: uploads off, as before. New terms: calls wait and the seller is asked again.
+            if (CaptureRules.CONSENT.equals(gap)) stop(c, CaptureRules.CONSENT);
+            else pause(c, gap);
             CaptureScanReport.send(c, "consent", book, null);
             return;
         }
+        prefs(c).edit().putLong("lastScanAt", System.currentTimeMillis()).apply();
         CaptureScanReport.Seen seen = new CaptureScanReport.Seen();
         resume(c);
         long now = System.currentTimeMillis();
@@ -155,13 +197,15 @@ final class AutoCapture {
         ShareIn.cleanup(c);
         if (expired > 0) attention(c, CaptureRules.EXPIRED, expired);
         boolean calling = CaptureTrigger.inCall(c);
-        for (RecordingFolder.Document doc : RecordingFolder.files(c, Math.max(prefs(c).getLong("since", now), now - CaptureRules.KEEP_MS))) {
+        long window = Math.max(prefs(c).getLong("since", now), now - CaptureRules.KEEP_MS);
+        List<RecordingFolder.Document> unnamed = new ArrayList<>();
+        for (RecordingFolder.Document doc : recordings(c, window)) {
             if (!audio(doc)) continue;
             seen.files++;
             if (!CaptureRules.settled(doc.modifiedMs, now, calling)) continue;
             String number = CaptureRules.number(doc.name, doc.modifiedMs, now,
                 prefs(c).getLong("since", now), TimeZone.getDefault(), book);
-            if (number == null) continue;
+            if (number == null) { unnamed.add(doc); continue; }
             seen.matched++;
             long stamp = RecordingMatch.read(doc.name, TimeZone.getDefault()).stampMs;
             String id = CaptureRules.id(CaptureRules.identity(book), number, stamp);
@@ -185,7 +229,7 @@ final class AutoCapture {
                 throw rejected;
             }
             JSONObject job = new JSONObject().put("id", id).put("identity", CaptureRules.identity(book))
-                .put("source", doc.uri.toString()).put("name", doc.name).put("number", number)
+                .put("source", doc.source).put("name", doc.name).put("number", number)
                 .put("stamp", stamp).put("saved", doc.modifiedMs).put("size", doc.size)
                 .put("seconds", seconds).put("leadId", call.getString("lead_id"))
                 .put("eventId", call.getString("event_id")).put("leadName", call.optString("lead_name", "lead"))
@@ -195,6 +239,8 @@ final class AutoCapture {
             notice(c, id, "Call with " + job.optString("leadName", "lead") + " waiting for upload", "Uploads in 60 seconds. Undo keeps this recording on your phone.", true);
             enqueue(c, id, CaptureRules.UNDO_MS);
         }
+        // Recordings named after a contact (or with no number): the call history says which lead call they are.
+        seen.matched += byCallLog(c, api, book, unnamed, window, now);
         release(c, api, CaptureRules.identity(book), now);
         // Recover a process death between saving a job and enqueueing it.
         for (JSONObject job : jobs(c)) {
@@ -203,6 +249,102 @@ final class AutoCapture {
         }
         CaptureScanReport.send(c, "ran", book, seen);
     }
+    /**
+     * Lead calls in the call history that no file name named, each matched to the one recording that fits its time
+     * (CaptureCallRules): the same lead call, job, 60-second Undo and upload as a recording named after the number.
+     * Needs call history access (the work-call logging the seller turned on); without it nothing changes.
+     */
+    static int byCallLog(Context c, CaptureApi api, JSONObject book, List<RecordingFolder.Document> unnamed, long window, long now) throws Exception {
+        if (unnamed.isEmpty() || !CallLogSync.hasAccess(c)) return 0;
+        String identity = CaptureRules.identity(book);
+        List<JSONObject> jobs = jobs(c);
+        List<CaptureCallRules.Call> calls = new ArrayList<>();
+        for (CaptureCallRules.Call call : leadCalls(c, book, window, now)) {
+            String id = CaptureRules.id(identity, call.number, call.startedMs);
+            if (prefs(c).contains("job:" + id) || prefs(c).contains("refused:" + id)) continue;
+            if (CaptureCallRules.covered(jobs, call.number, call.startedMs)) continue;
+            calls.add(call);
+        }
+        if (calls.isEmpty()) return 0;
+        Set<String> used = new HashSet<>();
+        for (JSONObject job : jobs) {
+            // Jobs before 25 Nov 2026 keep the picked folder's document without "tree:".
+            used.add(job.optString("source"));
+            used.add("tree:" + job.optString("source"));
+        }
+        long first = Long.MAX_VALUE, last = 0;
+        for (CaptureCallRules.Call call : calls) {
+            first = Math.min(first, call.startedMs);
+            last = Math.max(last, call.startedMs + call.seconds * 1000L);
+        }
+        List<JSONObject> items = new ArrayList<>();
+        Map<String, RecordingFolder.Document> docs = new HashMap<>();
+        for (RecordingFolder.Document doc : unnamed) {
+            // Only files saved around one of these calls are opened for their length.
+            if (doc.modifiedMs < first - RecordingMatch.SAVED_BEFORE_MS || doc.modifiedMs > last + RecordingMatch.SAVED_AFTER_MS) continue;
+            String source = doc.source;
+            if (used.contains(source)) continue;
+            long length = 0;
+            MediaMetadataRetriever media = new MediaMetadataRetriever();
+            try {
+                media.setDataSource(c, doc.uri);
+                length = Long.parseLong(media.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
+            } catch (Exception unsupported) { length = 0; }
+            finally { try { media.release(); } catch (Exception ignored) { } }
+            items.add(new JSONObject().put("name", doc.name).put("addedMs", doc.modifiedMs)
+                .put("durationMs", length).put("source", source));
+            docs.put(source, doc);
+        }
+        int made = 0;
+        for (Map.Entry<CaptureCallRules.Call, JSONObject> found : CaptureCallRules.match(calls, items, used, TimeZone.getDefault()).entrySet()) {
+            CaptureCallRules.Call call = found.getKey();
+            RecordingFolder.Document doc = docs.get(found.getValue().optString("source"));
+            if (doc == null) continue;
+            String id = CaptureRules.id(identity, call.number, call.startedMs);
+            JSONObject logged;
+            try {
+                logged = api.json("POST", "/v1/lead-desk/recording-call", new JSONObject()
+                    .put("command_id", id).put("number", call.number).put("started_at", CallLogRules.iso(call.startedMs))
+                    .put("duration_seconds", call.seconds), id, false);
+            } catch (CaptureApi.Failure rejected) {
+                if (refused(c, id, call.number, rejected)) continue;
+                if (rejected.code == 409 || rejected.code == 422 || rejected.code == 404) continue;
+                throw rejected;
+            }
+            JSONObject job = new JSONObject().put("id", id).put("identity", identity)
+                .put("matched", "call_log").put("source", doc.source).put("name", doc.name).put("number", call.number)
+                .put("stamp", call.startedMs).put("saved", doc.modifiedMs).put("size", doc.size)
+                .put("seconds", call.seconds).put("leadId", logged.getString("lead_id"))
+                .put("eventId", logged.getString("event_id")).put("leadName", logged.optString("lead_name", "lead"))
+                .put("state", "waiting").put("due", System.currentTimeMillis() + CaptureRules.UNDO_MS);
+            prefs(c).edit().putString("job:" + id, job.toString()).commit();
+            notice(c, id, "Call with " + job.optString("leadName", "lead") + " waiting for upload", "Uploads in 60 seconds. Undo keeps this recording on your phone.", true);
+            enqueue(c, id, CaptureRules.UNDO_MS);
+            made++;
+        }
+        return made;
+    }
+
+    /** Connected calls with this seller's leads since {@code from}, from the phone's call history; never another number. */
+    static List<CaptureCallRules.Call> leadCalls(Context c, JSONObject book, long from, long now) {
+        List<CaptureCallRules.Call> calls = new ArrayList<>();
+        JSONArray numbers = book.optJSONArray("numbers");
+        String[] columns = { android.provider.CallLog.Calls.NUMBER, android.provider.CallLog.Calls.DATE, android.provider.CallLog.Calls.DURATION };
+        try (android.database.Cursor cursor = c.getContentResolver().query(android.provider.CallLog.Calls.CONTENT_URI, columns,
+                android.provider.CallLog.Calls.DATE + " > ?", new String[] { String.valueOf(from) },
+                android.provider.CallLog.Calls.DATE + " DESC")) {
+            while (cursor != null && cursor.moveToNext() && calls.size() < 300) {
+                long started = cursor.getLong(1), seconds = cursor.getLong(2);
+                if (!CaptureCallRules.candidate(started, seconds, from, now, CaptureRules.SETTLE_MS)) continue;
+                String number = CaptureRules.leadNumber(cursor.getString(0), numbers);
+                if (number != null) calls.add(new CaptureCallRules.Call(number, started, seconds));
+            }
+        } catch (RuntimeException unreadable) {
+            // No call history access or no provider: the file names alone decide, as before.
+        }
+        return calls;
+    }
+
     // What became of a recording shared to the app (shared): queued, or why not.
     static final String SHARED_OK = "ok";
     /** Uploads are off here (or notices, consent, another workspace): Attach to a lead instead. */
@@ -335,7 +477,7 @@ final class AutoCapture {
         long from = CaptureRules.resumeSince(p.getLong("offAt", 0), now, true);
         if (p.getBoolean("on", false) || identity.isEmpty() || !identity.equals(p.getString("identity", "")) || from >= now) return 0;
         int count = 0;
-        for (RecordingFolder.Document doc : RecordingFolder.files(c, from)) {
+        for (RecordingFolder.Document doc : recordings(c, from)) {
             if (!audio(doc)) continue;
             String number = CaptureRules.number(doc.name, doc.modifiedMs, now, from, TimeZone.getDefault(), book);
             if (number == null) continue;
@@ -379,7 +521,10 @@ final class AutoCapture {
                     if (api.json("GET", "/v1/conversation/acquisition/submissions/" + sid, null, null, false).optBoolean("has_report")) save(c, job, "report_ready");
                 } catch (Exception unavailable) { /* Keep the last confirmed state. */ }
             }
-            JSONObject state = new JSONObject().put("eventId", job.optString("eventId")).put("state", job.optString("state"));
+            JSONObject state = new JSONObject().put("eventId", job.optString("eventId")).put("state", job.optString("state"))
+                .put("id", job.optString("id")).put("leadId", job.optString("leadId")).put("leadName", job.optString("leadName", "lead"))
+                .put("stamp", job.optLong("stamp")).put("seconds", job.optLong("seconds")).put("due", job.optLong("due"))
+                .put("uploadedAt", job.optLong("uploadedAt")).put("matched", job.optString("matched", "name"));
             if ("held".equals(job.optString("state"))) state.put("hold", reason(job));
             states.put(state);
         }
@@ -395,9 +540,26 @@ final class AutoCapture {
                 .setConstraints(new Constraints.Builder().setRequiredNetworkType(wifi ? NetworkType.UNMETERED : NetworkType.CONNECTED).build()).build());
     }
     static JSONObject job(Context c, String id) throws JSONException { return new JSONObject(prefs(c).getString("job:" + id, "{}")); }
+    /** Retry on the upload-status screen: one held call goes back in the queue now; the upload checks everything again. */
+    static boolean retry(Context c, String id) throws JSONException {
+        JSONObject job = job(c, id);
+        if (!job.has("id") || !"held".equals(job.optString("state")) || CaptureRules.EXPIRED.equals(reason(job))) return false;
+        job.remove("hold"); job.remove("heldAt");
+        job.put("due", System.currentTimeMillis());
+        save(c, job, "waiting");
+        WorkManager.getInstance(c).cancelUniqueWork("sx-capture:" + id);
+        enqueue(c, id, 0);
+        return true;
+    }
     static void save(Context c, JSONObject job, String state) throws JSONException {
         job.put("state", state);
-        prefs(c).edit().putString("job:" + job.getString("id"), job.toString()).commit();
+        SharedPreferences.Editor edit = prefs(c).edit();
+        if (Arrays.asList("analysing", "report_ready", "received").contains(state) && !job.has("uploadedAt")) {
+            long at = System.currentTimeMillis();
+            job.put("uploadedAt", at);
+            edit.putLong("lastUploadAt", at).putString("lastUploadLead", job.optString("leadName", "lead"));
+        }
+        edit.putString("job:" + job.getString("id"), job.toString()).commit();
         PhoneBridge.signalActive("recordings");
     }
     /**

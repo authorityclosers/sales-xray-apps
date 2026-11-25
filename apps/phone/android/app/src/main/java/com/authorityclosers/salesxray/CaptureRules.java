@@ -28,7 +28,11 @@ final class CaptureRules {
     static final String PROFILE = "profile";        // the edge's write-eligibility check: contact profile incomplete
     static final String ALLOWANCE = "allowance";    // no call minutes left in the workspace
     static final String SIGNED_OUT = "signed_out";  // no session on this phone
-    static final String CONSENT = "consent";        // standing consent off or its terms changed: uploads turn off
+    static final String CONSENT = "consent";        // standing consent turned off (or AI Off): uploads turn off
+    // The upload terms (or the consent words) changed since the seller agreed (the 17 Nov 2026 provider switch did
+    // this to every phone at once, and each one turned its uploads off). Now calls wait on the phone, uploads stay
+    // on, the seller is asked to agree again, and the waiting calls go by themselves once they do.
+    static final String TERMS = "terms";
     static final String NOTICES = "notices";        // upload notices blocked, so Undo can't be offered: uploads turn off
     static final String WORKSPACE = "workspace";    // the app is in another workspace than the call's
     static final String FOLDER = "folder";          // the recordings folder grant is gone
@@ -39,7 +43,7 @@ final class CaptureRules {
     static final String EXPIRED = "expired";        // older than KEEP_MS
     // Highest first: what the capture-health card and the attention notice name.
     static final List<String> PRIORITY = Arrays.asList(
-        CONSENT, NOTICES, SIGNED_OUT, PROFILE, ALLOWANCE, FOLDER, NETWORK, WORKSPACE, ACCESS, REVIEW, EXPIRED, OFF);
+        CONSENT, TERMS, NOTICES, SIGNED_OUT, PROFILE, ALLOWANCE, FOLDER, NETWORK, WORKSPACE, ACCESS, REVIEW, EXPIRED, OFF);
     static final long RENOTIFY_MS = 6L * 60 * 60 * 1000;
     static final long ACCESS_RETRY_MS = 60L * 60 * 1000;
     static final long NETWORK_FRESH_MS = 30L * 60 * 1000;
@@ -87,6 +91,20 @@ final class CaptureRules {
         return consent != null && "on".equals(consent.optString("state")) &&
             consent.optBoolean("can_start") && policy != null && policy.length() == 64 &&
             policy.equals(consent.optString("terms_sha256"));
+    }
+
+    /**
+     * Why the seller's standing consent doesn't cover an upload now: null when it does; TERMS when they are asked
+     * again (the upload terms or the words changed since they agreed, or the answer could not be read), so calls
+     * wait and nothing turns off; CONSENT when they turned it off or their AI level is Off, so uploads turn off.
+     */
+    static String consentGap(JSONObject consent, String policy) {
+        if (consent(consent, policy)) return null;
+        if (consent == null || policy == null || policy.length() != 64) return TERMS;
+        String state = consent.optString("state");
+        if ("ask".equals(state)) return TERMS;
+        if ("on".equals(state) && consent.optBoolean("can_start")) return TERMS;
+        return CONSENT;
     }
 
     static boolean samePhone(String raw, String lead) {
@@ -177,7 +195,9 @@ final class CaptureRules {
             return ACCESS;
         }
         if (code == 409) {
-            if (words.contains("automatic analysis")) return CONSENT;
+            // The server's standing-consent refusal: the terms changed or it was turned off. Calls wait; the next
+            // scan reads the consent again and turns uploads off only if the seller turned it off.
+            if (words.contains("automatic analysis")) return TERMS;
             if (words.contains("another workspace")) return WORKSPACE;
             // Minutes added since the refusal: try again at once.
             if (words.contains("allowance")) return Boolean.TRUE.equals(minutesLeft) ? RETRY : ALLOWANCE;
@@ -250,7 +270,8 @@ final class CaptureRules {
             case PROFILE: return new String[] {"Add your name and phone to upload calls", waiting + " Complete your profile in Settings → Profile and they upload by themselves.", "/settings/profile"};
             case ALLOWANCE: return new String[] {"Call minutes used up", waiting + " They upload by themselves when your workspace has minutes again.", "/settings/privacy#calls-setup"};
             case SIGNED_OUT: return new String[] {"Sign in to upload your calls", waiting + " Open Sales X-Ray and sign in; they upload by themselves after.", "/leads"};
-            case CONSENT: return new String[] {"Automatic call uploads are off", "Automatic analysis is off for you or its terms changed. Turn uploads on again in Settings → Privacy → Calls.", "/settings/privacy#automatic-call-uploads"};
+            case CONSENT: return new String[] {"Automatic call uploads are off", "Automatic analysis is off for you. Turn uploads on again in Settings → Privacy → Calls.", "/settings/privacy#automatic-call-uploads"};
+            case TERMS: return new String[] {"Agree to the new upload terms", waiting + " Sales X-Ray's upload terms changed. Open Sales X-Ray and tap Agree; your calls then upload by themselves.", "/settings/privacy#automatic-call-uploads"};
             case NOTICES: return new String[] {"Automatic call uploads are off", "Upload notices are blocked, so Undo can't show. Allow them, then turn uploads on in Settings → Privacy → Calls.", "/settings/privacy#automatic-call-uploads"};
             case WORKSPACE: return new String[] {"Calls wait for your organisation", waiting + " Switch to your organisation workspace in Sales X-Ray to upload them.", "/leads"};
             case FOLDER: return new String[] {"Pick your recordings folder again", waiting + " Sales X-Ray can no longer read the recordings folder.", "/settings/privacy#calls-setup"};

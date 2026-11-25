@@ -51,7 +51,7 @@ public class OldCallsRulesTest {
 
     @Test
     public void theWindowIsTwoWeeksByDefaultAndNeverMoreThanAMonth() {
-        assertEquals(NOW - 14 * DAY, OldCallsRules.since(0, NOW));
+        assertEquals(NOW - 30 * DAY, OldCallsRules.since(0, NOW));
         assertEquals(NOW - 14 * DAY, OldCallsRules.since(NOW - 14 * DAY, NOW));
         assertEquals(NOW - 31 * DAY, OldCallsRules.since(NOW - 90 * DAY, NOW));
         assertEquals(NOW, OldCallsRules.since(NOW + DAY, NOW));
