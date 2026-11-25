@@ -135,6 +135,50 @@ public class OldCallsRulesTest {
         assertEquals(CALL + HOUR - 30_000, OldCallsRules.unmatched(unnamed, IST).getLong("startedMs"));
     }
 
+    /**
+     * The Redmi 13 device test (25 Nov 2026, Mac 19:00): three real calls with one lead, minutes apart, in MIUI's
+     * call_rec folder: 17:41 incoming 1:07 (the call log starts at the ring, MIUI's name at the answer), 17:52
+     * outgoing 0:36, 17:54 outgoing 0:54. Once the server has the three calls, each finds its own recording by the
+     * number in its name, however the number is written; only 17:54 was found there because the server had no rows for
+     * the other two (a call-history row from more than an hour before its lead was added stays off the lead).
+     */
+    @Test
+    public void theRedmiTestsThreeCallsEachFindTheirRecording() throws Exception {
+        long incoming = 1_795_608_670_000L; // 17:41:10 IST
+        long shortOut = 1_795_609_323_000L; // 17:52:03 IST
+        long out = 1_795_609_460_000L; // 17:54:20 IST
+        JSONObject a = item("file:/storage/emulated/0/MIUI/sound_recorder/call_rec/Rohan Test(00919000000555)_20261125174118.mp3",
+            "Rohan Test(00919000000555)_20261125174118.mp3", incoming + 76_000);
+        JSONObject b = item("file:/storage/emulated/0/MIUI/sound_recorder/call_rec/Rohan Test(+919000000555)_20261125175209.mp3",
+            "Rohan Test(+919000000555)_20261125175209.mp3", shortOut + 44_000);
+        JSONObject c = item("file:/storage/emulated/0/MIUI/sound_recorder/call_rec/Rohan Test(9000000555)_20261125175428.mp3",
+            "Rohan Test(9000000555)_20261125175428.mp3", out + 63_000);
+        JSONArray calls = new JSONArray()
+            .put(call("in", "+91 90000 00555", incoming, 67))
+            .put(call("short", "+919000000555", shortOut, 36))
+            .put(call("out", "9000000555", out, 54));
+        OldCallsRules.Result result = match(calls, Arrays.asList(c, b, a));
+        assertEquals(3, result.items.size());
+        assertSame(a, result.items.get(0).getJSONObject("recording"));
+        assertSame(b, result.items.get(1).getJSONObject("recording"));
+        assertSame(c, result.items.get(2).getJSONObject("recording"));
+        for (int i = 0; i < 3; i++) assertEquals("number", result.items.get(i).getString("fit"));
+        assertTrue(result.left.isEmpty());
+
+        // Only the 17:54 call reached the page: the other two recordings are the ones it couldn't place.
+        OldCallsRules.Result one = match(new JSONArray().put(call("out", "9000000555", out, 54)), Arrays.asList(c, b, a));
+        assertEquals(1, one.items.size());
+        assertSame(c, one.items.get(0).getJSONObject("recording"));
+        assertEquals(Arrays.asList(b, a), one.left);
+
+        // A dialer that writes the number with spaces: no seven digits in a row, so the name's time places it
+        // as the lead's contact (likely), which the page still sends by itself.
+        JSONObject spaced = item("file:/storage/emulated/0/MIUI/sound_recorder/call_rec/Rohan Test(+91 90000 00555)_20261125175428.mp3",
+            "Rohan Test(+91 90000 00555)_20261125175428.mp3", out + 63_000);
+        OldCallsRules.Result loose = match(new JSONArray().put(call("out", "9000000555", out, 54)), Collections.singletonList(spaced));
+        assertEquals("contact", loose.items.get(0).getString("fit"));
+    }
+
     @Test
     public void theOldestCallChoosesFirstAndARecordingGoesToOneCall() throws Exception {
         JSONObject numbered = media("+919665278779.amr", CALL + 30_000);
