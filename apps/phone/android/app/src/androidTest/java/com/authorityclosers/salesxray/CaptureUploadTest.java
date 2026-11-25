@@ -282,6 +282,19 @@ public class CaptureUploadTest {
         assertFalse(AutoCapture.prefs(c).contains("refused:" + ID));
         manager.cancelAll();
     }
+    // Mac, 25 Nov 2026 19:20: "Upload anyway" on an outside-work-hours notice forgets the refusal, so the next look asks
+    // the server again (same terms); the notice goes. (Uploads off here, so no real look starts in this test.)
+    @Test public void uploadAnywayForgetsTheRefusalAndClearsItsNotice() throws Exception {
+        android.app.NotificationManager manager = c.getSystemService(android.app.NotificationManager.class);
+        int notice = ("refused:" + ID).hashCode();
+        assertTrue(AutoCapture.refused(c, ID, "+12025550123", new CaptureApi.Failure(409, "This call is outside work hours.")));
+        assertTrue(shown(manager, notice));
+        AutoCapture.prefs(c).edit().putBoolean("on", false).commit();
+        new CaptureAgainReceiver().onReceive(c, new android.content.Intent().putExtra("id", ID));
+        assertFalse(AutoCapture.prefs(c).contains("refused:" + ID));
+        assertTrue(gone(manager, notice));
+        manager.cancelAll();
+    }
     /** The real source check, with the own API mocked: a shared recording (ShareIn) is read only from the app's copy. */
     public static class SharedWorker extends CaptureUploadWorker {
         public SharedWorker(Context c, WorkerParameters p) { super(c, p); }

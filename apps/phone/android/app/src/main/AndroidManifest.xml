@@ -19,6 +19,7 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
         <receiver android:name=".CaptureUndoReceiver" android:exported="false" />
+        <receiver android:name=".CaptureAgainReceiver" android:exported="false" />
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"

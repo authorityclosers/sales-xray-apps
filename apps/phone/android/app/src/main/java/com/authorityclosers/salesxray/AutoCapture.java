@@ -641,9 +641,16 @@ final class AutoCapture {
             new NotificationChannel("auto_capture", "Automatic call uploads", NotificationManager.IMPORTANCE_LOW));
         PendingIntent open = PendingIntent.getActivity(c, REFUSED_SUMMARY_ID, new Intent(c, MainActivity.class)
             .putExtra(LeadAlerts.EXTRA_OPEN, "/leads").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent page = words.length > 3 && words[3] != null ? PendingIntent.getActivity(c, ("refused:" + id).hashCode(),
+            new Intent(c, MainActivity.class).putExtra(LeadAlerts.EXTRA_OPEN, words[3]).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE) : open;
         NotificationCompat.Builder one = new NotificationCompat.Builder(c, "auto_capture")
             .setSmallIcon(R.drawable.ic_stat_sx).setContentTitle(words[0]).setContentText(words[1]).setSilent(true)
-            .setAutoCancel(true).setGroup(REFUSED_GROUP).setContentIntent(open);
+            .setAutoCancel(true).setGroup(REFUSED_GROUP).setContentIntent(page);
+        // One tap, same upload terms: the server decides again (CaptureAgainReceiver).
+        if (words.length > 2 && words[2] != null) one.addAction(0, words[2], PendingIntent.getBroadcast(c, ("again:" + id).hashCode(),
+            new Intent(c, CaptureAgainReceiver.class).setData(Uri.parse("sx-again:" + id)).putExtra("id", id),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         NotificationCompat.Builder summary = new NotificationCompat.Builder(c, "auto_capture")
             .setSmallIcon(R.drawable.ic_stat_sx).setContentTitle("Lead calls not uploaded").setContentText(words[1]).setSilent(true)
             .setAutoCancel(true).setGroup(REFUSED_GROUP).setGroupSummary(true).setContentIntent(open);

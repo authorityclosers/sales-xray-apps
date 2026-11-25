@@ -251,6 +251,12 @@ public class CaptureRulesTest {
         assertEquals("Call with +12025550123 not uploaded", hours[0]);
         assertEquals("Recorded outside work hours.", hours[1]);
         assertEquals("Made before this lead was added.", CaptureRules.refusedNotice(CaptureRules.REFUSED_EARLY, "+12025550123")[1]);
+        // Outside hours: one tap asks again. Before the lead: no tap that would be refused again; Calls offers it.
+        assertEquals("Upload anyway", hours[2]);
+        assertNull(CaptureRules.refusedNotice(CaptureRules.REFUSED_EARLY, "+12025550123")[2]);
+        assertEquals("/analysis/calls", CaptureRules.refusedNotice(CaptureRules.REFUSED_EARLY, "+12025550123")[3]);
+        assertTrue(MainActivity.opensInApp(CaptureRules.refusedNotice(CaptureRules.REFUSED_EARLY, "+12025550123")[3]));
+        assertTrue(MainActivity.opensInApp(hours[3]));
         // One reason is never shown for another, and the rest stay silent.
         assertNull(CaptureRules.refusedNotice(CaptureRules.REFUSED_OTHER, "+12025550123"));
     }

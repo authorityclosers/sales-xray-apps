@@ -111,11 +111,16 @@ final class CaptureRules {
         return REFUSED_OTHER;
     }
 
-    /** One quiet notice for a refusal the seller can act on or should know of ({title, text}); null stays silent. */
+    /**
+     * One quiet notice for a refusal the seller can act on or should know of ({title, text, action, page}); null stays
+     * silent. Outside work hours: "Upload anyway" asks the server again under the same terms (Mac, 25 Nov 2026 19:20;
+     * from v1.99.1 the server takes a lead call at any hour). Before the lead: the server keeps refusing, so the
+     * notice opens Calls, where Find my old calls offers it with Analyse (v1.99.1).
+     */
     static String[] refusedNotice(String reason, String number) {
         String title = "Call with " + (number == null || number.isEmpty() ? "a lead" : number) + " not uploaded";
-        if (REFUSED_HOURS.equals(reason)) return new String[] { title, "Recorded outside work hours." };
-        if (REFUSED_EARLY.equals(reason)) return new String[] { title, "Made before this lead was added." };
+        if (REFUSED_HOURS.equals(reason)) return new String[] { title, "Recorded outside work hours.", "Upload anyway", "/leads" };
+        if (REFUSED_EARLY.equals(reason)) return new String[] { title, "Made before this lead was added.", null, "/analysis/calls" };
         return null;
     }
 
