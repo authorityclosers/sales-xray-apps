@@ -18,7 +18,8 @@ import org.junit.runner.RunWith;
 /**
  * Fast upload (18 Nov 2026): Android itself wakes capture when a new audio file is indexed, as when the dialler
  * saves a call recording, with no service or polling of ours. Times trigger → run (SXTEST triggerMs).
- * Synthetic silent audio in Music/, deleted afterwards. The 15-minute watch is not involved.
+ * Synthetic silent audio in Music/, deleted afterwards. The 15-minute watch is not involved. Since 1.0.160 the
+ * trigger is the app's own job (CaptureTriggerJob), not a WorkManager worker.
  */
 @RunWith(AndroidJUnit4.class)
 public class CaptureTriggerTest {
@@ -34,11 +35,12 @@ public class CaptureTriggerTest {
 
     @After public void cleanup() throws Exception {
         if (inserted != null) c.getContentResolver().delete(inserted, null, null);
+        CaptureTriggerJob.disarm(c);
         WorkManager.getInstance(c).cancelAllWorkByTag("sx-auto-capture").getResult().get();
         AutoCapture.prefs(c).edit().clear().commit();
     }
 
-    private WorkInfo.State trigger() throws Exception {
+    private WorkInfo.State legacyTrigger() throws Exception {
         WorkInfo.State last = null;
         for (WorkInfo info : WorkManager.getInstance(c).getWorkInfosForUniqueWork(CaptureTrigger.NAME).get()) {
             if (!info.getState().isFinished()) return info.getState();
@@ -47,9 +49,8 @@ public class CaptureTriggerTest {
         return last;
     }
 
-    @Test public void aNewAudioFileWakesCaptureAndTheTriggerArmsAgain() throws Exception {
-        CaptureTrigger.arm(c);
-        assertEquals(WorkInfo.State.ENQUEUED, trigger());
+    /** A new audio file, as a dialler saving a call recording; returns how long the trigger took to run (ms). */
+    private long newAudioFile() throws Exception {
         SystemClock.sleep(2_000);
         long before = System.currentTimeMillis();
         ContentResolver resolver = c.getContentResolver();
@@ -69,19 +70,53 @@ public class CaptureTriggerTest {
         }
         Log.i("SXTEST", "triggerMs " + (seen - before));
         assertTrue("the trigger never ran", seen >= before);
-        // Within the trigger's own maximum delay plus scheduling slack, not the 15-minute watch.
-        assertTrue("trigger took " + (seen - before) + " ms", seen - before <= CaptureTrigger.MAX_DELAY_MS + 10_000);
-        // It waits for the next change again.
+        return seen - before;
+    }
+
+    private void armedAgain() {
         long armed = SystemClock.elapsedRealtime() + 10_000;
-        while (trigger() != WorkInfo.State.ENQUEUED && SystemClock.elapsedRealtime() < armed) SystemClock.sleep(250);
-        assertEquals(WorkInfo.State.ENQUEUED, trigger());
+        while (!CaptureTriggerJob.armed(c) && SystemClock.elapsedRealtime() < armed) SystemClock.sleep(250);
+        assertTrue(CaptureTriggerJob.armed(c));
+    }
+
+    @Test public void aNewAudioFileWakesCaptureAndTheTriggerArmsAgain() throws Exception {
+        CaptureTrigger.arm(c);
+        assertTrue(CaptureTriggerJob.armed(c));
+        // The WorkManager trigger of builds before 1.0.160 is gone.
+        WorkInfo.State legacy = legacyTrigger();
+        assertTrue(legacy == null || legacy.isFinished());
+        long took = newAudioFile();
+        // Within the trigger's own maximum delay plus scheduling slack, not the 15-minute watch.
+        assertTrue("trigger took " + took + " ms", took <= CaptureTrigger.MAX_DELAY_MS + 10_000);
+        // It waits for the next change again.
+        armedAgain();
         // An audio file outside the recordings folder (none is picked here) is no reason for a look.
         assertTrue(WorkManager.getInstance(c).getWorkInfosForUniqueWork(CaptureTrigger.LOOK).get().isEmpty());
+    }
+
+    // Mac, 26 Nov 2026 02:06 (Redmi 13, app swiped away): the process that started for the trigger counted as
+    // force-stopped to WorkManager, which cancelled every job of its own (SystemJobService), the running trigger
+    // included. That clean-up, done here as WorkManager does it, leaves the app's own trigger armed and working.
+    @Test public void workManagersForceStopCleanUpLeavesTheTriggerArmed() throws Exception {
+        CaptureTrigger.arm(c);
+        android.app.job.JobScheduler jobs = c.getSystemService(android.app.job.JobScheduler.class);
+        int cancelled = 0;
+        for (android.app.job.JobInfo job : jobs.getAllPendingJobs()) {
+            if (job.getService().getClassName().equals("androidx.work.impl.background.systemjob.SystemJobService")) {
+                jobs.cancel(job.getId()); cancelled++;
+            }
+        }
+        Log.i("SXTEST", "WorkManager jobs cancelled " + cancelled);
+        assertTrue(CaptureTriggerJob.armed(c));
+        long took = newAudioFile();
+        assertTrue("trigger took " + took + " ms", took <= CaptureTrigger.MAX_DELAY_MS + 10_000);
+        armedAgain();
     }
 
     @Test public void uploadsOffArmsNothing() throws Exception {
         AutoCapture.prefs(c).edit().putBoolean("on", false).commit();
         CaptureTrigger.arm(c);
-        assertNull(trigger());
+        assertFalse(CaptureTriggerJob.armed(c));
+        assertNull(legacyTrigger());
     }
 }

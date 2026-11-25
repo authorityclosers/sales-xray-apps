@@ -3,7 +3,6 @@ package com.authorityclosers.salesxray;
 import android.content.Context;
 import android.media.AudioManager;
 import android.provider.CallLog;
-import android.provider.MediaStore;
 import androidx.annotation.NonNull;
 import androidx.work.*;
 import java.util.concurrent.TimeUnit;
@@ -34,16 +33,26 @@ public class CaptureTrigger extends Worker {
 
     public CaptureTrigger(@NonNull Context c, @NonNull WorkerParameters p) { super(c, p); }
 
+    /** A trigger queued by a build before 1.0.160 (WorkManager): it does its look once, then the job service takes over. */
     @NonNull public Result doWork() {
         Context c = getApplicationContext();
         if (!AutoCapture.prefs(c).getBoolean("on", false)) return Result.success();
+        changed(c, callEnded(getTriggeredContentUris()), "work");
+        CaptureTriggerJob.arm(c);
+        return Result.success();
+    }
+
+    /** The call history or the audio files changed (CaptureTriggerJob): a look once things settle, if a call ended or a recording came. */
+    static void changed(Context c, boolean callChanged, String from) {
+        if (!AutoCapture.prefs(c).getBoolean("on", false)) return;
         long now = System.currentTimeMillis();
         long seen = AutoCapture.prefs(c).getLong("triggerSeen", now - LOOK_BACK_MS);
-        AutoCapture.prefs(c).edit().putLong("triggerSeen", now).apply();
+        AutoCapture.prefs(c).edit().putLong("triggerSeen", now).commit();
         // A change during a call (some diallers index the file when recording starts) waits for the end.
-        if (!inCall(c) && (callEnded(getTriggeredContentUris()) || newRecording(c, seen))) settled(c);
-        arm(c);
-        return Result.success();
+        boolean calling = inCall(c);
+        boolean look = !calling && (callChanged || newRecording(c, seen));
+        AutoCapture.log("trigger", from + (callChanged ? " call history" : " audio") + (calling ? ", in a call" : "") + (look ? ", look queued" : ", no look"));
+        if (look) settled(c);
     }
 
     /** The call history changed: a call just ended. */
@@ -62,19 +71,15 @@ public class CaptureTrigger extends Worker {
         return false;
     }
 
-    /** Waits for the next change to the call history or to the phone's audio files. */
+    /**
+     * Waits for the next change to the call history or to the phone's audio files: the app's own job
+     * (CaptureTriggerJob), since 1.0.160. The WorkManager trigger before it was cancelled by WorkManager itself when
+     * a swiped-away app's process started for it (Mac, 26 Nov 2026 02:06); any such trigger still queued goes.
+     */
     static void arm(Context c) {
-        if (!AutoCapture.prefs(c).getBoolean("on", false)) return;
-        Constraints.Builder when = new Constraints.Builder()
-            .addContentUriTrigger(CallLog.Calls.CONTENT_URI, true)
-            .addContentUriTrigger(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, true)
-            .setTriggerContentUpdateDelay(UPDATE_DELAY_MS, TimeUnit.MILLISECONDS)
-            .setTriggerContentMaxDelay(MAX_DELAY_MS, TimeUnit.MILLISECONDS);
-        // APPEND_OR_REPLACE would queue a second waiter behind a running one; REPLACE while it runs is harmless:
-        // the running one only arms this same trigger again.
-        WorkManager.getInstance(c).enqueueUniqueWork(NAME, ExistingWorkPolicy.REPLACE,
-            new OneTimeWorkRequest.Builder(CaptureTrigger.class).addTag("sx-auto-capture")
-                .setConstraints(when.build()).build());
+        if (!AutoCapture.prefs(c).getBoolean("on", false)) { CaptureTriggerJob.disarm(c); return; }
+        WorkManager.getInstance(c).cancelUniqueWork(NAME);
+        CaptureTriggerJob.arm(c);
     }
 
     /** One look once the newest recording has been still for SETTLE_MS; a later change moves it back. */

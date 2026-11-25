@@ -42,6 +42,7 @@ public class SalesXrayApp extends Application implements Configuration.Provider 
     @NonNull
     @Override
     public Configuration getWorkManagerConfiguration() {
-        return new Configuration.Builder().build();
+        // WorkManager's own JobScheduler ids stay below the call-end trigger's job (CaptureTriggerJob.JOB_ID).
+        return new Configuration.Builder().setJobSchedulerJobIdRange(0, 999_999_999).build();
     }
 }

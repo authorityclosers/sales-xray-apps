@@ -80,7 +80,7 @@ final class AutoCapture {
         boolean changedNetwork = wifi != p.getBoolean("wifiOnly", CaptureRules.WIFI_ONLY_DEFAULT);
         edit.putBoolean("on", on).putString("identity", identity).putBoolean("wifiOnly", wifi).commit();
         WorkManager work = WorkManager.getInstance(c);
-        if (!on) { work.cancelAllWorkByTag("sx-auto-capture"); PhoneBridge.signalActive("recordings"); return; }
+        if (!on) { work.cancelAllWorkByTag("sx-auto-capture"); CaptureTriggerJob.disarm(c); PhoneBridge.signalActive("recordings"); return; }
         clearAttention(c, CaptureRules.CONSENT); clearAttention(c, CaptureRules.NOTICES); clearAttention(c, CaptureRules.SIGNED_OUT);
         if (changedNetwork) work.cancelAllWorkByTag("sx-auto-capture").getResult().get();
         // Jobs check the current network setting again before bytes leave the device.
@@ -102,6 +102,7 @@ final class AutoCapture {
         if (was) edit.putLong("offAt", System.currentTimeMillis());
         edit.commit();
         WorkManager.getInstance(c).cancelAllWorkByTag("sx-auto-capture");
+        CaptureTriggerJob.disarm(c);
         if (was) attention(c, reason, pending(c));
         PhoneBridge.signalActive("recordings");
     }

@@ -145,11 +145,15 @@ public class CaptureUploadWorker extends Worker {
             synchronized (AutoCapture.class) {
                 if ("cancelled".equals(AutoCapture.job(c, id).optString("state"))) return Result.success();
                 boolean first = "waiting".equals(job.optString("state"));
-                AutoCapture.save(c, job, "uploading");
+                // A run after the upload only follows the analysis (Result.retry while the server works): the call
+                // stays "analysing". Mac, 26 Nov 2026 02:16 (Redmi, 1.0.158): this run said "uploading" again and
+                // looked like a second upload; it sends no bytes (the server has the submission) and the attach
+                // replays with the same command id.
+                if (!"analysing".equals(job.optString("state"))) AutoCapture.save(c, job, "uploading");
                 // The Undo minute is over: the notice says what happens now (it said "Uploads in 60 seconds").
                 if (first) AutoCapture.notice(c, id, "Uploading call with " + job.optString("leadName", "lead"), "It goes for analysis when the upload ends.", false);
             }
-            AutoCapture.log(id, "uploading");
+            AutoCapture.log(id, "analysing".equals(job.optString("state")) ? "follow-up, no upload" : "uploading");
             if (!job.has("sha")) {
                 MessageDigest digest = MessageDigest.getInstance("SHA-256");
                 long count = 0;
@@ -184,7 +188,7 @@ public class CaptureUploadWorker extends Worker {
                         .put("onLead", true).remove("eventId");
                     AutoCapture.log(id, "anyway: on the lead, no call event");
                 }
-                AutoCapture.save(c, job, "uploading");
+                AutoCapture.save(c, job, job.optString("state", "uploading"));
             }
             String sid = AutoCapture.submission(job);
             JSONObject progress = null;

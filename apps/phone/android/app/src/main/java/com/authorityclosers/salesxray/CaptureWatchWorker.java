@@ -9,6 +9,8 @@ public class CaptureWatchWorker extends Worker {
         if (!AutoCapture.prefs(c).getBoolean("on", false)) return Result.success();
         CaptureNet.begin();
         try {
+            // The call-end trigger again on every look: it does not survive a reboot or an update (CaptureTriggerJob).
+            CaptureTrigger.arm(c);
             if (!CaptureNet.await(c, this)) return Result.retry();
             AutoCapture.scan(c); return Result.success();
         }

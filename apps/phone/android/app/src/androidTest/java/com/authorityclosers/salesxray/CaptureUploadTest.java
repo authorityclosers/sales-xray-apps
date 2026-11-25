@@ -99,6 +99,15 @@ public class CaptureUploadTest {
         worker().doWork(); assertEquals(1, fake.uploads); assertEquals(1, fake.plans);
         assertEquals("report_ready", AutoCapture.job(c, ID).getString("state"));
     }
+    // Mac, 26 Nov 2026 02:16 (Redmi, 1.0.158): the run that follows the analysis said "uploading" again and looked like
+    // a second upload. It sends no bytes and the call stays "analysing" (Settings showed "Uploading" meanwhile).
+    @Test public void followingTheAnalysisNeitherUploadsAgainNorSaysUploading() throws Exception {
+        worker().doWork(); worker().doWork();
+        assertEquals("analysing", AutoCapture.job(c, ID).getString("state"));
+        worker().doWork();
+        assertEquals(1, fake.uploads);
+        assertEquals("analysing", AutoCapture.job(c, ID).getString("state"));
+    }
     @Test public void noConsentMeansNoUploadOrPlan() throws Exception {
         fake.consent = false; worker().doWork(); assertEquals(0, fake.uploads); assertEquals(0, fake.plans);
         assertFalse(AutoCapture.prefs(c).getBoolean("on", true));
