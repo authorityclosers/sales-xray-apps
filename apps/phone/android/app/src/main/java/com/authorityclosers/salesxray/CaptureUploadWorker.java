@@ -167,13 +167,26 @@ public class CaptureUploadWorker extends Worker {
                 job.put("sha", hex.toString()); AutoCapture.save(c, job, "uploading");
             }
             // Create/reuse the exact lead call BEFORE uploading; a stale/non-owned lead blocks audio.
-            JSONObject call = api.json("POST", "/v1/lead-desk/recording-call", new JSONObject()
-                .put("command_id", id).put("number", job.getString("number"))
-                .put("started_at", CallLogRules.iso(job.getLong("stamp")))
-                .put("duration_seconds", job.getLong("seconds")), id, false);
-            job.put("leadId", call.getString("lead_id")).put("eventId", call.getString("event_id"));
-            AutoCapture.save(c, job, "uploading");
-            String sid = CaptureRules.id(job.getString("identity"), job.getString("eventId"), 0);
+            if (!job.optBoolean("onLead")) {
+                try {
+                    JSONObject call = api.json("POST", "/v1/lead-desk/recording-call", new JSONObject()
+                        .put("command_id", id).put("number", job.getString("number"))
+                        .put("started_at", CallLogRules.iso(job.getLong("stamp")))
+                        .put("duration_seconds", job.getLong("seconds")), id, false);
+                    job.put("leadId", call.getString("lead_id")).put("eventId", call.getString("event_id"));
+                } catch (CaptureApi.Failure refused) {
+                    // "Upload anyway" on a call refused for work hours (AutoCapture.uploadAnyway): the recording goes
+                    // on its lead as a new call, as the web's "Assign to a lead" puts it (no hours rule there).
+                    if (!job.optBoolean("anyway") || !CaptureRules.REFUSED_HOURS.equals(CaptureRules.refused(refused.code, refused.detail))) throw refused;
+                    JSONObject lead = api.leadMatch(job.getString("number"));
+                    if (lead == null) throw new CaptureApi.Hold(CaptureRules.REVIEW);
+                    job.put("leadId", lead.getString("lead_id")).put("leadName", lead.optString("name", job.optString("leadName", "lead")))
+                        .put("onLead", true).remove("eventId");
+                    AutoCapture.log(id, "anyway: on the lead, no call event");
+                }
+                AutoCapture.save(c, job, "uploading");
+            }
+            String sid = AutoCapture.submission(job);
             JSONObject progress = null;
             try { progress = api.json("GET", API + sid, null, null, false); }
             catch (CaptureApi.Failure missing) { if (missing.code != 404) throw missing; }
@@ -185,9 +198,9 @@ public class CaptureUploadWorker extends Worker {
                 }
             }
             if (!job.getString("sha").equals(progress.optString("source_sha256"))) throw new CaptureApi.Hold(CaptureRules.REVIEW);
-            api.json("POST", "/v1/lead-desk/leads/" + job.getString("leadId") + "/recordings", new JSONObject()
-                .put("command_id", CaptureRules.id(id, "attach", 0)).put("submission_id", sid)
-                .put("call_event_id", job.getString("eventId")), null, false);
+            JSONObject attach = new JSONObject().put("command_id", CaptureRules.id(id, "attach", 0)).put("submission_id", sid);
+            if (!job.optBoolean("onLead")) attach.put("call_event_id", job.getString("eventId"));
+            api.json("POST", "/v1/lead-desk/leads/" + job.getString("leadId") + "/recordings", attach, null, false);
             AutoCapture.log(id, "uploaded");
             if (progress.optBoolean("has_report")) {
                 AutoCapture.save(c, job, "report_ready");

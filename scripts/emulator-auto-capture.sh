@@ -23,7 +23,7 @@ adb install "dist/sales-xray-dev-android-0.3.${run}-test.apk"
 adb install "dist/sales-xray-dev-android-0.3.${run}-device-tests.apk"
 adb shell pm grant "$package" android.permission.POST_NOTIFICATIONS
 adb shell am instrument -w -e class com.authorityclosers.salesxray.CaptureUploadTest "$package.test/androidx.test.runner.AndroidJUnitRunner" | tee auto-capture-proof.txt
-grep -q '^OK (19 tests)' auto-capture-proof.txt
+grep -q '^OK (21 tests)' auto-capture-proof.txt
 # Fast upload (18 Nov 2026): a new audio file wakes capture by itself, timed (SXTEST triggerMs).
 adb logcat -c
 adb shell am instrument -w -e class com.authorityclosers.salesxray.CaptureTriggerTest "$package.test/androidx.test.runner.AndroidJUnitRunner" | tee auto-capture-trigger.txt

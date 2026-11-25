@@ -34,6 +34,8 @@ public class CaptureUploadTest {
         String sha;
         // A refusal before any byte is accepted, as the edge and the API send them (Redmi test, 30 Oct 2026).
         int refuse; String refusal = ""; boolean profileComplete = true; Boolean minutes = true;
+        // v1.99.0 refuses any call outside the workspace's work hours at /recording-call (Mac, 26 Nov 2026 02:04).
+        boolean outsideHours; int recordingCalls, matches; JSONObject lastAttach;
         FakeApi(Context c) throws Exception { super(c); }
         @Override JSONObject book() throws Exception {
             return new JSONObject().put("organisation_workspace", true).put("tenant_id", SCOPE.split(":")[0])
@@ -44,8 +46,16 @@ public class CaptureUploadTest {
         @Override boolean eligible() { return profileComplete; }
         @Override Boolean minutesLeft() { return minutes; }
         @Override JSONObject json(String method, String path, JSONObject body, String key, boolean standing) throws Exception {
-            if (path.endsWith("/recording-call")) return new JSONObject().put("lead_id", ID).put("event_id", ID);
-            if (path.endsWith("/recordings")) { attaches++; return new JSONObject(); }
+            if (path.startsWith("/v1/lead-desk/leads/match?phone=")) {
+                assertEquals("/v1/lead-desk/leads/match?phone=%2B12025550123", path); matches++;
+                return new JSONObject().put("found", true).put("yours", true).put("lead_id", ID).put("name", "Rohan Test");
+            }
+            if (path.endsWith("/recording-call")) {
+                recordingCalls++;
+                if (outsideHours) throw new Failure(409, "This call is outside work hours.");
+                return new JSONObject().put("lead_id", ID).put("event_id", ID);
+            }
+            if (path.endsWith("/recordings")) { attaches++; lastAttach = body; return new JSONObject(); }
             if (path.endsWith("/plan/quote")) return new JSONObject().put("id", ID).put("plan_fingerprint", HASH).put("privacy_revision", "sales-xray-processing-plan-v1");
             if (path.endsWith("/plan")) { assertTrue(standing); plans++; return new JSONObject(); }
             if (!uploaded) throw new Failure(404);
@@ -292,8 +302,73 @@ public class CaptureUploadTest {
         AutoCapture.prefs(c).edit().putBoolean("on", false).commit();
         new CaptureAgainReceiver().onReceive(c, new android.content.Intent().putExtra("id", ID));
         assertFalse(AutoCapture.prefs(c).contains("refused:" + ID));
+        // No recording kept (a refusal from 1.0.158): the tap is remembered for the look that meets the call again.
+        assertTrue(AutoCapture.prefs(c).contains("asked:" + ID));
         assertTrue(gone(manager, notice));
         manager.cancelAll();
+    }
+    /** The seeded job as the scan saw it before the server refused it: what refused() keeps for "Upload anyway". */
+    JSONObject foundBeforeRefusal() throws Exception {
+        JSONObject found = new JSONObject(AutoCapture.job(c, ID).toString());
+        found.remove("id"); found.remove("state"); found.remove("due");
+        AutoCapture.prefs(c).edit().remove("job:" + ID).commit();
+        return found;
+    }
+    static boolean titled(android.app.NotificationManager manager, int id, String title) throws InterruptedException {
+        for (int i = 0; i < 20; i++) {
+            for (android.service.notification.StatusBarNotification n : manager.getActiveNotifications())
+                if (n.getId() == id && title.equals(String.valueOf(n.getNotification().extras.getCharSequence("android.title")))) return true;
+            Thread.sleep(100);
+        }
+        return false;
+    }
+    // Mac, 26 Nov 2026 02:04, Redmi 13 on 1.0.158: "tapping Upload anyway does NOTHING" (v1.99.0 refused the call again).
+    // Now the kept recording uploads through WorkManager and goes on its lead with no call event; the notice names the
+    // lead, not the number (Mac 01:45).
+    @Test public void uploadAnywayUploadsACallTheServerCallsOutsideWorkHours() throws Exception {
+        android.app.NotificationManager manager = c.getSystemService(android.app.NotificationManager.class);
+        manager.cancelAll();
+        fake.outsideHours = true;
+        assertTrue(AutoCapture.refused(c, fake, ID, "+12025550123", new CaptureApi.Failure(409, "This call is outside work hours."), foundBeforeRefusal()));
+        assertTrue(titled(manager, ("refused:" + ID).hashCode(), "Call with Rohan Test not uploaded"));
+        assertTrue(AutoCapture.prefs(c).contains("anyway:" + ID));
+        WorkManager work = WorkManager.getInstance(c);
+        try {
+            assertTrue(AutoCapture.uploadAnyway(c, ID, SeededWorker.class));
+            assertFalse(AutoCapture.prefs(c).contains("refused:" + ID));
+            assertFalse(AutoCapture.prefs(c).contains("anyway:" + ID));
+            long until = System.currentTimeMillis() + 90_000;
+            while (fake.attaches == 0 && System.currentTimeMillis() < until) Thread.sleep(250);
+            assertEquals(1, fake.uploads);
+            assertEquals(1, fake.attaches);
+            assertFalse(fake.lastAttach.has("call_event_id"));
+            assertEquals(ID, AutoCapture.job(c, ID).getString("leadId"));
+            assertTrue(AutoCapture.job(c, ID).optBoolean("onLead"));
+            assertEquals("Rohan Test", AutoCapture.job(c, ID).getString("leadName"));
+        } finally {
+            work.cancelUniqueWork("sx-capture:" + ID).getResult().get();
+            manager.cancelAll();
+        }
+        // A retry never asks for the call again, and keeps the same submission.
+        int asked = fake.recordingCalls;
+        String sid = AutoCapture.submission(AutoCapture.job(c, ID));
+        AutoCapture.prefs(c).edit().putString("job:" + ID, AutoCapture.job(c, ID).put("state", "uploading").toString()).commit();
+        worker().doWork();
+        assertEquals(asked, fake.recordingCalls);
+        assertEquals(1, fake.uploads);
+        assertEquals(sid, AutoCapture.submission(AutoCapture.job(c, ID)));
+    }
+    // Once the server takes a lead call at any hour (v1.99.1), "Upload anyway" joins the call itself: no second call.
+    @Test public void uploadAnywayJoinsTheCallWhenTheServerTakesIt() throws Exception {
+        assertTrue(AutoCapture.refused(c, fake, ID, "+12025550123", new CaptureApi.Failure(409, "This call is outside work hours."), foundBeforeRefusal()));
+        AutoCapture.prefs(c).edit().putString("job:" + ID, new JSONObject(AutoCapture.prefs(c).getString("anyway:" + ID, "{}"))
+            .put("id", ID).put("anyway", true).put("state", "waiting").put("due", 0).toString()).commit();
+        worker().doWork();
+        assertEquals(1, fake.recordingCalls);
+        assertEquals(1, fake.uploads);
+        assertEquals(ID, fake.lastAttach.getString("call_event_id"));
+        assertFalse(AutoCapture.job(c, ID).optBoolean("onLead"));
+        c.getSystemService(android.app.NotificationManager.class).cancelAll();
     }
     /** The real source check, with the own API mocked: a shared recording (ShareIn) is read only from the app's copy. */
     public static class SharedWorker extends CaptureUploadWorker {

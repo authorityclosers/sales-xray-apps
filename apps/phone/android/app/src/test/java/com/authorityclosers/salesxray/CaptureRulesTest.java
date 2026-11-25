@@ -249,6 +249,9 @@ public class CaptureRulesTest {
         assertNull(CaptureRules.refused(500, "This call is outside work hours."));
         String[] hours = CaptureRules.refusedNotice(CaptureRules.REFUSED_HOURS, "+12025550123");
         assertEquals("Call with +12025550123 not uploaded", hours[0]);
+        // The lead's name when the server gave it (Mac, 26 Nov 2026 01:45: the notice showed the number).
+        assertEquals("Call with Rohan Test not uploaded", CaptureRules.refusedNotice(CaptureRules.REFUSED_HOURS, "Rohan Test")[0]);
+        assertEquals("Call with a lead not uploaded", CaptureRules.refusedNotice(CaptureRules.REFUSED_HOURS, "")[0]);
         assertEquals("Recorded outside work hours.", hours[1]);
         assertEquals("Made before this lead was added.", CaptureRules.refusedNotice(CaptureRules.REFUSED_EARLY, "+12025550123")[1]);
         // Outside hours: one tap asks again. Before the lead: no tap that would be refused again; Calls offers it.

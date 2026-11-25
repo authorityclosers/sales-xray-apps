@@ -228,7 +228,10 @@ final class AutoCapture {
                 .put("command_id", id).put("number", number).put("started_at", CallLogRules.iso(stamp))
                 .put("duration_seconds", seconds), id, false);
             } catch (CaptureApi.Failure rejected) {
-                if (refused(c, id, number, rejected)) continue;
+                JSONObject found = new JSONObject().put("identity", CaptureRules.identity(book))
+                    .put("source", doc.source).put("name", doc.name).put("number", number)
+                    .put("stamp", stamp).put("saved", doc.modifiedMs).put("size", doc.size).put("seconds", seconds);
+                if (refused(c, api, id, number, rejected, found)) continue;
                 // Another workspace's call: the next scan (back in this workspace) may take it.
                 if (rejected.code == 409 || rejected.code == 422 || rejected.code == 404) continue;
                 throw rejected;
@@ -311,7 +314,10 @@ final class AutoCapture {
                     .put("command_id", id).put("number", call.number).put("started_at", CallLogRules.iso(call.startedMs))
                     .put("duration_seconds", call.seconds), id, false);
             } catch (CaptureApi.Failure rejected) {
-                if (refused(c, id, call.number, rejected)) continue;
+                JSONObject kept = new JSONObject().put("identity", identity).put("matched", "call_log")
+                    .put("source", doc.source).put("name", doc.name).put("number", call.number)
+                    .put("stamp", call.startedMs).put("saved", doc.modifiedMs).put("size", doc.size).put("seconds", call.seconds);
+                if (refused(c, api, id, call.number, rejected, kept)) continue;
                 if (rejected.code == 409 || rejected.code == 422 || rejected.code == 404) continue;
                 throw rejected;
             }
@@ -528,9 +534,9 @@ final class AutoCapture {
         if (identity.isEmpty()) return states;
         for (JSONObject job : jobs(c)) {
             if (!identity.equals(job.optString("identity"))) continue;
-            if ("analysing".equals(job.optString("state")) && job.has("eventId")) {
+            if ("analysing".equals(job.optString("state")) && (job.has("eventId") || job.optBoolean("onLead"))) {
                 try {
-                    String sid = CaptureRules.id(identity, job.getString("eventId"), 0);
+                    String sid = submission(job);
                     if (api.json("GET", "/v1/conversation/acquisition/submissions/" + sid, null, null, false).optBoolean("has_report")) save(c, job, "report_ready");
                 } catch (Exception unavailable) { /* Keep the last confirmed state. */ }
             }
@@ -542,6 +548,15 @@ final class AutoCapture {
             states.put(state);
         }
         return states;
+    }
+    /**
+     * A call's submission id: from its call event, or, for a recording "Upload anyway" put on its lead with no call
+     * event (onLead), from the job itself. The same id on every retry.
+     */
+    static String submission(JSONObject job) throws JSONException {
+        return job.optBoolean("onLead")
+            ? CaptureRules.id(job.getString("identity"), "anyway:" + job.getString("id"), 0)
+            : CaptureRules.id(job.getString("identity"), job.getString("eventId"), 0);
     }
     static void enqueue(Context c, String id, long delay) { enqueue(c, id, delay, CaptureUploadWorker.class); }
     /**
@@ -611,13 +626,68 @@ final class AutoCapture {
      * False when a later scan may succeed (another workspace).
      */
     static boolean refused(Context c, String id, String number, CaptureApi.Failure rejected) {
+        return refused(c, null, id, number, rejected, null);
+    }
+    /**
+     * As above, and for a call refused for work hours, the recording it came from ({@code found}: the job the scan
+     * would have made) is kept with its lead, so "Upload anyway" can upload it (uploadAnyway). The notice names the
+     * lead (Mac, 26 Nov 2026 01:45: it showed the number), asked of the server only when the seller is told.
+     */
+    static boolean refused(Context c, CaptureApi api, String id, String number, CaptureApi.Failure rejected, JSONObject found) {
         String reason = CaptureRules.refused(rejected.code, rejected.detail);
         if (reason == null) return false;
         SharedPreferences p = prefs(c);
         if (p.contains("refused:" + id)) return true;
-        p.edit().putString("refused:" + id, reason + ":" + System.currentTimeMillis()).commit();
-        String[] words = CaptureRules.refusedNotice(reason, number);
+        String who = number;
+        if (api != null && CaptureRules.refusedNotice(reason, number) != null) {
+            try {
+                JSONObject lead = api.leadMatch(number);
+                if (lead != null) {
+                    who = lead.optString("name", number);
+                    if (found != null) found.put("leadId", lead.getString("lead_id")).put("leadName", who);
+                }
+            } catch (Exception unknown) { /* The number, as before. */ }
+        }
+        SharedPreferences.Editor edit = p.edit().putString("refused:" + id, reason + ":" + System.currentTimeMillis());
+        boolean keep = found != null && CaptureRules.REFUSED_HOURS.equals(reason);
+        if (keep) edit.putString("anyway:" + id, found.toString());
+        edit.commit();
+        // "Upload anyway" was tapped on this call's notice from an older build, which kept no recording: upload it now.
+        if (keep && p.contains("asked:" + id)) {
+            p.edit().remove("asked:" + id).commit();
+            log(id, "refused " + reason + ", upload anyway asked before");
+            uploadAnyway(c, id, CaptureUploadWorker.class);
+            return true;
+        }
+        String[] words = CaptureRules.refusedNotice(reason, who);
         if (words != null) refusedNotice(c, id, words);
+        log(id, "refused " + reason);
+        return true;
+    }
+    /**
+     * "Upload anyway" (CaptureAgainReceiver): the recording a work-hours refusal kept becomes a job at once, with no Undo
+     * minute (the seller just asked), under the same upload terms and checks as any other. Its upload asks for the call
+     * again and, if the server still says outside work hours (v1.99.0 refuses any call outside them), puts the
+     * recording on its lead as the web's "Assign to a lead" does (CaptureUploadWorker). Mac, 26 Nov 2026 02:04,
+     * Redmi 13 on 1.0.158: the tap only forgot the refusal and looked again, the server refused again, and nothing was
+     * uploaded. False when nothing was kept for this call (a refusal from an older build): the caller looks again.
+     */
+    static boolean uploadAnyway(Context c, String id, Class<? extends ListenableWorker> worker) {
+        SharedPreferences p = prefs(c);
+        String kept = p.getString("anyway:" + id, null);
+        if (kept == null) return false;
+        JSONObject job;
+        try {
+            job = new JSONObject(kept).put("id", id).put("anyway", true).put("state", "waiting").put("due", System.currentTimeMillis());
+            if (!job.has("leadName")) job.put("leadName", "lead");
+        } catch (JSONException unreadable) { p.edit().remove("anyway:" + id).commit(); return false; }
+        if (!p.contains("job:" + id)) {
+            p.edit().putString("job:" + id, job.toString()).remove("anyway:" + id).remove("refused:" + id).commit();
+            notice(c, id, "Uploading call with " + job.optString("leadName", "lead"), "It goes for analysis when the upload ends.", false);
+        } else p.edit().remove("anyway:" + id).remove("refused:" + id).commit();
+        enqueue(c, id, 0, worker);
+        log(id, "upload anyway: job made");
+        PhoneBridge.signalActive("recordings");
         return true;
     }
     /** Refusals older than the recordings any scan reads (KEEP_MS) are forgotten. */
@@ -629,7 +699,11 @@ final class AutoCapture {
             String value = String.valueOf(entry.getValue());
             long at;
             try { at = Long.parseLong(value.substring(value.lastIndexOf(':') + 1)); } catch (NumberFormatException bad) { at = 0; }
-            if (now - at > CaptureRules.KEEP_MS) edit.remove(entry.getKey());
+            if (now - at > CaptureRules.KEEP_MS) edit.remove(entry.getKey()).remove("anyway:" + entry.getKey().substring("refused:".length()));
+        }
+        for (Map.Entry<String, ?> entry : p.getAll().entrySet()) {
+            if (entry.getKey().startsWith("asked:") && entry.getValue() instanceof Long && now - (Long) entry.getValue() > CaptureRules.KEEP_MS)
+                edit.remove(entry.getKey());
         }
         edit.commit();
     }

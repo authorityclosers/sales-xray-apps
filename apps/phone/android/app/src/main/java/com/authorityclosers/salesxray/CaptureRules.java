@@ -113,12 +113,13 @@ final class CaptureRules {
 
     /**
      * One quiet notice for a refusal the seller can act on or should know of ({title, text, action, page}); null stays
-     * silent. Outside work hours: "Upload anyway" asks the server again under the same terms (Mac, 25 Nov 2026 19:20;
-     * from v1.99.1 the server takes a lead call at any hour). Before the lead: the server keeps refusing, so the
-     * notice opens Calls, where Find my old calls offers it with Analyse (v1.99.1).
+     * silent. Outside work hours: "Upload anyway" uploads that recording onto its lead under the same terms (Mac,
+     * 25 Nov 2026 19:20; AutoCapture.uploadAnyway). Before the lead: the server keeps refusing, so the notice opens
+     * Calls, where Find my old calls offers it with Analyse (v1.99.1). {@code who} is the lead's name when the server
+     * gave it, else the number (Mac, 26 Nov 2026 01:45: "the notice shows the phone number instead of the lead name").
      */
-    static String[] refusedNotice(String reason, String number) {
-        String title = "Call with " + (number == null || number.isEmpty() ? "a lead" : number) + " not uploaded";
+    static String[] refusedNotice(String reason, String who) {
+        String title = "Call with " + (who == null || who.isEmpty() ? "a lead" : who) + " not uploaded";
         if (REFUSED_HOURS.equals(reason)) return new String[] { title, "Recorded outside work hours.", "Upload anyway", "/leads" };
         if (REFUSED_EARLY.equals(reason)) return new String[] { title, "Made before this lead was added.", null, "/analysis/calls" };
         return null;
