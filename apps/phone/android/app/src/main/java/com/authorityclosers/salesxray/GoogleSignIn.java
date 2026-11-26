@@ -45,6 +45,16 @@ final class GoogleSignIn {
     private static final long MAX_AGE_MS = 10 * 60 * 1000L;
     private static final Pattern RESULT = Pattern.compile("[a-z_]{1,32}");
     private static final Pattern FLOW = Pattern.compile("[0-9a-fA-F-]{36}");
+    /**
+     * Sales X-Ray Live only (-PsxLive, never published): the page comes from the local dev server
+     * (sx_live_origin, http://localhost:3016 through adb reverse and the local production bridge).
+     * Its Google start opens production's own start in the Custom Tab, production hands the result
+     * to the store app's address, and the code is redeemed on the local origin, where the bridge
+     * keeps the session. Empty in every real build, so none of this applies there.
+     */
+    private static String liveOrigin = "";
+    private static final String LIVE_SIGN_IN_ORIGIN = "https://salesxray.authorityclosers.com";
+    private static final String STORE_RETURN_SCHEME = "com.authorityclosers.salesxray";
 
     private final AppCompatActivity activity;
     private final WebView main;
@@ -62,21 +72,29 @@ final class GoogleSignIn {
     GoogleSignIn(AppCompatActivity activity, WebView main) {
         this.activity = activity;
         this.main = main;
+        liveOrigin = activity.getString(R.string.sx_live_origin);
+    }
+
+    /** True for a page of Sales X-Ray Live's local dev server (never in a real build). */
+    static boolean isLive(Uri url) {
+        if (liveOrigin.isEmpty() || url == null) return false;
+        Uri live = Uri.parse(liveOrigin);
+        return live.getScheme().equals(url.getScheme()) && live.getHost().equals(url.getHost()) && live.getPort() == url.getPort();
     }
 
     /** Pages a sign-in window loads itself; everything else leaves it. */
     static boolean staysInSignInWindow(Uri url) {
         return (
             url != null &&
-            "https".equals(url.getScheme()) &&
-            PhoneBridge.HOSTS.contains(url.getHost()) &&
+            (("https".equals(url.getScheme()) && PhoneBridge.HOSTS.contains(url.getHost())) || isLive(url)) &&
             (COMPLETE_PATH.equals(url.getPath()) || EXCHANGE_PATH.equals(url.getPath()))
         );
     }
 
     /** Opens a Sales Xray sign-in start (Google, Facebook, Apple) in a Custom Tab instead of a web view. */
     boolean intercept(Uri url, WebView source) {
-        if (url == null || !"https".equals(url.getScheme()) || !PhoneBridge.HOSTS.contains(url.getHost())) return false;
+        boolean live = isLive(url);
+        if (url == null || (!live && (!"https".equals(url.getScheme()) || !PhoneBridge.HOSTS.contains(url.getHost())))) return false;
         if (!SignInRules.isStart(url.getPath()) || url.getQueryParameter("app_challenge") != null) return false;
         byte[] secret = new byte[32];
         random.nextBytes(secret);
@@ -88,7 +106,7 @@ final class GoogleSignIn {
             return false;
         }
         target = source;
-        origin = "https://" + url.getHost();
+        origin = live ? liveOrigin : "https://" + url.getHost();
         flow = flowOf(url.getQueryParameter("return_path"));
         awaiting = true;
         leftApp = false;
@@ -98,7 +116,10 @@ final class GoogleSignIn {
             .putString(KEY_ORIGIN, origin)
             .putLong(KEY_STARTED, System.currentTimeMillis())
             .apply();
-        Uri start = url.buildUpon().appendQueryParameter("app_challenge", challenge).build();
+        Uri from = live
+            ? Uri.parse(LIVE_SIGN_IN_ORIGIN + url.getEncodedPath() + (url.getEncodedQuery() != null ? "?" + url.getEncodedQuery() : ""))
+            : url;
+        Uri start = from.buildUpon().appendQueryParameter("app_challenge", challenge).build();
         CustomTabsIntent tab = new CustomTabsIntent.Builder().setShowTitle(true).build();
         // A browser, never the Facebook app: it would take facebook.com links for itself.
         String browser = CustomTabsClient.getPackageName(activity, null);
@@ -121,7 +142,9 @@ final class GoogleSignIn {
     void take(Intent intent) {
         if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return;
         Uri data = intent.getData();
-        if (data == null || !activity.getPackageName().equals(data.getScheme()) || !RETURN_PATH.equals(data.getPath())) return;
+        if (data == null || !RETURN_PATH.equals(data.getPath())) return;
+        boolean ours = activity.getPackageName().equals(data.getScheme()) || (!liveOrigin.isEmpty() && STORE_RETURN_SCHEME.equals(data.getScheme()));
+        if (!ours) return;
         // Handle a result once, even if the activity is recreated with this intent.
         intent.setData(null);
         awaiting = false;
