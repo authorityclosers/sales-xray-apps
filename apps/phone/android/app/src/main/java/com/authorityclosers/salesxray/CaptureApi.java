@@ -96,6 +96,15 @@ class CaptureApi {
         if (identity == null) identity = CaptureRules.identity(result);
         return result;
     }
+    /**
+     * The seller's own lead (or, for a manager, the team's) with this number, as Add lead asks while a number is typed
+     * (GET /leads/match): {lead_id, name}, or null when it is nobody's lead or a teammate's.
+     */
+    JSONObject leadMatch(String number) throws Exception {
+        if (number == null || number.isEmpty() || number.length() > 40) return null;
+        JSONObject found = json("GET", "/v1/lead-desk/leads/match?phone=" + java.net.URLEncoder.encode(number, "UTF-8"), null, null, false);
+        return found.optBoolean("found") && !found.optString("lead_id").isEmpty() ? found : null;
+    }
     JSONObject policy() throws Exception { return json("GET", "/v1/conversation/acquisition/upload-policy", null, null, false); }
     JSONObject consent() throws Exception { return json("GET", "/v1/sales-xray/call-ai/auto-analysis", null, null, false); }
     /** The edge asks this before any audio: false while the seller's contact profile is incomplete. */

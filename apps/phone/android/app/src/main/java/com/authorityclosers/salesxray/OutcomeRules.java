@@ -9,8 +9,6 @@ final class OutcomeRules {
 
     /** How far back recordings and a first call-history read fill outcomes (the server's OUTCOME_FILL_DAYS). */
     static final long FILL_MS = 30L * 24 * 60 * 60 * 1000;
-    /** Call history older than this is never a call of its own (the server's PHONE_LOG_DAYS). */
-    static final long LOG_MS = 7L * 24 * 60 * 60 * 1000;
     /** The recordings are read at most this often. */
     static final long LOOK_EVERY_MS = 60L * 60 * 1000;
     /** Each read goes back this far before the last one: a dial is written only when the seller comes back. */
@@ -28,11 +26,6 @@ final class OutcomeRules {
     static long from(long throughMs, long now) {
         long oldest = now - FILL_MS;
         return throughMs <= 0 ? oldest : Math.max(oldest, Math.min(now, throughMs) - OVERLAP_MS);
-    }
-
-    /** A first call-history read's row: past a week, only a call out can be the outcome of a dial. */
-    static boolean backfillRow(String direction, long dateMs, long now) {
-        return now - dateMs <= LOG_MS || "outgoing".equals(direction);
     }
 
     /** The seller's one line, or null when nothing was filled in. */

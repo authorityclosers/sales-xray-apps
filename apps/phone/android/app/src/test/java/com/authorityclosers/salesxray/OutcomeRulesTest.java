@@ -35,14 +35,6 @@ public class OutcomeRulesTest {
     }
 
     @Test
-    public void aFirstCallHistoryReadSendsOnlyCallsOutPastAWeek() {
-        assertTrue(OutcomeRules.backfillRow("missed", NOW - 2 * DAY, NOW));
-        assertTrue(OutcomeRules.backfillRow("outgoing", NOW - 20 * DAY, NOW));
-        assertFalse(OutcomeRules.backfillRow("incoming", NOW - 20 * DAY, NOW));
-        assertFalse(OutcomeRules.backfillRow("missed", NOW - 8 * DAY, NOW));
-    }
-
-    @Test
     public void theSellersOneLine() {
         assertNull(OutcomeRules.filledLine(0));
         assertEquals("Filled in 1 call outcome from your phone", OutcomeRules.filledLine(1));

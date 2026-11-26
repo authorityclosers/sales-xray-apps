@@ -359,6 +359,20 @@ final class PhoneBridge {
                     });
                     break;
                 }
+                case "findOldRecordings": {
+                    // "Find my old calls" (20 Nov 2026): the last two weeks' lead calls with no recording
+                    // on Sales X-Ray, matched to the recordings on the phone. Read-only (OldCalls).
+                    String asked = id;
+                    JSONObject ask = args;
+                    io.execute(() -> {
+                        try {
+                            reply(reply, asked, OldCalls.find(activity, ask));
+                        } catch (RuntimeException error) {
+                            fail(reply, asked, "scan_failed");
+                        }
+                    });
+                    break;
+                }
                 case "webShell":
                     // The app's own copy of the web app (S9): built from which version, on or off, and its live updates.
                     reply(reply, id, webShellStatus());
@@ -452,7 +466,7 @@ final class PhoneBridge {
                             String words = consent.getJSONObject("notice").getString("text");
                             main.post(() -> new androidx.appcompat.app.AlertDialog.Builder(activity)
                                 .setTitle("Automatically upload lead calls")
-                                .setMessage(words + "\n\nSales X-Ray checks the recordings folder you choose, including in the background. Only files with a lead's number and a matching time are uploaded to your workspace for analysis. You have 60 seconds to Undo before upload. Audio is encrypted in transit and can be deleted from Calls. Turn this off in Settings at any time.\n\n" + policy.optString("privacy_details"))
+                                .setMessage(words + "\n\nSales X-Ray checks your phone's call recordings (the folder you choose, and the call-recording folders Android's audio access shows), including in the background. Only recordings of calls with your leads are uploaded to your workspace for analysis: the lead's number in the file's name or in the call history, and a matching time. You have 60 seconds to Undo before upload. Audio is encrypted in transit and can be deleted from Calls. Turn this off in Settings at any time.\n\n" + policy.optString("privacy_details"))
                                 .setNegativeButton("Not now", (dialog, which) -> { try { reply(reply, asked, AutoCapture.status(activity)); } catch (Exception ignored) { fail(reply, asked, "capture_unavailable"); } })
                                 .setOnCancelListener(dialog -> { try { reply(reply, asked, AutoCapture.status(activity)); } catch (Exception ignored) { fail(reply, asked, "capture_unavailable"); } })
                                 .setPositiveButton("Turn on", (dialog, which) -> io.execute(() -> {
@@ -482,6 +496,16 @@ final class PhoneBridge {
                     });
                     break;
                 }
+                case "autoCaptureRetryOne": {
+                    // Retry on one held call (the upload-status screen); the upload checks everything again.
+                    final String asked = id;
+                    final String job = args.optString("id", "");
+                    io.execute(() -> {
+                        try { AutoCapture.retry(activity, job); reply(reply, asked, AutoCapture.status(activity)); }
+                        catch (Exception e) { fail(reply, asked, "capture_unavailable"); }
+                    });
+                    break;
+                }
                 case "autoCaptureRetry": {
                     // Try again on the capture-health card: held calls whose cause is gone go now.
                     final String asked = id;
@@ -498,8 +522,12 @@ final class PhoneBridge {
                     callLogSetup(reply, id, args.optBoolean("on"), args.optString("sim", ""));
                     break;
                 case "callLogSync": {
+                    // "Sync now". With days (at most 365; older apps ignore it) the call history is
+                    // read that far back again (CallLogRules.lookBackFrom), before "Find my old calls".
+                    // The whole history is also read again once a day by itself (CallLogSync DEEP_*).
                     String asked = id;
-                    io.execute(() -> reply(reply, asked, CallLogSync.run(activity)));
+                    int days = Math.max(0, Math.min(CallLogRules.LOOK_BACK_DAYS, args.optInt("days", 0)));
+                    io.execute(() -> reply(reply, asked, CallLogSync.run(activity, days)));
                     break;
                 }
                 case "unknownCalls": {

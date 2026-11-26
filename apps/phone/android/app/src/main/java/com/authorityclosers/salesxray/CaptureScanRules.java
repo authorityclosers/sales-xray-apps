@@ -116,6 +116,9 @@ final class CaptureScanRules {
             case CaptureRules.REVIEW:
             case CaptureRules.EXPIRED:
                 return reason;
+            // The server's list predates it: new terms are a consent hold.
+            case CaptureRules.TERMS:
+                return CaptureRules.CONSENT;
             default:
                 return "other";
         }

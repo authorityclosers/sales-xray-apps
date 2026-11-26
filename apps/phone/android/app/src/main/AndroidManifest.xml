@@ -19,6 +19,13 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
         <receiver android:name=".CaptureUndoReceiver" android:exported="false" />
+        <receiver android:name=".CaptureAgainReceiver" android:exported="false" />
+        <!-- The look right after a call ends: a JobScheduler content trigger of the app's own, which WorkManager's
+             start after a swipe-away does not cancel (CaptureTriggerJob.java). -->
+        <service
+            android:name=".CaptureTriggerJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"

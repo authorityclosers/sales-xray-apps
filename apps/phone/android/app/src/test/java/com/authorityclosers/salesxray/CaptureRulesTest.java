@@ -13,6 +13,38 @@ public class CaptureRulesTest {
         return new JSONObject().put("organisation_workspace", true).put("tenant_id", "fictional-workspace")
             .put("person_id", "fictional-seller").put("numbers", new JSONArray().put("+12025550123"));
     }
+    // Redmi 13, 25 Nov 2026: "Uploads in 60 seconds", still waiting 33 minutes later. The upload job starts at once
+    // and waits the Undo minute out itself; only a far-off due time (an old held call's) goes back to WorkManager.
+    @Test public void theUndoMinuteIsWaitedOutInTheUploadJob() {
+        long now = stamp;
+        assertTrue(CaptureRules.waitInJob(now + CaptureRules.UNDO_MS, now));
+        assertTrue(CaptureRules.waitInJob(now + CaptureRules.UNDO_MS + CaptureRules.UNDO_SLACK_MS, now));
+        assertTrue(CaptureRules.waitInJob(now + 1, now));
+        assertFalse(CaptureRules.waitInJob(now, now));
+        assertFalse(CaptureRules.waitInJob(now - 1, now));
+        assertFalse(CaptureRules.waitInJob(now + 3_600_000, now));
+    }
+    // A dialler that closes or tags its file after the match no longer parks the call for ever (REVIEW).
+    @Test public void aRecordingFinishedAfterItsMatchStillGoes() {
+        long saved = stamp, now = stamp + 120_000;
+        assertEquals(CaptureRules.SOURCE_SAME, CaptureRules.sourceChange(1000, saved, 1000, saved, now));
+        assertEquals(CaptureRules.SOURCE_FINISHED, CaptureRules.sourceChange(1000, saved, 1400, saved + 2000, now));
+        assertEquals(CaptureRules.SOURCE_FINISHED, CaptureRules.sourceChange(1000, saved, 900, saved + 1000, now));
+        assertEquals(CaptureRules.SOURCE_FINISHED, CaptureRules.sourceChange(1000, saved, 1000, saved + 1000, now));
+        // Written to within the last SETTLE_MS: wait, then look again.
+        assertEquals(CaptureRules.SOURCE_SETTLING, CaptureRules.sourceChange(1000, saved, 1400, now - 1000, now));
+        // Emptied, or older than the file that was matched: another file, held for the seller as before.
+        assertEquals(CaptureRules.SOURCE_CHANGED, CaptureRules.sourceChange(1000, saved, 0, saved + 2000, now));
+        assertEquals(CaptureRules.SOURCE_CHANGED, CaptureRules.sourceChange(1000, saved, 1000, saved - 1000, now));
+    }
+    // A held call's own notice stops promising an upload in 60 seconds and says what it waits for.
+    @Test public void aHeldCallsNoticeSaysWhy() {
+        String[] words = CaptureRules.heldNotice(CaptureRules.PROFILE, "Asha Fixture", false);
+        assertEquals("Call with Asha Fixture not uploaded yet", words[0]);
+        assertTrue(words[1], words[1].contains("Complete your profile"));
+        assertEquals("Call with Asha Fixture not uploaded yet", CaptureRules.heldNotice(CaptureRules.REVIEW, "Asha Fixture", false)[0]);
+        assertNull(CaptureRules.heldNotice(CaptureRules.OFF, "Asha Fixture", true));
+    }
     @Test public void oemPatternsRequireNumberAndClock() throws Exception {
         for (String name : new String[] {
             "Call recording 12025550123_261029120000.mp3", // MIUI compact
@@ -139,7 +171,9 @@ public class CaptureRulesTest {
     }
     @Test public void onlyConsentAndNoticesTurnUploadsOff() {
         assertEquals(CaptureRules.SIGNED_OUT, CaptureRules.refusal(401, "", null, null));
-        assertEquals(CaptureRules.CONSENT, CaptureRules.refusal(409, "Automatic analysis isn't on for you here. Tap Analyse this call.", null, true));
+        // The server's standing-consent refusal holds the call (TERMS); the next scan reads the consent and only an
+        // "off" there turns uploads off.
+        assertEquals(CaptureRules.TERMS, CaptureRules.refusal(409, "Automatic analysis isn't on for you here. Tap Analyse this call.", null, true));
         assertEquals(CaptureRules.WORKSPACE, CaptureRules.refusal(409, "This call belongs to another workspace or seller.", null, true));
         for (int code : new int[] {500, 502, 503, 429, 408}) assertEquals(CaptureRules.RETRY, CaptureRules.refusal(code, "", null, null));
         assertEquals(CaptureRules.REVIEW, CaptureRules.refusal(422, "Choose an audio or video file up to 100 MB.", null, null));
@@ -215,8 +249,17 @@ public class CaptureRulesTest {
         assertNull(CaptureRules.refused(500, "This call is outside work hours."));
         String[] hours = CaptureRules.refusedNotice(CaptureRules.REFUSED_HOURS, "+12025550123");
         assertEquals("Call with +12025550123 not uploaded", hours[0]);
+        // The lead's name when the server gave it (Mac, 26 Nov 2026 01:45: the notice showed the number).
+        assertEquals("Call with Rohan Test not uploaded", CaptureRules.refusedNotice(CaptureRules.REFUSED_HOURS, "Rohan Test")[0]);
+        assertEquals("Call with a lead not uploaded", CaptureRules.refusedNotice(CaptureRules.REFUSED_HOURS, "")[0]);
         assertEquals("Recorded outside work hours.", hours[1]);
         assertEquals("Made before this lead was added.", CaptureRules.refusedNotice(CaptureRules.REFUSED_EARLY, "+12025550123")[1]);
+        // Outside hours: one tap asks again. Before the lead: no tap that would be refused again; Calls offers it.
+        assertEquals("Upload anyway", hours[2]);
+        assertNull(CaptureRules.refusedNotice(CaptureRules.REFUSED_EARLY, "+12025550123")[2]);
+        assertEquals("/analysis/calls", CaptureRules.refusedNotice(CaptureRules.REFUSED_EARLY, "+12025550123")[3]);
+        assertTrue(MainActivity.opensInApp(CaptureRules.refusedNotice(CaptureRules.REFUSED_EARLY, "+12025550123")[3]));
+        assertTrue(MainActivity.opensInApp(hours[3]));
         // One reason is never shown for another, and the rest stay silent.
         assertNull(CaptureRules.refusedNotice(CaptureRules.REFUSED_OTHER, "+12025550123"));
     }
@@ -232,5 +275,30 @@ public class CaptureRulesTest {
         assertEquals(CaptureRules.NET_BLOCKED, CaptureRules.netState(true, true, false));
         assertEquals(CaptureRules.NET_BLOCKED, CaptureRules.netState(true, false, false));
         assertEquals(CaptureRules.NET_OFFLINE, CaptureRules.netState(false, false, false));
+    }
+
+    // SX-AUTOUPLOAD, production 16 Nov 2026: new upload terms (another AI provider) made every phone's standing
+    // consent read as changed, and each phone turned its uploads off. New terms now hold calls and ask again.
+    @Test public void newTermsHoldCallsAndOnlyTurningOffStopsUploads() throws Exception {
+        String hash = "a".repeat(64), other = "b".repeat(64);
+        JSONObject on = new JSONObject().put("state", "on").put("can_start", true).put("terms_sha256", hash);
+        assertNull(CaptureRules.consentGap(on, hash));
+        assertEquals(CaptureRules.TERMS, CaptureRules.consentGap(on, other));
+        assertEquals(CaptureRules.TERMS, CaptureRules.consentGap(new JSONObject().put("state", "ask").put("can_start", false), hash));
+        assertEquals(CaptureRules.TERMS, CaptureRules.consentGap(null, hash));
+        assertEquals(CaptureRules.TERMS, CaptureRules.consentGap(on, ""));
+        assertEquals(CaptureRules.CONSENT, CaptureRules.consentGap(new JSONObject().put("state", "off").put("can_start", false), hash));
+        // AI level Off: the consent is on, but nothing can start.
+        assertEquals(CaptureRules.CONSENT, CaptureRules.consentGap(new JSONObject().put("state", "on").put("can_start", false).put("terms_sha256", hash), hash));
+        assertFalse(CaptureRules.stops(CaptureRules.TERMS));
+        assertTrue(CaptureRules.stops(CaptureRules.CONSENT));
+        assertTrue(CaptureRules.recoverable(CaptureRules.TERMS));
+        assertTrue(CaptureRules.release(CaptureRules.TERMS, true, null, null, stamp, stamp + 1000));
+        assertEquals(CaptureRules.TERMS, CaptureRules.health(true, null, CaptureRules.TERMS, new HashMap<>(), 0, stamp));
+        String[] words = CaptureRules.attention(CaptureRules.TERMS, 2, false);
+        assertTrue(words[1].startsWith("2 lead calls wait"));
+        assertTrue(words[1].contains("by themselves"));
+        assertEquals("/settings/privacy#automatic-call-uploads", words[2]);
+        assertEquals(CaptureRules.CONSENT, CaptureScanRules.holdReason(CaptureRules.TERMS));
     }
 }
